@@ -81,6 +81,8 @@ class CatalogEntry {
     this.year,
     this.thumbnail,
     this.sourceCardIds = const [],
+    this.saved = false,
+    this.description,
   });
 
   final String id;
@@ -90,6 +92,12 @@ class CatalogEntry {
   final int? year;
   final String? thumbnail;
   final List<String> sourceCardIds;
+
+  /// Whether the user saved this into the catalog tab (long-press to save).
+  final bool saved;
+
+  /// On-demand LLM detail ("what it's about"); null until Fetch info is pressed.
+  final String? description;
 
   /// "James Clear · 2018", "2018", or "" — the dimmed subtitle line.
   String get subtitle {
@@ -111,5 +119,7 @@ class CatalogEntry {
                 ?.map((e) => e.toString())
                 .toList() ??
             const [],
+        saved: (json['saved'] as bool?) ?? false,
+        description: json['description'] as String?,
       );
 }

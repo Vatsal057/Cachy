@@ -66,11 +66,17 @@ class StructuredCard:
         blocks: list[dict],
         primary_action: PrimaryAction,
         artifacts: list[Artifact] | None = None,
+        degraded: bool = False,
+        degraded_reason: str = "",
     ):
         self.base = base
         self.blocks = blocks  # list of plain dicts (validated), ready for JSON column
         self.primary_action = primary_action
         self.artifacts = artifacts or []  # referenced things for the catalog (docs/12)
+        # True when no LLM produced a usable structured card and we fell back to a
+        # plain paragraph — a degraded result the worker surfaces as a warning.
+        self.degraded = degraded
+        self.degraded_reason = degraded_reason
 
 
 # --------------------------------------------------------------------------- #
@@ -88,6 +94,24 @@ Allowed block types (use ONLY these; never invent a type):
 - callout        { "type":"callout", "variant":"info|warning|caveat|source", "text": str,
                    "confidence":"high|medium|low|unverified", "source_url": null }
 - link           { "type":"link", "url": str, "label": str }
+- table          { "type":"table", "headers": [str, ...], "rows": [ [str, ...], ... ] }
+
+Choose the block type that fits the data's SHAPE, not just its topic:
+- table       -> a list where each entry has a name AND a description/attribute
+                 (e.g. apps + what they do, tools + purpose). PREFER table over
+                 bullet_list whenever every item carries a second column of info.
+- step_list   -> ordered, sequential instructions to perform (rendered numbered).
+- key_value   -> a few attribute/value facts about ONE thing (time, serves, price).
+- checklist   -> things to tick off (ingredients, packing, requirements).
+- bullet_list -> short, label-only items with NO per-item description.
+
+Formatting rules:
+- For a LONG list split across categories, emit a `heading` (level 2) for EACH
+  category followed by that category's `table`. Do NOT cram everything into one
+  giant table with a repeated category column.
+- The app auto-numbers table rows. Do NOT add your own "#"/number/index column.
+- You may use inline markdown inside any text field: **bold** for key terms and
+  *italic* for emphasis. Use it sparingly. No other markdown (no #, no links).
 """.strip()
 
 _PROMPT = """You convert a short-form video's extracted text into a structured knowledge card.
@@ -119,6 +143,10 @@ Rules:
 - artifacts: include ONLY concrete, named, real-world things the video names
   (e.g. a specific book, movie, podcast, product, or place). Do NOT invent any;
   if the video names none, return an empty list. Use the most specific type.
+- Inline references: when you mention one of your `artifacts` inside a text field
+  (paragraph/bullet/step/callout — NOT table cells), wrap its name in double
+  brackets where you introduce it, e.g. "I loved [[Atomic Habits]]." Wrap only
+  names that are in your artifacts list, and wrap each name at most once.
 
 {vocab}
 
@@ -138,7 +166,15 @@ def _call_llm(bundle: str) -> str | None:
     which the caller turns into a paragraph fallback."""
     settings = get_settings()
     if settings.hf_enabled:
-        return _call_hf(bundle)
+        out = _call_hf(bundle)
+        if out:
+            return out
+        # HF's free router 504s on long generations (e.g. big carousels). Rather
+        # than drop straight to a paragraph, fall back to Groq when a key exists.
+        if settings.groq_api_key.strip():
+            log.info("structuring: HF backend failed; falling back to Groq")
+            return _call_groq(bundle)
+        return None
     if settings.groq_llm_enabled:
         return _call_groq(bundle)
     return None
@@ -155,7 +191,7 @@ def _call_hf(bundle: str) -> str | None:
             model=settings.hf_model,  # free Inference Providers, e.g. Qwen2.5-72B-Instruct
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=2048,
+            max_tokens=8192,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
         )
         text = resp.choices[0].message.content if resp.choices else ""
         return (text or "").strip()
@@ -172,10 +208,10 @@ def _call_groq(bundle: str) -> str | None:
         client = Groq(api_key=settings.groq_api_key)
         prompt = _PROMPT.format(vocab=_VOCAB_SPEC, bundle=bundle)
         resp = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",  # free tier, active
+            model=settings.groq_llm_model,  # free tier; default llama-3.3-70b-versatile
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=2048,
+            max_tokens=8192,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
         )
         text = resp.choices[0].message.content if resp.choices else ""
         return (text or "").strip()
@@ -283,7 +319,9 @@ def _synthesize_base(bundle: str, transcript: str, caption: str) -> Base:
     return Base(one_liner=first, tldr=tldr, content_type=ContentType.OTHER)
 
 
-def _paragraph_fallback(bundle: str, transcript: str, caption: str) -> "StructuredCard":
+def _paragraph_fallback(
+    bundle: str, transcript: str, caption: str, reason: str = ""
+) -> "StructuredCard":
     """Deterministic minimal card. Always renders something sane (docs/04)."""
     base = _synthesize_base(bundle, transcript, caption)
     body = (transcript or caption).strip()
@@ -293,7 +331,9 @@ def _paragraph_fallback(bundle: str, transcript: str, caption: str) -> "Structur
 
         blocks.append(ParagraphBlock(text=body[:2000]).model_dump())
     action = _primary_action_for(base.content_type)
-    return StructuredCard(base, blocks, action)
+    return StructuredCard(
+        base, blocks, action, degraded=True, degraded_reason=reason
+    )
 
 
 def _primary_action_for(content_type: ContentType) -> PrimaryAction:
@@ -307,11 +347,19 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
     try:
         data = json.loads(_strip_fences(raw_text))
     except (json.JSONDecodeError, TypeError):
-        log.info("structuring: JSON parse failed -> paragraph fallback")
-        return _paragraph_fallback(bundle, transcript, caption)
+        log.warning(
+            "structuring: LLM output was not valid JSON (likely truncated) "
+            "-> paragraph fallback"
+        )
+        return _paragraph_fallback(
+            bundle, transcript, caption, reason="LLM returned invalid JSON"
+        )
 
     if not isinstance(data, dict):
-        return _paragraph_fallback(bundle, transcript, caption)
+        log.warning("structuring: LLM output was not a JSON object -> paragraph fallback")
+        return _paragraph_fallback(
+            bundle, transcript, caption, reason="LLM output not a JSON object"
+        )
 
     raw_base = data.get("base") or {}
     try:
@@ -338,7 +386,12 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
     if not blocks:
         # an empty/garbage block list still gets a usable body, but keep any
         # artifacts the model did surface (the catalog doesn't need blocks).
-        fallback = _paragraph_fallback(bundle, transcript, caption)
+        log.warning(
+            "structuring: LLM produced no valid blocks -> paragraph fallback"
+        )
+        fallback = _paragraph_fallback(
+            bundle, transcript, caption, reason="no valid blocks in LLM output"
+        )
         fallback.artifacts = artifacts
         return fallback
 
@@ -356,7 +409,13 @@ def structure(bundle: str, transcript: str = "", caption: str = "") -> "Structur
     StructuredCard, degrading to a paragraph fallback when needed."""
     raw = _call_llm(bundle)
     if not raw:
-        return _paragraph_fallback(bundle, transcript, caption)
+        log.warning(
+            "structuring: no LLM backend returned output (no key, or all backends "
+            "failed) -> paragraph fallback"
+        )
+        return _paragraph_fallback(
+            bundle, transcript, caption, reason="no LLM output (backend unavailable/failed)"
+        )
     return _validate(raw, bundle, transcript, caption)
 
 

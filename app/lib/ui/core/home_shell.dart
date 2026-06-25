@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../features/catalog/views/catalog_screen.dart';
 import '../features/collections/views/collections_screen.dart';
+import '../features/graph/views/graph_screen.dart';
 import '../features/library/views/library_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -24,7 +25,12 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       body: IndexedStack(
         index: _index,
-        children: const [LibraryScreen(), CollectionsScreen(), CatalogScreen()],
+        children: const [
+          LibraryScreen(),
+          GraphScreen(),
+          CollectionsScreen(),
+          CatalogScreen(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -34,6 +40,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.video_library_outlined),
             selectedIcon: Icon(Icons.video_library_rounded),
             label: 'Library',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.hub_outlined),
+            selectedIcon: Icon(Icons.hub_rounded),
+            label: 'Graph',
           ),
           NavigationDestination(
             icon: Icon(Icons.folder_outlined),

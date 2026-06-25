@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -143,6 +144,10 @@ class ArtifactRow(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_card_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # Only saved rows show in the catalog tab; unsaved rows are card references only.
+    saved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # On-demand LLM detail ("what is this"), filled via the Fetch info action.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow
@@ -158,6 +163,8 @@ class ArtifactRow(Base):
             thumbnail=self.thumbnail,
             source_card_ids=list(self.source_card_ids or []),
             created_at=(self.created_at or _utcnow()).isoformat(),
+            saved=bool(self.saved),
+            description=self.description,
         )
 
 
@@ -217,6 +224,27 @@ async def init_db() -> None:
     engine, _ = _ensure_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight migration: backfill columns added after a table already
+        # existed (create_all never ALTERs). HF deploys are ephemeral, but a
+        # persisted dev DB needs these added so SELECTs don't break.
+        await _add_missing_columns(
+            conn,
+            "artifacts",
+            {
+                "saved": "BOOLEAN DEFAULT 0",
+                "description": "TEXT",
+            },
+        )
+
+
+async def _add_missing_columns(conn, table: str, columns: dict[str, str]) -> None:
+    rows = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+    existing = {r[1] for r in rows.fetchall()}
+    for name, ddl in columns.items():
+        if name not in existing:
+            await conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
+            )
 
 
 async def dispose_db() -> None:
@@ -289,5 +317,30 @@ async def upsert_artifact(
             row.creator = creator
         if not row.year and year:
             row.year = year
+    await db.commit()
+    return row
+
+
+async def set_artifact_saved(
+    db: AsyncSession, artifact_id: str, saved: bool
+) -> ArtifactRow | None:
+    """Toggle whether an artifact appears in the catalog tab. Unsaving keeps the
+    row (it still backs per-card references); it just leaves the catalog."""
+    row = await db.get(ArtifactRow, artifact_id)
+    if row is None:
+        return None
+    row.saved = saved
+    await db.commit()
+    return row
+
+
+async def set_artifact_description(
+    db: AsyncSession, artifact_id: str, description: str
+) -> ArtifactRow | None:
+    """Persist the on-demand LLM detail for an artifact (Fetch info)."""
+    row = await db.get(ArtifactRow, artifact_id)
+    if row is None:
+        return None
+    row.description = description
     await db.commit()
     return row
