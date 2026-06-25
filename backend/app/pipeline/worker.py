@@ -26,7 +26,7 @@ from app.pipeline.ingestion.downloader import (
     download_content_async,
 )
 from app.pipeline.structuring import structure_async
-from app.services import artifact_images, events, notify
+from app.services import artifact_images, embeddings, events, llm_chat, notify
 from app.store import db, media
 
 log = logging.getLogger("pipeline.worker")
@@ -90,6 +90,7 @@ async def _write_base(session, card_id: str, structured) -> None:
             tldr=base.tldr,
             content_type=base.content_type.value,
             type_confidence=base.type_confidence,
+            tags=base.tags,
             primary_action=structured.primary_action.model_dump(),
         )
     )
@@ -145,6 +146,24 @@ async def _persist_artifacts(session, card_id: str, artifacts) -> None:
             )
         except Exception:  # noqa: BLE001 — catalog is non-critical to the card
             log.warning("catalog upsert failed for %r", art.title, exc_info=True)
+
+
+async def _embed_card(session, card_id: str) -> None:
+    """Compute + store a semantic-search embedding for the card (docs/09).
+    Best-effort and isolated: any failure (no HF key, network) leaves the card
+    embedding-less, and search degrades to full-text. Reuses the same flattened
+    card-text view as grounded chat (llm_chat.card_context)."""
+    row = await db.get_card_row(session, card_id)
+    if row is None:
+        return
+    text = llm_chat.card_context(row.to_card())
+    vector = await asyncio.to_thread(embeddings.embed, text)
+    if not vector:
+        return
+    await session.execute(
+        update(db.CardRow).where(db.CardRow.id == card_id).values(embedding=vector)
+    )
+    await session.commit()
 
 
 async def _finish_ready(session, card_id: str, job: db.JobRow) -> None:
@@ -240,6 +259,12 @@ async def _run_job(session, job: db.JobRow) -> None:
     if structured.artifacts:
         events.publish(card_id, "cataloging", "processing", "Cataloging references")
         await _persist_artifacts(session, card_id, structured.artifacts)
+
+    # 6) Semantic index: embed the card for search (best-effort, no-op without a key).
+    try:
+        await _embed_card(session, card_id)
+    except Exception:  # noqa: BLE001 — semantic index is non-critical to the card
+        log.warning("embedding failed for %s", card_id, exc_info=True)
 
     # Optionally discard the source video, keep keyframes+thumbnail (docs/11)
     if get_settings().discard_source_video and download.media_type == "video":

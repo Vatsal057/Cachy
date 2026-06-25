@@ -98,3 +98,59 @@ def test_no_artifacts_is_normal():
     raw = '{"base":{"one_liner":"x","tldr":"y","content_type":"tip"},"blocks":[{"type":"paragraph","text":"z"}]}'
     sc = structuring._validate(raw, bundle="", transcript="", caption="")
     assert sc.artifacts == []
+
+
+# ---------------------------------------------------------------------------
+# _coerce_tags
+# ---------------------------------------------------------------------------
+
+def test_tags_coerced_lowercase_deduped():
+    from app.pipeline.structuring import _coerce_tags
+    result = _coerce_tags(["AWS", "cost-optimization", "AWS", "cloud"])
+    assert result == ["aws", "cost-optimization", "cloud"]
+
+
+def test_tags_non_string_entries_dropped():
+    from app.pipeline.structuring import _coerce_tags
+    result = _coerce_tags(["valid", 42, None, True, "also-valid"])
+    assert result == ["valid", "also-valid"]
+
+
+def test_tags_capped_at_six():
+    from app.pipeline.structuring import _coerce_tags
+    result = _coerce_tags([f"tag{i}" for i in range(10)])
+    assert len(result) == 6
+
+
+def test_tags_over_40_chars_dropped():
+    from app.pipeline.structuring import _coerce_tags
+    long_tag = "a" * 41
+    result = _coerce_tags([long_tag, "short"])
+    assert result == ["short"]
+
+
+def test_tags_empty_list_accepted():
+    from app.pipeline.structuring import _coerce_tags
+    assert _coerce_tags([]) == []
+
+
+def test_tags_non_list_returns_empty():
+    from app.pipeline.structuring import _coerce_tags
+    assert _coerce_tags("not-a-list") == []
+    assert _coerce_tags(None) == []
+
+
+def test_tags_present_in_validated_card():
+    raw = (
+        '{"base":{"one_liner":"x","tldr":"y","content_type":"tip",'
+        '"tags":["Python","python","machine learning"]},'
+        '"blocks":[{"type":"paragraph","text":"z"}]}'
+    )
+    sc = structuring._validate(raw, bundle="", transcript="", caption="")
+    assert sc.base.tags == ["python", "machine learning"]  # deduped
+
+
+def test_tags_absent_defaults_to_empty():
+    raw = '{"base":{"one_liner":"x","tldr":"y"},"blocks":[{"type":"paragraph","text":"z"}]}'
+    sc = structuring._validate(raw, bundle="", transcript="", caption="")
+    assert sc.base.tags == []

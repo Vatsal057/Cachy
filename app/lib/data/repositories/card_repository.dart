@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
+import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/pipeline_event.dart';
 import '../services/api_client.dart';
@@ -115,6 +116,30 @@ class CardRepository {
   Future<void> deleteCatalogEntry(String artifactId) =>
       _api.deleteCatalogEntry(artifactId);
 
+  /// Artifacts a single card references (docs/12) — reader "References" strip.
+  Future<List<CatalogEntry>> cardArtifacts(String cardId) =>
+      _api.cardArtifacts(cardId);
+
+  /// Cross-card grounded Q&A (docs/09). Network-only; history held client-side.
+  Future<LibraryChatResult> libraryChat(List<Map<String, String>> messages) =>
+      _api.libraryChat(messages);
+
+  // --- collections (docs/09) — user-created groups of cards --------------- //
+  Future<List<Collection>> listCollections() => _api.listCollections();
+
+  Future<CollectionDetail> getCollection(String id) => _api.getCollection(id);
+
+  Future<Collection> createCollection(String name) =>
+      _api.createCollection(name);
+
+  Future<void> deleteCollection(String id) => _api.deleteCollection(id);
+
+  Future<Collection> addCardToCollection(String id, String cardId) =>
+      _api.addCardToCollection(id, cardId);
+
+  Future<Collection> removeCardFromCollection(String id, String cardId) =>
+      _api.removeCardFromCollection(id, cardId);
+
   /// Reconstruct the raw JSON for caching. Uses preserved `rawBlocks` so block
   /// state round-trips losslessly.
   Map<String, dynamic> _rawOf(Card card) => {
@@ -135,6 +160,7 @@ class CardRepository {
           'tldr': card.base.tldr,
           'content_type': card.base.contentType.wire,
           'type_confidence': card.base.typeConfidence,
+          'tags': card.base.tags,
         },
         'primary_action': {
           'kind': card.primaryAction.kind.wire,

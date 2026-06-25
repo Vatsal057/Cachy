@@ -98,7 +98,8 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
     "one_liner": str,        // what the video GIVES the viewer, not what it's about
     "tldr": str,             // a standalone summary understandable without the video
     "content_type": "recipe|workout|tutorial|tip|product_list|travel|news_explainer|other",
-    "type_confidence": 0.0-1.0
+    "type_confidence": 0.0-1.0,
+    "tags": [str]            // 3-6 short lowercase topical tags (e.g. "fitness", "budgeting")
   }},
   "blocks": [ ... ],         // ordered list using ONLY the allowed block types
   "artifacts": [             // real, named things the video REFERENCES (may be empty)
@@ -111,6 +112,7 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 
 Rules:
 - base.one_liner and base.tldr MUST always be non-empty.
+- base.tags: 3-6 short, lowercase, topical keywords for browsing/grouping the card.
 - Choose content_type, then arrange blocks to fit it (e.g. recipe -> heading,
   key_value(time/serves), checklist(ingredients), step_list(steps)).
 - Use ONLY the allowed block types below. Output strict JSON.
@@ -249,6 +251,26 @@ def _coerce_artifacts(raw_artifacts: list) -> list[Artifact]:
     return out
 
 
+def _coerce_tags(raw_tags) -> list[str]:
+    """Validate auto-tags: keep short lowercase strings, dedupe, cap at 6 (docs/09).
+    Never trust the model — non-list / non-string / empty entries are dropped."""
+    out: list[str] = []
+    if not isinstance(raw_tags, list):
+        return out
+    seen: set[str] = set()
+    for raw in raw_tags:
+        if not isinstance(raw, str):
+            continue
+        tag = " ".join(raw.lower().split()).strip()
+        if not tag or len(tag) > 40 or tag in seen:
+            continue
+        seen.add(tag)
+        out.append(tag)
+        if len(out) >= 6:
+            break
+    return out
+
+
 def _synthesize_base(bundle: str, transcript: str, caption: str) -> Base:
     """When the model omits one_liner/tldr, build something usable from raw text."""
     source = (transcript or caption or "").strip()
@@ -302,6 +324,7 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
         tldr=(raw_base.get("tldr") or "").strip(),
         content_type=ctype,
         type_confidence=float(raw_base.get("type_confidence") or 0.0),
+        tags=_coerce_tags(raw_base.get("tags")),
     )
     # one_liner / tldr must be non-empty (docs/04)
     if not base.one_liner or not base.tldr:

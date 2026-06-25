@@ -22,6 +22,7 @@ class CatalogDetail(BaseModel):
 @router.get("", response_model=list[CatalogEntry])
 async def list_catalog(
     type: ArtifactType | None = None,
+    card_id: str | None = None,
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> list[CatalogEntry]:
@@ -29,9 +30,13 @@ async def list_catalog(
         stmt = select(db.ArtifactRow).order_by(db.ArtifactRow.created_at.desc())
         if type is not None:
             stmt = stmt.where(db.ArtifactRow.type == type.value)
-        stmt = stmt.limit(limit).offset(offset)
         rows = (await session.execute(stmt)).scalars().all()
-        return [r.to_entry() for r in rows]
+        entries = [r.to_entry() for r in rows]
+    # card_id filter: artifacts this card references (source_card_ids JSON contains).
+    # Filtered in Python — the corpus is small (docs/12).
+    if card_id is not None:
+        entries = [e for e in entries if card_id in e.source_card_ids]
+    return entries[offset : offset + limit]
 
 
 @router.get("/{artifact_id}", response_model=CatalogDetail)

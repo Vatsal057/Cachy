@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.1"  # 1.1: structuring output grows an `artifacts` list (docs/12)
+SCHEMA_VERSION = "1.2"  # 1.1: artifacts list (docs/12); 1.2: base.tags auto-tagging (docs/09)
 
 
 # --------------------------------------------------------------------------- #
@@ -194,6 +194,7 @@ class Base(BaseModel):
     tldr: str = ""
     content_type: ContentType = ContentType.OTHER
     type_confidence: float = 0.0
+    tags: list[str] = Field(default_factory=list)  # auto-tags for browse/filter (docs/09)
 
 
 class PrimaryAction(BaseModel):

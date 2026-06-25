@@ -39,18 +39,22 @@ class Base {
     this.tldr = '',
     this.contentType = ContentType.other,
     this.typeConfidence = 0.0,
+    this.tags = const [],
   });
 
   final String oneLiner;
   final String tldr;
   final ContentType contentType;
   final double typeConfidence;
+  final List<String> tags; // auto-tags for browse/filter (docs/09, schema 1.2)
 
   factory Base.fromJson(Map<String, dynamic> json) => Base(
         oneLiner: (json['one_liner'] as String?) ?? '',
         tldr: (json['tldr'] as String?) ?? '',
         contentType: ContentType.fromWire(json['content_type'] as String?),
         typeConfidence: (json['type_confidence'] as num?)?.toDouble() ?? 0.0,
+        tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
       );
 }
 
