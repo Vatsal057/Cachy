@@ -17,11 +17,16 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/graph.dart';
+import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/error_state.dart';
 import '../../reader/views/reader_screen.dart';
 
 class GraphScreen extends StatefulWidget {
-  const GraphScreen({super.key});
+  const GraphScreen({super.key, this.showAppBar = true});
+
+  final bool showAppBar;
 
   @override
   State<GraphScreen> createState() => _GraphScreenState();
@@ -43,7 +48,7 @@ class _GraphScreenState extends State<GraphScreen>
   // View transform.
   Offset _pan = Offset.zero;
   double _zoom = 1.0;
-  Offset _lastFocal = Offset.zero;
+  Offset _panStart = Offset.zero;
   double _baseZoom = 1.0;
   String? _selected;
   String? _draggedNode;
@@ -109,19 +114,28 @@ class _GraphScreenState extends State<GraphScreen>
     _step(_data!);
     if (_temp < 0.6) _ticker.stop();
     if (mounted) setState(() {});
+    final data = _data;
+    if (data == null || _temp < 0.5) {
+      if (_ticker.isTicking) _ticker.stop();
+      return;
+    }
+    _step(data);
+    setState(() {});
   }
 
   /// One Fruchterman-Reingold iteration: nodes repel, edges attract (scaled by
   /// similarity weight), gentle gravity keeps the whole thing centred, and a
   /// cooling temperature caps per-step movement so it settles.
   void _step(GraphData data) {
-    final disp = {for (final n in data.nodes) n.id: Offset.zero};
     final ids = data.nodes.map((n) => n.id).toList();
+    final disp = <String, Offset>{for (final id in ids) id: Offset.zero};
 
-    // Repulsion (every pair).
     for (var i = 0; i < ids.length; i++) {
       for (var j = i + 1; j < ids.length; j++) {
-        var delta = _pos[ids[i]]! - _pos[ids[j]]!;
+        final pa = _pos[ids[i]];
+        final pb = _pos[ids[j]];
+        if (pa == null || pb == null) continue;
+        var delta = pa - pb;
         var d = delta.distance;
         if (d < 0.01) {
           delta = const Offset(0.5, 0.3);
@@ -134,7 +148,6 @@ class _GraphScreenState extends State<GraphScreen>
       }
     }
 
-    // Attraction along edges (stronger similarity -> tighter).
     for (final e in data.edges) {
       final pa = _pos[e.source];
       final pb = _pos[e.target];
@@ -148,7 +161,6 @@ class _GraphScreenState extends State<GraphScreen>
       disp[e.target] = disp[e.target]! + pull;
     }
 
-    // Centre gravity + apply with temperature cap.
     for (final n in data.nodes) {
       if (n.id == _draggedNode) continue;
       var dd = disp[n.id]! - _pos[n.id]! * 0.03;
@@ -165,40 +177,34 @@ class _GraphScreenState extends State<GraphScreen>
 
   void _onScaleStart(ScaleStartDetails d, Size size) {
     _baseZoom = _zoom;
-    _lastFocal = d.focalPoint;
-    _draggedNode = _hitTest(d.localFocalPoint, size);
-    if (_draggedNode != null) {
-      _selected = _draggedNode;
-      _temp = math.max(_temp, 25);
-      if (!_ticker.isActive) _ticker.start();
+    _panStart = _pan;
+    final hit = _hitTest(d.localFocalPoint, size);
+    if (hit != null && d.pointerCount == 1) {
+      _draggedNode = hit;
+      _selected = hit;
+      if (!_ticker.isTicking) _ticker.start();
     }
   }
 
   void _onScaleUpdate(ScaleUpdateDetails d, Size size) {
-    setState(() {
-      if (d.pointerCount > 1 || (d.scale - 1.0).abs() > 0.03) {
-        _draggedNode = null;
-        _zoom = (_baseZoom * d.scale).clamp(0.3, 4.0);
-        _pan += d.focalPoint - _lastFocal;
-      } else if (_draggedNode != null) {
-        final center = Offset(size.width / 2, size.height / 2);
-        final world = (d.localFocalPoint - center - _pan) / _zoom;
-        _pos[_draggedNode!] = world;
-        _temp = math.max(_temp, 25);
-        if (!_ticker.isActive) _ticker.start();
-      } else {
-        _pan += d.focalPoint - _lastFocal;
-      }
-      _lastFocal = d.focalPoint;
-    });
+    if (_draggedNode != null && d.pointerCount == 1) {
+      final center = Offset(size.width / 2, size.height / 2);
+      final world = (d.localFocalPoint - center - _pan) / _zoom;
+      _pos[_draggedNode!] = world;
+      _temp = math.max(_temp, 4.0);
+      setState(() {});
+      return;
+    }
+    if (d.pointerCount > 1 || _draggedNode == null) {
+      setState(() {
+        _zoom = (_baseZoom * d.scale).clamp(0.25, 3.5);
+        _pan = _panStart + d.focalPointDelta;
+      });
+    }
   }
 
   void _onScaleEnd(ScaleEndDetails d) {
-    if (_draggedNode != null) {
-      _draggedNode = null;
-      _temp = math.max(_temp, 15);
-      if (!_ticker.isActive) _ticker.start();
-    }
+    _draggedNode = null;
   }
 
   void _onTapUp(TapUpDetails d, Size size) {
@@ -215,7 +221,6 @@ class _GraphScreenState extends State<GraphScreen>
 
   String? _hitTest(Offset local, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    // Screen -> world inverse of: screen = center + pan + world*zoom.
     final world = (local - center - _pan) / _zoom;
     String? best;
     double bestD = double.infinity;
@@ -233,6 +238,8 @@ class _GraphScreenState extends State<GraphScreen>
 
   @override
   Widget build(BuildContext context) {
+    final content = _body();
+    if (!widget.showAppBar) return content;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Graph'),
@@ -244,25 +251,27 @@ class _GraphScreenState extends State<GraphScreen>
           ),
         ],
       ),
-      body: _body(),
+      body: content,
     );
   }
 
   Widget _body() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: Brand.violet));
+    }
     if (_error != null) {
-      return _Message(
-        icon: Icons.wifi_off_rounded,
+      return ErrorState(
         title: "Couldn't load the graph",
-        action: FilledButton(onPressed: _load, child: const Text('Retry')),
+        message: 'Check your connection and try again.',
+        onRetry: _load,
       );
     }
     final data = _data;
     if (data == null || data.isEmpty) {
-      return const _Message(
+      return const EmptyState(
         icon: Icons.hub_outlined,
-        title: 'No notes to map yet',
-        subtitle: 'Save a few cards and similar ones will link up here.',
+        title: 'Nothing to connect yet',
+        message: "Save a few cards and we'll link the ones that belong together.",
       );
     }
     return LayoutBuilder(
@@ -392,48 +401,4 @@ class _GraphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GraphPainter old) => true;
-}
-
-class _Message extends StatelessWidget {
-  const _Message({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.action,
-  });
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 52, color: theme.colorScheme.outline),
-            const SizedBox(height: 16),
-            Text(title,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleLarge),
-            if (subtitle != null) ...[
-              const SizedBox(height: 8),
-              Text(subtitle!,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant)),
-            ],
-            if (action != null) ...[
-              const SizedBox(height: 20),
-              action!,
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }

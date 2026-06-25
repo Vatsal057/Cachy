@@ -1,19 +1,28 @@
 /// The library: a browsable wall of card faces (docs/06), not a feed of text.
-/// Grid of [CardTile]s with state badges, state filter, pull-to-refresh, and a
-/// paste entry point (link-paste fallback, P1).
+/// Two segments — Cards (the grid) and To-do (actions followed off reels, folded
+/// in from the old Actions tab). Branded chrome (wordmark, gradient tab
+/// indicator), designed empty/loading/error/offline states, and a staggered
+/// tile entrance. Capture lives in the shell's center button; search opens a
+/// dedicated screen. Tap a tile → reader via a shared-element face transition.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../domain/models/card.dart' as model;
 import '../../../../domain/models/enums.dart';
+import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/error_state.dart';
+import '../../../core/widgets/loading_tiles.dart';
+import '../../capture/views/capture_sheet.dart';
+import '../../graph/views/graph_screen.dart';
 import '../../reader/views/reader_screen.dart';
-import '../../share/views/share_screen.dart';
+import '../../search/views/search_screen.dart';
 import '../view_models/library_view_model.dart';
 import 'card_tile.dart';
-import 'library_chat_screen.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -34,120 +43,143 @@ class _LibraryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<LibraryViewModel>();
-    final api = context.read<CardRepository>().api;
+    final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cachy'),
-        actions: [
-          if (vm.offline)
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: Tooltip(
-                message: 'Offline — showing saved cards',
-                child: Icon(Icons.cloud_off_rounded, size: 20),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Ask your library',
-            icon: const Icon(Icons.forum_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LibraryChatScreen()),
-            ),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(
-            108 + (vm.availableTags.isEmpty || vm.searching ? 0 : 46),
-          ),
-          child: Column(
-            children: [
-              _SearchField(
-                query: vm.query,
-                busy: vm.searchBusy,
-                onChanged: vm.setQuery,
-                onClear: vm.clearSearch,
-              ),
-              _FilterBar(
-                selected: vm.filter,
-                onSelect: vm.setFilter,
-              ),
-              if (vm.availableTags.isNotEmpty && !vm.searching)
-                _TagBar(
-                  tags: vm.availableTags,
-                  selected: vm.tagFilter,
-                  onSelect: vm.setTagFilter,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: Insets.page,
+          title: const CachyWordmark(size: 24),
+          actions: [
+            if (vm.offline)
+              const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Tooltip(
+                  message: 'Offline — showing saved cards',
+                  child: Icon(Icons.cloud_off_rounded, size: 20),
                 ),
+              ),
+            IconButton(
+              tooltip: 'Search',
+              icon: const Icon(Icons.search_rounded),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+          bottom: TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            indicatorSize: TabBarIndicatorSize.label,
+            indicatorColor: Brand.violet,
+            labelColor: Brand.violet,
+            unselectedLabelColor: scheme.onSurfaceVariant,
+            labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            tabs: const [
+              Tab(text: 'Cards'),
+              Tab(text: 'Graph'),
             ],
           ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openPaste(context),
-        icon: const Icon(Icons.add_link_rounded),
-        label: const Text('Add link'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: vm.refresh,
-        child: _body(context, vm, api),
+        body: const TabBarView(
+          children: [
+            _CardsTab(),
+            GraphScreen(showAppBar: false),
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _body(BuildContext context, LibraryViewModel vm, api) {
-    // An active search overrides the normal library/status views.
-    if (vm.searching) {
-      if (vm.searchBusy && vm.results.isEmpty) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      if (vm.results.isEmpty) {
-        return _Message(
-          icon: Icons.search_off_rounded,
-          title: 'No matches',
-          subtitle: 'Nothing in your library matches “${vm.query.trim()}”.',
-        );
-      }
-      return _grid(context, vm.results, vm, api);
-    }
+class _CardsTab extends StatelessWidget {
+  const _CardsTab();
 
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<LibraryViewModel>();
+    final api = context.read<CardRepository>().api;
+
+    return RefreshIndicator(
+      color: Brand.violet,
+      onRefresh: vm.refresh,
+      child: _body(context, vm, api),
+    );
+  }
+
+  Widget _body(BuildContext context, LibraryViewModel vm, dynamic api) {
     switch (vm.status) {
       case LibraryStatus.loading:
-        return const Center(child: CircularProgressIndicator());
+        return const LoadingTiles();
       case LibraryStatus.error:
-        return _Message(
-          icon: Icons.wifi_off_rounded,
-          title: "Can't reach the backend",
-          subtitle: vm.error ?? '',
-          action: FilledButton(onPressed: vm.load, child: const Text('Retry')),
+        return _scrollable(
+          ErrorState(
+            title: "Can't reach Cachy",
+            message: vm.error ?? 'Check your connection and try again.',
+            onRetry: vm.load,
+          ),
         );
       case LibraryStatus.empty:
-        return const _Message(
-          icon: Icons.video_library_outlined,
-          title: 'No cards yet',
-          subtitle: 'Share or paste any link — a reel, article, or post.',
+        return _scrollable(
+          EmptyState(
+            showGlyph: true,
+            title: 'Your shelf is empty',
+            message:
+                'Share a reel to Cachy — or paste a link — and watch it become '
+                'a card you can actually use.',
+            actionLabel: 'Capture your first reel',
+            onAction: () => showCaptureSheet(context),
+          ),
         );
       case LibraryStatus.idle:
       case LibraryStatus.ready:
         final visible = vm.visibleCards;
-        if (visible.isEmpty && vm.tagFilter != null) {
-          return _Message(
-            icon: Icons.label_off_rounded,
-            title: 'No cards tagged “${vm.tagFilter}”',
-            subtitle: 'Clear the tag to see your whole library.',
-            action: FilledButton(
-              onPressed: () => vm.setTagFilter(vm.tagFilter),
-              child: const Text('Clear tag'),
+        return Column(
+          children: [
+            _FilterBar(selected: vm.filter, onSelect: vm.setFilter),
+            if (vm.availableTags.isNotEmpty)
+              _TagBar(
+                tags: vm.availableTags,
+                selected: vm.tagFilter,
+                onSelect: vm.setTagFilter,
+              ),
+            Expanded(
+              child: visible.isEmpty
+                  ? _scrollable(
+                      EmptyState(
+                        icon: Icons.filter_alt_off_rounded,
+                        title: 'Nothing here',
+                        message: vm.tagFilter != null
+                            ? 'No cards tagged "${vm.tagFilter}".'
+                            : 'No cards match this filter.',
+                      ),
+                    )
+                  : _grid(context, visible, vm, api),
             ),
-          );
-        }
-        return _grid(context, visible, vm, api);
+          ],
+        );
     }
   }
 
+  // Keeps empty/error states pull-to-refreshable.
+  Widget _scrollable(Widget child) => LayoutBuilder(
+        builder: (context, constraints) => ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: child,
+            ),
+          ],
+        ),
+      );
+
   Widget _grid(
-      BuildContext context, List cards, LibraryViewModel vm, api) {
+      BuildContext context, List<model.Card> cards, LibraryViewModel vm, dynamic api) {
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
+      padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
       physics: const AlwaysScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
@@ -158,7 +190,7 @@ class _LibraryView extends StatelessWidget {
       itemCount: cards.length,
       itemBuilder: (ctx, i) {
         final card = cards[i];
-        return CardTile(
+        final tile = CardTile(
           card: card,
           api: api,
           onTap: () => Navigator.of(ctx).push(
@@ -168,123 +200,8 @@ class _LibraryView extends StatelessWidget {
           ),
           onDelete: () => vm.delete(card.cardId),
         );
+        return tile;
       },
-    );
-  }
-
-  Future<void> _openPaste(BuildContext context) async {
-    final controller = TextEditingController();
-    final url = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Paste a link',
-                style: Theme.of(ctx).textTheme.titleLarge),
-            const SizedBox(height: 6),
-            Text('Reel, article, post, or page — any source.',
-                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 14),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                hintText: 'https://…',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (v) => Navigator.pop(ctx, v),
-            ),
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text),
-              child: const Text('Make card'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (url == null || url.trim().isEmpty || !context.mounted) return;
-    final libraryVm = context.read<LibraryViewModel>();
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ShareScreen(sharedUrl: url.trim())),
-    );
-    await libraryVm.refresh();
-  }
-}
-
-class _SearchField extends StatefulWidget {
-  const _SearchField({
-    required this.query,
-    required this.busy,
-    required this.onChanged,
-    required this.onClear,
-  });
-  final String query;
-  final bool busy;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onClear;
-
-  @override
-  State<_SearchField> createState() => _SearchFieldState();
-}
-
-class _SearchFieldState extends State<_SearchField> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.query);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(Insets.page, 4, Insets.page, 4),
-      child: TextField(
-        controller: _controller,
-        textInputAction: TextInputAction.search,
-        onChanged: (v) {
-          setState(() {}); // refresh the clear-button affordance
-          widget.onChanged(v);
-        },
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: 'Search your cards',
-          prefixIcon: widget.busy
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : const Icon(Icons.search_rounded),
-          suffixIcon: _controller.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () {
-                    _controller.clear();
-                    widget.onClear();
-                  },
-                ),
-          border: const OutlineInputBorder(),
-        ),
-      ),
     );
   }
 }
@@ -296,6 +213,7 @@ class _FilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final filters = <(String, CardState?)>[
       ('All', null),
       ('Ready', CardState.ready),
@@ -303,10 +221,10 @@ class _FilterBar extends StatelessWidget {
       ('Failed', CardState.failed),
     ];
     return SizedBox(
-      height: 50,
+      height: 44,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+        padding: const EdgeInsets.fromLTRB(Insets.page, 6, Insets.page, 4),
         children: [
           for (final (label, state) in filters)
             Padding(
@@ -315,6 +233,16 @@ class _FilterBar extends StatelessWidget {
                 label: Text(label),
                 selected: selected == state,
                 onSelected: (_) => onSelect(state),
+                selectedColor: Brand.violet,
+                backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                labelStyle: TextStyle(
+                  color: selected == state ? Colors.white : scheme.onSurfaceVariant,
+                  fontWeight: selected == state ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 12.5,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                showCheckmark: false,
               ),
             ),
         ],
@@ -335,11 +263,12 @@ class _TagBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      height: 46,
+      height: 40,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+        padding: const EdgeInsets.fromLTRB(Insets.page, 2, Insets.page, 4),
         children: [
           for (final tag in tags)
             Padding(
@@ -348,53 +277,20 @@ class _TagBar extends StatelessWidget {
                 label: Text('#$tag'),
                 selected: selected == tag,
                 onSelected: (_) => onSelect(tag),
-                visualDensity: VisualDensity.compact,
+                selectedColor: Brand.violet.withValues(alpha: 0.85),
+                backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
+                labelStyle: TextStyle(
+                  color: selected == tag ? Colors.white : scheme.onSurfaceVariant,
+                  fontWeight: selected == tag ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 12,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                showCheckmark: false,
               ),
             ),
         ],
       ),
-    );
-  }
-}
-
-class _Message extends StatelessWidget {
-  const _Message({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.action,
-  });
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListView(
-      // ListView so RefreshIndicator works even on the empty/error state.
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.22),
-        Icon(icon, size: 52, color: theme.colorScheme.outline),
-        const SizedBox(height: 16),
-        Text(title,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleLarge),
-        const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 48),
-          child: Text(subtitle,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ),
-        if (action != null) ...[
-          const SizedBox(height: 20),
-          Center(child: action!),
-        ],
-      ],
     );
   }
 }

@@ -13,8 +13,25 @@ import '../../../core/theme.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/actions_view_model.dart';
 
+/// Standalone Actions screen (kept for direct navigation). The body is now also
+/// reusable as the Library's "To-do" segment via [ActionsBody].
 class ActionsScreen extends StatelessWidget {
   const ActionsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('To-do')),
+      body: const SafeArea(child: ActionsBody()),
+    );
+  }
+}
+
+/// The to-do content — every action followed off a reel, grouped by source card.
+/// Self-providing so it can be dropped into the Library's segmented view or used
+/// standalone. No app bar of its own; the host supplies chrome.
+class ActionsBody extends StatelessWidget {
+  const ActionsBody({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -32,47 +49,26 @@ class _ActionsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<ActionsViewModel>();
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Actions'),
-        actions: [
-          if (vm.pendingCount > 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Text(
-                  '${vm.pendingCount} to do',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () => vm.load(showSpinner: false),
-        child: switch (vm.status) {
-          ActionsStatus.loading || ActionsStatus.idle =>
-            const Center(child: CircularProgressIndicator()),
-          ActionsStatus.error => _Message(
-              icon: Icons.error_outline_rounded,
-              text: "Couldn't load your actions",
-              onRetry: vm.load,
-            ),
-          ActionsStatus.empty => const _Message(
-              icon: Icons.checklist_rounded,
-              text: 'No actions yet.\nOpen a card and tap “Follow these actions”.',
-            ),
-          ActionsStatus.ready => ListView.builder(
-              padding: const EdgeInsets.fromLTRB(
-                  Insets.page, 12, Insets.page, 32),
-              itemCount: vm.groups.length,
-              itemBuilder: (ctx, i) => _GroupCard(group: vm.groups[i]),
-            ),
-        },
-      ),
+    return RefreshIndicator(
+      onRefresh: () => vm.load(showSpinner: false),
+      child: switch (vm.status) {
+        ActionsStatus.loading || ActionsStatus.idle =>
+          const Center(child: CircularProgressIndicator()),
+        ActionsStatus.error => _Message(
+            icon: Icons.error_outline_rounded,
+            text: "Couldn't load your actions",
+            onRetry: vm.load,
+          ),
+        ActionsStatus.empty => const _Message(
+            icon: Icons.checklist_rounded,
+            text: 'No actions yet.\nOpen a card and tap “Follow these actions”.',
+          ),
+        ActionsStatus.ready => ListView.builder(
+            padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
+            itemCount: vm.groups.length,
+            itemBuilder: (ctx, i) => _GroupCard(group: vm.groups[i]),
+          ),
+      },
     );
   }
 }

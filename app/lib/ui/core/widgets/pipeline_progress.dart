@@ -2,12 +2,15 @@
 /// Downloading → Extracting → Structuring → Finishing as SSE stages arrive, so
 /// the user sees the work happening. Shared by the share receiver and the
 /// reader's processing state.
+///
+/// Branded: done nodes fill with the brand gradient, the active node pulses, and
+/// connectors fill as work advances — the signature "watch the magic" moment.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/pipeline_event.dart';
-import '../theme.dart';
+import '../brand.dart';
 
 class PipelineProgress extends StatelessWidget {
   const PipelineProgress({
@@ -45,7 +48,7 @@ class PipelineProgress extends StatelessWidget {
           ),
         if (detail.isNotEmpty && idx < 0)
           Padding(
-            padding: const EdgeInsets.only(top: 8, left: 38),
+            padding: const EdgeInsets.only(top: 8, left: 40),
             child: Text(detail, style: theme.textTheme.bodySmall),
           ),
       ],
@@ -72,48 +75,24 @@ class _StageRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
-    final color =
-        done || active ? scheme.primary : scheme.outlineVariant;
+    final lit = done || active;
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Column(
             children: [
-              AnimatedContainer(
-                duration: Motion.fast,
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: done
-                      ? scheme.primary
-                      : active
-                          ? scheme.primaryContainer
-                          : scheme.surfaceContainerHighest,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: done
-                    ? Icon(Icons.check_rounded,
-                        size: 16, color: scheme.onPrimary)
-                    : active
-                        ? SizedBox(
-                            width: 13,
-                            height: 13,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation(scheme.primary),
-                            ),
-                          )
-                        : null,
-              ),
+              _node(scheme),
               if (!isLast)
                 Expanded(
                   child: Container(
-                    width: 2,
-                    margin: const EdgeInsets.symmetric(vertical: 2),
-                    color: done ? scheme.primary : scheme.outlineVariant,
+                    width: 2.5,
+                    margin: const EdgeInsets.symmetric(vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: done ? Brand.gradient : null,
+                      color: done ? null : scheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
             ],
@@ -121,32 +100,71 @@ class _StageRow extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(top: 3, bottom: 16),
+              padding: const EdgeInsets.only(top: 5, bottom: 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     label,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight:
-                          active ? FontWeight.w700 : FontWeight.w500,
-                      color: done || active
-                          ? scheme.onSurface
-                          : scheme.onSurfaceVariant,
+                      fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+                      color: lit ? scheme.onSurface : scheme.onSurfaceVariant,
                     ),
                   ),
                   if (active && detail.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(detail, style: theme.textTheme.bodySmall),
+                      child: Text(detail,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant)),
                     ),
                 ],
               ),
             ),
           ),
-          if (color == scheme.primary && (done || active))
-            const SizedBox.shrink(),
         ],
+      ),
+    );
+  }
+
+  Widget _node(ColorScheme scheme) {
+    if (done) {
+      return Container(
+        width: 28,
+        height: 28,
+        decoration: const BoxDecoration(gradient: Brand.gradient, shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: const Icon(Icons.check_rounded, size: 17, color: Colors.white),
+      );
+    }
+    if (active) {
+      final node = Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          gradient: Brand.gradient,
+          shape: BoxShape.circle,
+          boxShadow: Brand.glow(opacity: 0.45, blur: 14, y: 0),
+        ),
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 13,
+          height: 13,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.2,
+            valueColor: AlwaysStoppedAnimation(Colors.white),
+          ),
+        ),
+      );
+      return node;
+    }
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        shape: BoxShape.circle,
+        border: Border.all(color: scheme.outlineVariant),
       ),
     );
   }

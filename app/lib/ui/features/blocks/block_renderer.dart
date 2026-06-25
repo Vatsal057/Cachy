@@ -5,9 +5,12 @@ library;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Step;
+import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../domain/models/artifact.dart';
 import '../../../domain/models/block.dart';
+import '../../core/brand.dart';
 import '../../core/theme.dart';
 
 /// Callbacks the reader injects so checkable blocks can persist (PATCH).
@@ -440,12 +443,13 @@ class _StepStrip extends StatelessWidget {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: done ? scheme.primary : scheme.primaryContainer,
+              gradient: done ? Brand.gradient : null,
+              color: done ? null : scheme.primaryContainer,
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
             child: done
-                ? Icon(Icons.check_rounded, size: 16, color: scheme.onPrimary)
+                ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
                 : Text(
                     '${i + 1}',
                     style: TextStyle(
@@ -488,7 +492,12 @@ class _StepRow extends StatelessWidget {
     final theme = Theme.of(context);
     final done = step.checked;
     return InkWell(
-      onTap: onToggle == null ? null : () => onToggle!(!done),
+      onTap: onToggle == null
+          ? null
+          : () {
+              HapticFeedback.selectionClick();
+              onToggle!(!done);
+            },
       borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -536,12 +545,13 @@ class _StepMarker extends StatelessWidget {
       width: 28,
       height: 28,
       decoration: BoxDecoration(
-        color: done ? scheme.primary : scheme.primaryContainer,
+        gradient: done ? Brand.gradient : null,
+        color: done ? null : scheme.primaryContainer,
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
       child: done
-          ? Icon(Icons.check_rounded, size: 18, color: scheme.onPrimary)
+          ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
           : Text(
               '$number',
               style: TextStyle(
@@ -626,7 +636,10 @@ class _Checklist extends StatelessWidget {
           InkWell(
             onTap: onToggle == null
                 ? null
-                : () => onToggle!(block.id, i, !block.items[i].checked),
+                : () {
+                    HapticFeedback.selectionClick();
+                    onToggle!(block.id, i, !block.items[i].checked);
+                  },
             borderRadius: BorderRadius.circular(10),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -663,22 +676,24 @@ class _CheckBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AnimatedContainer(
+    final box = AnimatedContainer(
       duration: Motion.fast,
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        color: checked ? scheme.primary : Colors.transparent,
+        gradient: checked ? Brand.gradient : null,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(
-          color: checked ? scheme.primary : scheme.outline,
-          width: 2,
-        ),
+        border: checked
+            ? null
+            : Border.all(color: scheme.outline, width: 2),
       ),
       child: checked
-          ? Icon(Icons.check_rounded, size: 17, color: scheme.onPrimary)
+          ? const Icon(Icons.check_rounded, size: 17, color: Colors.white)
           : null,
     );
+    if (!checked) return box;
+    return box.animate(key: const ValueKey('on')).scaleXY(
+        begin: 0.7, end: 1, duration: Motion.fast, curve: Motion.spring);
   }
 }
 

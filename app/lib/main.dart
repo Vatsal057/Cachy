@@ -6,27 +6,37 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import 'data/repositories/card_repository.dart';
 import 'data/services/api_client.dart';
 import 'data/services/local_store.dart';
-import 'ui/core/home_shell.dart';
+import 'ui/core/app_controller.dart';
+import 'ui/core/root_gate.dart';
 import 'ui/core/theme.dart';
 import 'ui/features/share/views/share_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   final store = await LocalStore.open();
   final api = ApiClient();
   final repository = CardRepository(api: api, store: store);
-  runApp(CachyApp(repository: repository));
+  final appController = AppController(store);
+  FlutterNativeSplash.remove();
+  runApp(CachyApp(repository: repository, appController: appController));
 }
 
 class CachyApp extends StatefulWidget {
-  const CachyApp({super.key, required this.repository});
+  const CachyApp({
+    super.key,
+    required this.repository,
+    required this.appController,
+  });
   final CardRepository repository;
+  final AppController appController;
 
   @override
   State<CachyApp> createState() => _CachyAppState();
@@ -91,16 +101,23 @@ class _CachyAppState extends State<CachyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return Provider<CardRepository>.value(
-      value: widget.repository,
-      child: MaterialApp(
-        title: 'Cachy',
-        debugShowCheckedModeBanner: false,
-        navigatorKey: _navigatorKey,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        themeMode: ThemeMode.system,
-        home: const HomeShell(),
+    return MultiProvider(
+      providers: [
+        Provider<CardRepository>.value(value: widget.repository),
+        ChangeNotifierProvider<AppController>.value(value: widget.appController),
+      ],
+      child: Consumer<AppController>(
+        builder: (context, app, _) => MaterialApp(
+          title: 'Cachy',
+          debugShowCheckedModeBanner: false,
+          navigatorKey: _navigatorKey,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: app.themeMode,
+          // RootGate shows the splash, routes first-run users into onboarding,
+          // then settles on the home shell.
+          home: const RootGate(),
+        ),
       ),
     );
   }
