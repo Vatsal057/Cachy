@@ -63,7 +63,7 @@ def test_fetch_article_handles_no_extract(monkeypatch):
 @pytest.mark.parametrize("url,is_video", [
     ("https://www.instagram.com/reel/abc", True),
     ("https://youtu.be/abc", True),
-    ("https://www.tiktok.com/@x/video/1", True),
+    ("https://www.youtube.com/shorts/abc", True),
     ("https://www.reddit.com/r/x/comments/1/title", False),
     ("https://en.wikipedia.org/wiki/Sleep", False),
     ("https://someblog.com/post", False),

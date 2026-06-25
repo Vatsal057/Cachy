@@ -17,7 +17,7 @@ class Source {
   });
 
   final String url;
-  final String? platform; // instagram | tiktok | youtube
+  final String? platform; // instagram | youtube
   final String? creator;
   final String caption;
   final int? durationSeconds;
@@ -78,6 +78,45 @@ class PrimaryAction {
       );
 }
 
+/// One concrete to-do the reel tells the viewer to do (docs/13).
+class ActionItem {
+  const ActionItem({required this.id, required this.text, this.done = false});
+
+  final String id;
+  final String text;
+  final bool done;
+
+  factory ActionItem.fromJson(Map<String, dynamic> json) => ActionItem(
+        id: (json['id'] as String?) ?? '',
+        text: (json['text'] as String?) ?? '',
+        done: (json['done'] as bool?) ?? false,
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'text': text, 'done': done};
+}
+
+/// Per-card action list (docs/13). `followed` flips true when the user opts the
+/// card into the Actions hub; until then the list is inert.
+class ActionItems {
+  const ActionItems({this.followed = false, this.items = const []});
+
+  final bool followed;
+  final List<ActionItem> items;
+
+  bool get isPresent => items.isNotEmpty;
+
+  factory ActionItems.fromJson(Map<String, dynamic> json) => ActionItems(
+        followed: (json['followed'] as bool?) ?? false,
+        items: ((json['items'] as List?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(ActionItem.fromJson)
+            .toList(),
+      );
+
+  Map<String, dynamic> toJson() =>
+      {'followed': followed, 'items': items.map((e) => e.toJson()).toList()};
+}
+
 class Media {
   const Media({this.thumbnail, this.keyframes = const []});
 
@@ -134,6 +173,7 @@ class Card {
     required this.source,
     this.base = const Base(),
     this.primaryAction = const PrimaryAction(),
+    this.actionItems = const ActionItems(),
     this.blocks = const [],
     this.media = const Media(),
     this.meta = const Meta(),
@@ -147,6 +187,7 @@ class Card {
   final Source source;
   final Base base;
   final PrimaryAction primaryAction;
+  final ActionItems actionItems;
   final List<Block> blocks;
   final Media media;
   final Meta meta;
@@ -179,6 +220,9 @@ class Card {
       primaryAction: PrimaryAction.fromJson(
         (json['primary_action'] as Map<String, dynamic>?) ?? const {},
       ),
+      actionItems: ActionItems.fromJson(
+        (json['action_items'] as Map<String, dynamic>?) ?? const {},
+      ),
       blocks: rawBlocks.map(Block.fromJson).toList(),
       media: Media.fromJson((json['media'] as Map<String, dynamic>?) ?? const {}),
       meta: Meta.fromJson((json['meta'] as Map<String, dynamic>?) ?? const {}),
@@ -188,6 +232,7 @@ class Card {
 
   Card copyWith({
     CardState? state,
+    ActionItems? actionItems,
     List<Block>? blocks,
     List<Map<String, dynamic>>? rawBlocks,
   }) =>
@@ -199,6 +244,7 @@ class Card {
         source: source,
         base: base,
         primaryAction: primaryAction,
+        actionItems: actionItems ?? this.actionItems,
         blocks: blocks ?? this.blocks,
         media: media,
         meta: meta,

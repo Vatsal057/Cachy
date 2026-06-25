@@ -612,7 +612,7 @@ def _download_yt_dlp(
     """
     out_path = Path(output_path)
     opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio/best",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "outtmpl": str(out_path),
         "merge_output_format": "mp4",
         "quiet": True,

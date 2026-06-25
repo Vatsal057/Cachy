@@ -7,7 +7,6 @@ import 'dart:convert';
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
-import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -97,6 +96,14 @@ class CardRepository {
     return card;
   }
 
+  /// Persist the card's action list (docs/13) — follow toggle + per-item done.
+  Future<Card> patchActionItems(
+      String cardId, Map<String, dynamic> actionItems) async {
+    final card = await _api.patchCardActionItems(cardId, actionItems);
+    await _store.cacheCard(cardId, _rawOf(card));
+    return card;
+  }
+
   Future<void> delete(String cardId) async {
     await _api.deleteCard(cardId);
     await _store.removeCard(cardId);
@@ -137,21 +144,6 @@ class CardRepository {
   Future<LibraryChatResult> libraryChat(List<Map<String, String>> messages) =>
       _api.libraryChat(messages);
 
-  // --- collections (docs/09) — user-created groups of cards --------------- //
-  Future<List<Collection>> listCollections() => _api.listCollections();
-
-  Future<CollectionDetail> getCollection(String id) => _api.getCollection(id);
-
-  Future<Collection> createCollection(String name) =>
-      _api.createCollection(name);
-
-  Future<void> deleteCollection(String id) => _api.deleteCollection(id);
-
-  Future<Collection> addCardToCollection(String id, String cardId) =>
-      _api.addCardToCollection(id, cardId);
-
-  Future<Collection> removeCardFromCollection(String id, String cardId) =>
-      _api.removeCardFromCollection(id, cardId);
 
   /// Reconstruct the raw JSON for caching. Uses preserved `rawBlocks` so block
   /// state round-trips losslessly.
@@ -180,6 +172,7 @@ class CardRepository {
           'label': card.primaryAction.label,
           'payload': card.primaryAction.payload,
         },
+        'action_items': card.actionItems.toJson(),
         'blocks': card.rawBlocks,
         'media': {
           'thumbnail': card.media.thumbnail,

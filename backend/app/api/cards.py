@@ -39,6 +39,8 @@ class CreateCardResponse(BaseModel):
 class PatchCardRequest(BaseModel):
     # Phase-1 user-mutable state lives inside blocks JSON (e.g. checked items).
     blocks: list | None = None
+    # User-mutable to-do state (docs/13): {followed, items:[{id,text,done}]}.
+    action_items: dict | None = None
     state: None = None  # state is server-controlled; ignored if sent
 
 
@@ -158,6 +160,8 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
             raise HTTPException(status_code=404, detail="card not found")
         if req.blocks is not None:
             row.blocks = req.blocks  # e.g. updated checked flags (optimistic client)
+        if req.action_items is not None:
+            row.action_items = req.action_items  # follow toggle + per-item done state
         await session.commit()
         await session.refresh(row)
         return row.to_card()

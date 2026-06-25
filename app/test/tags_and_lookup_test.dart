@@ -100,10 +100,10 @@ void main() {
       expect(uri.host, 'music.apple.com');
     });
 
-    test('app → Play Store', () {
+    test('app → Google Search', () {
       final uri = lookupUri(makeEntry(ArtifactType.app, 'Notion'));
-      expect(uri.host, 'play.google.com');
-      expect(uri.queryParameters['c'], 'apps');
+      expect(uri.host, 'www.google.com');
+      expect(uri.queryParameters['q'], 'Notion');
     });
 
     test('place → Google Maps', () {

@@ -28,8 +28,8 @@ class CardTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  /// Long-press confirm copy; overridable so the same tile can mean "remove from
-  /// collection" rather than "delete the card" depending on context.
+  /// Long-press confirm copy; overridable so the same tile can mean "remove"
+  /// rather than "delete the card" depending on context.
   final String confirmTitle;
   final String confirmBody;
   final String confirmAction;

@@ -25,7 +25,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- Share target: receive reel links shared as text from Instagram /
-                 TikTok / YouTube and a browser's share sheet (docs/06). -->
+                 YouTube and a browser's share sheet (docs/06). -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>

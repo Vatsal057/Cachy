@@ -122,6 +122,42 @@ class ReaderViewModel extends ChangeNotifier {
     await _persist(current, updated);
   }
 
+  // ----------------------------------------------------------------------- //
+  // Action items (docs/13): follow the card's to-dos into the Actions hub,
+  // then tick them off. Optimistic + PATCH, same pattern as checkable blocks.
+  // ----------------------------------------------------------------------- //
+
+  Future<void> setActionsFollowed(bool followed) async {
+    final current = _card;
+    if (current == null) return;
+    final updated = ActionItems(followed: followed, items: current.actionItems.items);
+    await _persistActions(current, updated);
+  }
+
+  Future<void> toggleActionItem(String itemId, bool done) async {
+    final current = _card;
+    if (current == null) return;
+    final updated = ActionItems(
+      followed: current.actionItems.followed,
+      items: [
+        for (final it in current.actionItems.items)
+          it.id == itemId ? ActionItem(id: it.id, text: it.text, done: done) : it,
+      ],
+    );
+    await _persistActions(current, updated);
+  }
+
+  Future<void> _persistActions(Card before, ActionItems updated) async {
+    _card = before.copyWith(actionItems: updated); // optimistic
+    _safeNotify();
+    try {
+      _card = await _repository.patchActionItems(cardId, updated.toJson());
+    } catch (_) {
+      _card = before; // revert on failure
+    }
+    _safeNotify();
+  }
+
   void _applyOptimistic(Card current, List<Map<String, dynamic>> rawBlocks) {
     _card = Card.fromJson({
       ..._rawShallow(current),
