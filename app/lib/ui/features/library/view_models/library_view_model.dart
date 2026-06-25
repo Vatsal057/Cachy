@@ -27,6 +27,25 @@ class LibraryViewModel extends ChangeNotifier {
   CardState? _filter;
   CardState? get filter => _filter;
 
+  // --- tag filter (auto-tags, client-side over loaded cards) -------------- //
+  String? _tagFilter;
+  String? get tagFilter => _tagFilter;
+
+  /// Distinct auto-tags across the loaded library, sorted for a stable chip row.
+  List<String> get availableTags {
+    final set = <String>{};
+    for (final c in _cards) {
+      set.addAll(c.base.tags);
+    }
+    final tags = set.toList()..sort();
+    return tags;
+  }
+
+  void setTagFilter(String? tag) {
+    _tagFilter = _tagFilter == tag ? null : tag;
+    notifyListeners();
+  }
+
   String? _error;
   String? get error => _error;
 
@@ -46,8 +65,13 @@ class LibraryViewModel extends ChangeNotifier {
 
   Timer? _debounce;
 
-  /// Cards to render: search hits when a query is active, else the library.
-  List<Card> get visibleCards => searching ? _results : cards;
+  /// Cards to render: search hits when a query is active, else the library
+  /// narrowed by the active tag filter (if any).
+  List<Card> get visibleCards {
+    if (searching) return _results;
+    if (_tagFilter == null) return cards;
+    return _cards.where((c) => c.base.tags.contains(_tagFilter)).toList();
+  }
 
   void setQuery(String value) {
     _query = value;

@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
+import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/pipeline_event.dart';
 
@@ -29,6 +30,20 @@ class CreateCardResult {
   final String cardId;
   final CardState state;
   final bool cached;
+}
+
+/// One card cited by a library-chat answer.
+class LibrarySource {
+  const LibrarySource({required this.cardId, required this.oneLiner});
+  final String cardId;
+  final String oneLiner;
+}
+
+/// A library-chat turn result: the reply plus the cards it was grounded on.
+class LibraryChatResult {
+  const LibraryChatResult({required this.reply, required this.sources});
+  final String reply;
+  final List<LibrarySource> sources;
 }
 
 class ApiClient {
@@ -155,6 +170,82 @@ class ApiClient {
     if (resp.statusCode >= 400) {
       throw ApiException(resp.statusCode, resp.body);
     }
+  }
+
+  /// Artifacts a single card references (docs/12) — the reader "References" strip.
+  Future<List<CatalogEntry>> cardArtifacts(String cardId, {int limit = 50}) async {
+    final resp =
+        await _client.get(_uri('/catalog', {'card_id': cardId, 'limit': limit}));
+    return _decodeList(resp).map(CatalogEntry.fromJson).toList();
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Library chat — cross-card grounded Q&A (docs/09)
+  // ------------------------------------------------------------------------- //
+
+  /// Cross-card Q&A. Stateless like single-card chat: replay the full history.
+  /// Returns the reply plus the cards it was grounded on.
+  Future<LibraryChatResult> libraryChat(
+      List<Map<String, String>> messages) async {
+    final resp = await _client.post(
+      _uri('/library/chat'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'messages': messages}),
+    );
+    final json = _decodeMap(resp);
+    final sources = ((json['sources'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map((s) => LibrarySource(
+              cardId: (s['card_id'] as String?) ?? '',
+              oneLiner: (s['one_liner'] as String?) ?? '',
+            ))
+        .toList();
+    return LibraryChatResult(
+      reply: (json['reply'] as String?) ?? '',
+      sources: sources,
+    );
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Collections — user-created groups of cards (docs/09)
+  // ------------------------------------------------------------------------- //
+
+  Future<List<Collection>> listCollections() async {
+    final resp = await _client.get(_uri('/collections'));
+    return _decodeList(resp).map(Collection.fromJson).toList();
+  }
+
+  Future<CollectionDetail> getCollection(String id) async {
+    final resp = await _client.get(_uri('/collections/$id'));
+    return CollectionDetail.fromJson(_decodeMap(resp));
+  }
+
+  Future<Collection> createCollection(String name) async {
+    final resp = await _client.post(
+      _uri('/collections'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'name': name}),
+    );
+    return Collection.fromJson(_decodeMap(resp));
+  }
+
+  Future<void> deleteCollection(String id) async {
+    final resp = await _client.delete(_uri('/collections/$id'));
+    if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
+  }
+
+  Future<Collection> addCardToCollection(String id, String cardId) async {
+    final resp = await _client.post(
+      _uri('/collections/$id/cards'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'card_id': cardId}),
+    );
+    return Collection.fromJson(_decodeMap(resp));
+  }
+
+  Future<Collection> removeCardFromCollection(String id, String cardId) async {
+    final resp = await _client.delete(_uri('/collections/$id/cards/$cardId'));
+    return Collection.fromJson(_decodeMap(resp));
   }
 
   // ------------------------------------------------------------------------- //

@@ -30,8 +30,9 @@ Full feature list by area. Phase tags: **[P1]** MVP, **[P2]**, **[P3]**.
 - Progressive top-down rendering **[P1]**
 - Checkable steps **[P1]**
 - Confidence/source signal on claims **[P1]**
-- Lookup-able products **[P2]**
-- Mappable places **[P2]**
+- Lookup-able products — catalog/reference tap opens a store/web search **[done]**
+- Visual step strips for multi-step cards **[done]**
+- Product/reference thumbnails on the card ("References" strip) **[done]**
 
 ## Action layer (docs/13)
 - One primary action per card **[P1]** (kind derived from content type)
@@ -46,7 +47,7 @@ Full feature list by area. Phase tags: **[P1]** MVP, **[P2]**, **[P3]**.
 ## Visual
 - Keyframe thumbnails + visual library grid **[P1]**
 - Color/motion/depth system, progressive-render animation **[P1]**
-- Maps with pins, charts, product thumbnails, visual step strips **[P2]**
+- Visual step strips + product/reference thumbnails **[done]**; maps-with-pins, charts (deferred)
 
 ## Catalog (artifacts)
 - Artifact extraction from referenced things (book/movie/podcast/product/place…) **[P1]**
@@ -57,9 +58,9 @@ Full feature list by area. Phase tags: **[P1]** MVP, **[P2]**, **[P3]**.
 ## Library & retrieval
 - Card states surfaced (queued/processing/ready/failed) **[P1]**
 - Basic search (full-text) **[P1]**
-- Collections + auto-tagging **[P2]**
-- Semantic search **[P2]**
-- Chat-with-your-library **[P3]**
+- Collections (manual card groups) + auto-tagging (LLM `base.tags`, schema 1.2) **[done]**
+- Semantic search — HF embeddings + cosine, full-text fallback **[done]**
+- Chat-with-your-library — cross-card grounded Q&A with source cards **[done]**
 
 ## Resurfacing
 - Weekly digest **[P3]**

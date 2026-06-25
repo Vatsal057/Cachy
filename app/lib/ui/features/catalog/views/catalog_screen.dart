@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../core/theme.dart';
+import '../services/artifact_lookup.dart';
 import '../view_models/catalog_view_model.dart';
 
 class CatalogScreen extends StatelessWidget {
@@ -132,6 +133,7 @@ class _ArtifactTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GestureDetector(
+      onTap: () => _lookup(context),
       onLongPress: () => _confirmDelete(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,6 +164,15 @@ class _ArtifactTile extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _lookup(BuildContext context) async {
+    final ok = await openLookup(entry);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't open a lookup for this")),
+      );
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context) async {

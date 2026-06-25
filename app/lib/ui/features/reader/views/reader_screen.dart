@@ -4,12 +4,15 @@
 /// visible, skim (tldr/blocks) below. The primary action is the dominant control.
 library;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
+import '../../../../domain/models/collection.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/pipeline_event.dart';
 import '../../../core/content_accent.dart';
@@ -17,6 +20,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/card_face.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../blocks/block_renderer.dart';
+import '../../catalog/services/artifact_lookup.dart';
 import '../view_models/reader_view_model.dart';
 import 'primary_action_bar.dart';
 
@@ -96,6 +100,10 @@ class _ReaderView extends StatelessWidget {
                           ),
                     ),
                   ],
+                  if (card.base.tags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _TagChips(tags: card.base.tags, accent: accent),
+                  ],
                   const SizedBox(height: 20),
                   if (card.isProcessing) _ProcessingPanel(vm: vm),
                   if (card.isFailed) _FailedPanel(card: card),
@@ -107,6 +115,8 @@ class _ReaderView extends StatelessWidget {
                       onToggleStep: vm.toggleStep,
                       onOpenUrl: (url) => _copyUrl(context, url),
                     ),
+                  // Referenced things (books/products/places) as tappable covers.
+                  if (card.isReady) _ReferencesStrip(cardId: card.cardId),
                   if (card.source.creator != null) ...[
                     const SizedBox(height: 8),
                     _SourceLine(card: card),
@@ -145,6 +155,14 @@ class _FaceAppBar extends StatelessWidget {
       expandedHeight: 240,
       pinned: true,
       stretch: true,
+      actions: [
+        if (card.isReady)
+          IconButton(
+            tooltip: 'Add to collection',
+            icon: const Icon(Icons.playlist_add_rounded),
+            onPressed: () => _addToCollection(context, card),
+          ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Hero(
           tag: 'card-face-${card.cardId}',
@@ -153,6 +171,116 @@ class _FaceAppBar extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _addToCollection(BuildContext context, model.Card card) async {
+    final repo = context.read<CardRepository>();
+    List<Collection> collections;
+    try {
+      collections = await repo.listCollections();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't load collections")),
+        );
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    final choice = await showModalBottomSheet<_CollectionChoice>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Add to collection',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: const Text('New collection…'),
+              onTap: () => Navigator.pop(ctx, const _CollectionChoice.create()),
+            ),
+            for (final c in collections)
+              ListTile(
+                leading: const Icon(Icons.folder_rounded),
+                title: Text(c.name),
+                onTap: () => Navigator.pop(ctx, _CollectionChoice.existing(c.id)),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+
+    var collectionId = choice.id;
+    if (choice.isCreate) {
+      final name = await _promptName(context);
+      if (name == null || name.trim().isEmpty || !context.mounted) return;
+      try {
+        collectionId = (await repo.createCollection(name.trim())).id;
+      } catch (_) {
+        return;
+      }
+    }
+    if (collectionId == null) return;
+    try {
+      await repo.addCardToCollection(collectionId, card.cardId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Added to collection')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't add to collection")),
+        );
+      }
+    }
+  }
+
+  Future<String?> _promptName(BuildContext context) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New collection'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'e.g. Recipes to try'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A pick from the add-to-collection sheet: an existing collection or "create".
+class _CollectionChoice {
+  const _CollectionChoice.existing(this.id) : isCreate = false;
+  const _CollectionChoice.create()
+      : id = null,
+        isCreate = true;
+  final String? id;
+  final bool isCreate;
 }
 
 class _TypeChip extends StatelessWidget {
@@ -247,6 +375,158 @@ class _FailedPanel extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TagChips extends StatelessWidget {
+  const _TagChips({required this.tags, required this.accent});
+  final List<String> tags;
+  final ContentAccent accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final tag in tags)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: accent.color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '#$tag',
+              style: TextStyle(
+                color: accent.color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// "References" strip: the artifacts this card mentions, as tappable covers that
+/// open a store/lookup (docs/09). Fetched once; renders nothing if there are none
+/// or the fetch fails (graceful — never blocks the reader).
+class _ReferencesStrip extends StatefulWidget {
+  const _ReferencesStrip({required this.cardId});
+  final String cardId;
+
+  @override
+  State<_ReferencesStrip> createState() => _ReferencesStripState();
+}
+
+class _ReferencesStripState extends State<_ReferencesStrip> {
+  List<CatalogEntry> _entries = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final entries =
+          await context.read<CardRepository>().cardArtifacts(widget.cardId);
+      if (mounted) setState(() => _entries = entries);
+    } catch (_) {
+      // Best-effort: leave the strip empty on any failure.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_entries.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('References',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 150,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _entries.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (ctx, i) => _ReferenceTile(entry: _entries[i]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReferenceTile extends StatelessWidget {
+  const _ReferenceTile({required this.entry});
+  final CatalogEntry entry;
+
+  static const _icons = {
+    ArtifactType.book: Icons.menu_book_rounded,
+    ArtifactType.movie: Icons.movie_rounded,
+    ArtifactType.tvShow: Icons.tv_rounded,
+    ArtifactType.podcast: Icons.podcasts_rounded,
+    ArtifactType.music: Icons.music_note_rounded,
+    ArtifactType.product: Icons.shopping_bag_rounded,
+    ArtifactType.place: Icons.place_rounded,
+    ArtifactType.app: Icons.apps_rounded,
+    ArtifactType.other: Icons.category_rounded,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final placeholder = ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(_icons[entry.type] ?? Icons.category_rounded,
+            size: 28, color: theme.colorScheme.onSurfaceVariant),
+      ),
+    );
+    return GestureDetector(
+      onTap: () => openLookup(entry),
+      child: SizedBox(
+        width: 92,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 0.72,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: (entry.thumbnail == null || entry.thumbnail!.isEmpty)
+                    ? placeholder
+                    : CachedNetworkImage(
+                        imageUrl: entry.thumbnail!,
+                        fit: BoxFit.cover,
+                        placeholder: (c, _) => placeholder,
+                        errorWidget: (c, _, __) => placeholder,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              entry.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
+            ),
+          ],
+        ),
       ),
     );
   }

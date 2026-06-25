@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     hf_api_key: str = ""
     hf_model: str = "Qwen/Qwen2.5-72B-Instruct"
 
+    # semantic search embeddings (free, reuses hf_api_key; docs/09)
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+
     # ingestion
     rapidapi_key: str = ""
     cookies_path: str = ""

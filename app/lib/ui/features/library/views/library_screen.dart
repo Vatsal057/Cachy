@@ -13,6 +13,7 @@ import '../../reader/views/reader_screen.dart';
 import '../../share/views/share_screen.dart';
 import '../view_models/library_view_model.dart';
 import 'card_tile.dart';
+import 'library_chat_screen.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -47,9 +48,18 @@ class _LibraryView extends StatelessWidget {
                 child: Icon(Icons.cloud_off_rounded, size: 20),
               ),
             ),
+          IconButton(
+            tooltip: 'Ask your library',
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LibraryChatScreen()),
+            ),
+          ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(108),
+          preferredSize: Size.fromHeight(
+            108 + (vm.availableTags.isEmpty || vm.searching ? 0 : 46),
+          ),
           child: Column(
             children: [
               _SearchField(
@@ -62,6 +72,12 @@ class _LibraryView extends StatelessWidget {
                 selected: vm.filter,
                 onSelect: vm.setFilter,
               ),
+              if (vm.availableTags.isNotEmpty && !vm.searching)
+                _TagBar(
+                  tags: vm.availableTags,
+                  selected: vm.tagFilter,
+                  onSelect: vm.setTagFilter,
+                ),
             ],
           ),
         ),
@@ -112,7 +128,19 @@ class _LibraryView extends StatelessWidget {
         );
       case LibraryStatus.idle:
       case LibraryStatus.ready:
-        return _grid(context, vm.cards, vm, api);
+        final visible = vm.visibleCards;
+        if (visible.isEmpty && vm.tagFilter != null) {
+          return _Message(
+            icon: Icons.label_off_rounded,
+            title: 'No cards tagged “${vm.tagFilter}”',
+            subtitle: 'Clear the tag to see your whole library.',
+            action: FilledButton(
+              onPressed: () => vm.setTagFilter(vm.tagFilter),
+              child: const Text('Clear tag'),
+            ),
+          );
+        }
+        return _grid(context, visible, vm, api);
     }
   }
 
@@ -287,6 +315,40 @@ class _FilterBar extends StatelessWidget {
                 label: Text(label),
                 selected: selected == state,
                 onSelected: (_) => onSelect(state),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TagBar extends StatelessWidget {
+  const _TagBar({
+    required this.tags,
+    required this.selected,
+    required this.onSelect,
+  });
+  final List<String> tags;
+  final String? selected;
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+        children: [
+          for (final tag in tags)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text('#$tag'),
+                selected: selected == tag,
+                onSelected: (_) => onSelect(tag),
+                visualDensity: VisualDensity.compact,
               ),
             ),
         ],

@@ -17,7 +17,7 @@ not new UI code.
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "card_id": "uuid",
   "state": "queued | processing | ready | failed",
   "failure_reason": null,
@@ -35,7 +35,8 @@ not new UI code.
     "one_liner": "3 ways to cut your AWS bill",
     "tldr": "Short standalone summary the card can be understood by alone.",
     "content_type": "recipe | workout | tutorial | tip | product_list | travel | news_explainer | other",
-    "type_confidence": 0.0
+    "type_confidence": 0.0,
+    "tags": ["aws", "cost-optimization"]
   },
 
   "primary_action": {
@@ -65,6 +66,9 @@ type-detection success. A card that confuses the type logic still renders useful
 - `one_liner` describes what the reel *gives you*, not what it's *about*.
   Good: "3 ways to cut your AWS bill." Bad: "A video discussing cloud costs."
 - `tldr` must let the card stand alone later, when the user has forgotten the reel.
+- `tags` (schema 1.2) is a short list of lowercase topical keywords for browsing
+  and grouping the library. Validated like everything else (lowercased, deduped,
+  capped at 6); an empty list is normal and never blocks a card.
 
 ## Block vocabulary
 
@@ -164,6 +168,7 @@ Never trust raw model output. After parsing:
 - Drop blocks missing required fields for their type.
 - Ensure `base.one_liner` and `base.tldr` are non-empty; synthesize from transcript
   if the model omitted them.
+- Coerce `base.tags` to lowercase deduped strings, capped at 6 (drop non-strings).
 - Assign stable `id`s if missing.
 
 The guarantee: **a card always renders something sane**, even on a degraded
@@ -184,4 +189,6 @@ what took `schema_version` to `1.1`.
 `schema_version` is on every card. When the vocabulary changes, bump it; the
 client renders known versions and degrades gracefully on unknown future blocks
 (render their `text`/`items` if present, else skip). **1.1** added the
-`artifacts` list to the structuring output (block vocabulary unchanged).
+`artifacts` list to the structuring output (block vocabulary unchanged). **1.2**
+added `base.tags` (auto-tags) to the card object; the block vocabulary is still
+unchanged, so older clients simply ignore the new field.

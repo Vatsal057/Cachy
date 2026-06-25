@@ -164,7 +164,7 @@ class _StepList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
+    final rows = Column(
       children: [
         for (var i = 0; i < block.steps.length; i++)
           _StepRow(
@@ -178,7 +178,77 @@ class _StepList extends StatelessWidget {
           const SizedBox.shrink(),
       ].map((w) => w).toList(),
     )._dividedBy(theme);
+
+    // Visual step strip (docs/09): a compact horizontal at-a-glance progress
+    // row above the detailed list, for sequences of 3+ steps.
+    if (block.steps.length < 3) return rows;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _StepStrip(steps: block.steps),
+        const SizedBox(height: 12),
+        rows,
+      ],
+    );
   }
+}
+
+/// Horizontal numbered strip summarising a step list; filled = done.
+class _StepStrip extends StatelessWidget {
+  const _StepStrip({required this.steps});
+  final List<Step> steps;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 28,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: steps.length,
+        separatorBuilder: (_, __) => _Connector(color: scheme.outlineVariant),
+        itemBuilder: (ctx, i) {
+          final done = steps[i].checked;
+          return AnimatedContainer(
+            duration: Motion.fast,
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: done ? scheme.primary : scheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: done
+                ? Icon(Icons.check_rounded, size: 16, color: scheme.onPrimary)
+                : Text(
+                    '${i + 1}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: scheme.onPrimaryContainer,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _Connector extends StatelessWidget {
+  const _Connector({required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Container(
+          width: 14,
+          height: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          color: color,
+        ),
+      );
 }
 
 class _StepRow extends StatelessWidget {

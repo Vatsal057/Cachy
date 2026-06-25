@@ -18,12 +18,21 @@ class CardTile extends StatelessWidget {
     required this.api,
     required this.onTap,
     required this.onDelete,
+    this.confirmTitle = 'Delete card?',
+    this.confirmBody = 'This removes the card and its media.',
+    this.confirmAction = 'Delete',
   });
 
   final model.Card card;
   final ApiClient api;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+
+  /// Long-press confirm copy; overridable so the same tile can mean "remove from
+  /// collection" rather than "delete the card" depending on context.
+  final String confirmTitle;
+  final String confirmBody;
+  final String confirmAction;
 
   @override
   Widget build(BuildContext context) {
@@ -111,8 +120,8 @@ class CardTile extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete card?'),
-        content: const Text('This removes the card and its media.'),
+        title: Text(confirmTitle),
+        content: Text(confirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -120,7 +129,7 @@ class CardTile extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text(confirmAction),
           ),
         ],
       ),

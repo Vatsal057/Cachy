@@ -27,6 +27,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.config import get_settings
 from app.store import media as media_store
 from app.models.artifact import ArtifactType, CatalogEntry
+from app.models.collection import Collection
 from app.models.card import (
     Base as CardBase,
     Card,
@@ -72,6 +73,8 @@ class CardRow(Base):
     type_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     one_liner: Mapped[str | None] = mapped_column(Text, nullable=True)
     tldr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)  # auto-tags (docs/09)
+    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)  # semantic search (docs/09)
 
     primary_action: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     blocks: Mapped[list] = mapped_column(JSON, default=list)
@@ -107,6 +110,7 @@ class CardRow(Base):
                 tldr=self.tldr or "",
                 content_type=self.content_type or "other",
                 type_confidence=self.type_confidence or 0.0,
+                tags=list(self.tags or []),
             ),
             primary_action=PrimaryAction(**(self.primary_action or {})),
             blocks=self.blocks or [],
@@ -153,6 +157,29 @@ class ArtifactRow(Base):
             year=self.year,
             thumbnail=self.thumbnail,
             source_card_ids=list(self.source_card_ids or []),
+            created_at=(self.created_at or _utcnow()).isoformat(),
+        )
+
+
+class CollectionRow(Base):
+    """A user-created group of cards (docs/09). Membership is a card_ids JSON list,
+    matching the JSON-on-row pattern used for blocks / source_card_ids."""
+
+    __tablename__ = "collections"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    card_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    def to_collection(self) -> Collection:
+        return Collection(
+            id=self.id,
+            name=self.name,
+            card_ids=list(self.card_ids or []),
             created_at=(self.created_at or _utcnow()).isoformat(),
         )
 
