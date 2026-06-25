@@ -11,13 +11,13 @@ Full feature list by area. Phase tags: **[P1]** MVP, **[P2]**, **[P3]**.
 
 ## Extraction
 - Audio transcription (Whisper) **[P1]**
-- On-screen text OCR (via Gemini multimodal) **[P1]**
-- Visual context understanding **[P1]**
+- On-screen text OCR (via local Tesseract) **[P1]**
+- Visual context understanding (conditional HF Inference VLM) **[P1]**
 - Metadata capture (caption, creator, url, duration) **[P1]**
 
 ## Structuring
 - Content-type detection **[P1]**
-- Single adaptive structuring pass (Gemini) **[P1]**
+- Single adaptive structuring pass (text-only HF/Groq LLM) **[P1]**
 - Block vocabulary: heading, paragraph, bullet_list, step_list, key_value,
   checklist, callout, link **[P1]**; map, table **[P2]**
 - Strict schema validation + paragraph fallback **[P1]**

@@ -31,8 +31,9 @@ CPU-only, Groq hosted Whisper for transcription.
 - **Always validate LLM output** before persisting; fall back to a paragraph block.
   A card must always render something sane.
 - **The share path is transparent.** `POST /cards` returns immediately, but the client connects to an SSE stream to show pipeline progress to the user.
-- **Free-first stack.** Prefer free/local tools (faster-whisper, ffmpeg, Gemini
-  free tier). Flag anything that would incur cost before adding it.
+- **Free-first stack.** Prefer free/local tools (ffmpeg, Tesseract, Groq Whisper,
+  HF Inference / Groq free-tier LLMs). Flag anything that would incur cost before
+  adding it.
 
 ## Commands
 

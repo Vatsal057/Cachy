@@ -27,7 +27,7 @@ Three pieces:
                                    ┌────────────────────┼───────────────────┐
                                    ▼                    ▼                   ▼
                             ingestion          extraction           structuring
-                          (resolvers)     (ffmpeg/Whisper)            (Gemini)
+                          (resolvers)     (ffmpeg/Whisper)         (HF/Groq LLM)
 ```
 
 ## The pipeline (share → card)
@@ -41,8 +41,8 @@ Share / paste
       1. ingestion:   download media + caption           (02-ingestion.md)
       2. extraction:  ffmpeg → audio + keyframes
                       Whisper → transcript
-                      (OCR + visual via Gemini)           (03-extraction.md)
-      3. structuring: Gemini → validated block list       (04-...-schema.md)
+                      (OCR via Tesseract, scene via HF VLM) (03-extraction.md)
+      3. structuring: text-only LLM → validated block list (04-...-schema.md)
       4. persist:     save card + blocks + media refs
   → state = READY  (or FAILED with a reason)
   → Stream pushes updates to client at each step so user sees progress.

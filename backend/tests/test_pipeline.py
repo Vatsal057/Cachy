@@ -1,6 +1,8 @@
 """End-to-end pipeline with ingestion + extraction stubbed (no network, no ffmpeg,
 no keys). A job must still reach READY with a sane card (docs/01, docs/04)."""
 
+import os
+
 import pytest
 
 from app.models.card import CardState
@@ -25,16 +27,19 @@ async def _make_card_and_job(url: str) -> tuple[str, str]:
 
 @pytest.fixture
 def stub_pipeline(monkeypatch):
+    # Frames land under work_dir (a media_root subdir), mirroring real extraction —
+    # so to_card() maps them to served /media URLs (docs/05).
     async def fake_download(url, config=None):
         return DownloadResult("video", "/tmp/fake.mp4", "A nice caption", "yt-dlp")
 
     async def fake_extract(download, work_dir, source_line=""):
+        frame = os.path.join(work_dir, "frame_001.jpg")
         return ExtractionResult(
             aggregated_text="CAPTION: A nice caption\nTRANSCRIPT: Do the thing.",
             transcript="Do the thing.",
             ocr_text="",
-            thumbnail="/tmp/frame_001.jpg",
-            keyframes=["/tmp/frame_001.jpg"],
+            thumbnail=frame,
+            keyframes=[frame],
             had_transcript=True,
             had_ocr=False,
         )
@@ -59,7 +64,7 @@ async def test_job_reaches_ready_with_sane_card(database, stub_pipeline):
     assert card.base.one_liner  # always present
     assert card.base.tldr
     assert card.blocks  # fallback paragraph at minimum
-    assert card.media.thumbnail == "/tmp/frame_001.jpg"
+    assert card.media.thumbnail == f"/media/card_{card_id}/frame_001.jpg"
     assert card.source.resolver == "yt-dlp"
     assert card.meta.extraction.transcript is True
 

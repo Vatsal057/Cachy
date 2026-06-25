@@ -21,8 +21,11 @@ into the docs:
 
 1. **Frontend = Flutter, backend = Python/FastAPI.** (Stated by you.)
 2. **Transcription = Groq hosted Whisper** (free tier), given HF free CPU.
-3. **Structuring/OCR/visual = Gemini free tier**, single multimodal call per card.
-   (You've used Gemini before.)
+3. **Structuring = text-only LLM** via HuggingFace Inference Providers
+   (`Qwen/Qwen2.5-72B-Instruct`, default) or Groq (`llama-3.1-70b-versatile`,
+   fallback). OCR runs locally on Tesseract; visual/scene description is a rare
+   conditional HF Inference VLM call. No single multimodal call — vision is kept
+   off the structuring LLM.
 4. **Database = SQLite** for now (ephemeral on HF, fine for a project demo);
    external Postgres only if you want persistence.
 5. **Job queue = DB-backed**, worker in-process on the Space.
@@ -48,7 +51,7 @@ Most decisions are now settled by the HF / project-scope choice. What remains:
 
 ## Verify before building around them
 
-- **Current Gemini & Groq free-tier limits** — these shift; check live numbers
+- **Current HF Inference & Groq free-tier limits** — these shift; check live numbers
   before sizing your quota strategy. Single-pass + caching keeps you under
   whatever the ceiling is.
 

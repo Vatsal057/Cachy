@@ -13,7 +13,10 @@ import pytest
 _TMP = tempfile.mkdtemp(prefix="cachy_test_")
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TMP}/test.db"
 os.environ["MEDIA_DIR"] = f"{_TMP}/media"
-os.environ["GEMINI_API_KEY"] = ""
+# Pin every external backend off so the suite runs offline and exercises the
+# graceful-degradation paths — these override any real key in a developer's .env.
+os.environ["LLM_BACKEND"] = "none"
+os.environ["HF_API_KEY"] = ""
 os.environ["GROQ_API_KEY"] = ""
 os.environ["WHISPER_BACKEND"] = "none"
 os.environ["MAX_ATTEMPTS"] = "2"
