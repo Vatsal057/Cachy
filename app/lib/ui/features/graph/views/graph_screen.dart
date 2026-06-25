@@ -46,6 +46,7 @@ class _GraphScreenState extends State<GraphScreen>
   Offset _lastFocal = Offset.zero;
   double _baseZoom = 1.0;
   String? _selected;
+  String? _draggedNode;
 
   static const double _k = 78; // ideal edge length
 
@@ -149,6 +150,7 @@ class _GraphScreenState extends State<GraphScreen>
 
     // Centre gravity + apply with temperature cap.
     for (final n in data.nodes) {
+      if (n.id == _draggedNode) continue;
       var dd = disp[n.id]! - _pos[n.id]! * 0.03;
       final len = dd.distance;
       if (len > 0) dd = dd / len * math.min(len, _temp);
@@ -161,17 +163,42 @@ class _GraphScreenState extends State<GraphScreen>
   // Gestures
   // ------------------------------------------------------------------------ //
 
-  void _onScaleStart(ScaleStartDetails d) {
+  void _onScaleStart(ScaleStartDetails d, Size size) {
     _baseZoom = _zoom;
     _lastFocal = d.focalPoint;
+    _draggedNode = _hitTest(d.localFocalPoint, size);
+    if (_draggedNode != null) {
+      _selected = _draggedNode;
+      _temp = math.max(_temp, 25);
+      if (!_ticker.isActive) _ticker.start();
+    }
   }
 
-  void _onScaleUpdate(ScaleUpdateDetails d) {
+  void _onScaleUpdate(ScaleUpdateDetails d, Size size) {
     setState(() {
-      _zoom = (_baseZoom * d.scale).clamp(0.3, 4.0);
-      _pan += d.focalPoint - _lastFocal;
+      if (d.pointerCount > 1 || (d.scale - 1.0).abs() > 0.03) {
+        _draggedNode = null;
+        _zoom = (_baseZoom * d.scale).clamp(0.3, 4.0);
+        _pan += d.focalPoint - _lastFocal;
+      } else if (_draggedNode != null) {
+        final center = Offset(size.width / 2, size.height / 2);
+        final world = (d.localFocalPoint - center - _pan) / _zoom;
+        _pos[_draggedNode!] = world;
+        _temp = math.max(_temp, 25);
+        if (!_ticker.isActive) _ticker.start();
+      } else {
+        _pan += d.focalPoint - _lastFocal;
+      }
       _lastFocal = d.focalPoint;
     });
+  }
+
+  void _onScaleEnd(ScaleEndDetails d) {
+    if (_draggedNode != null) {
+      _draggedNode = null;
+      _temp = math.max(_temp, 15);
+      if (!_ticker.isActive) _ticker.start();
+    }
   }
 
   void _onTapUp(TapUpDetails d, Size size) {
@@ -194,7 +221,7 @@ class _GraphScreenState extends State<GraphScreen>
     double bestD = double.infinity;
     for (final entry in _pos.entries) {
       final d = (entry.value - world).distance;
-      if (d < 22 && d < bestD) {
+      if (d < 30 && d < bestD) {
         bestD = d;
         best = entry.key;
       }
@@ -242,8 +269,9 @@ class _GraphScreenState extends State<GraphScreen>
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         return GestureDetector(
-          onScaleStart: _onScaleStart,
-          onScaleUpdate: _onScaleUpdate,
+          onScaleStart: (d) => _onScaleStart(d, size),
+          onScaleUpdate: (d) => _onScaleUpdate(d, size),
+          onScaleEnd: _onScaleEnd,
           onTapUp: (d) => _onTapUp(d, size),
           child: CustomPaint(
             size: size,

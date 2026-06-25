@@ -92,6 +92,7 @@ async def _write_base(session, card_id: str, structured) -> None:
             type_confidence=base.type_confidence,
             tags=base.tags,
             primary_action=structured.primary_action.model_dump(),
+            action_items=structured.action_items.model_dump(),
         )
     )
     await session.commit()

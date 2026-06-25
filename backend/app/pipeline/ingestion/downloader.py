@@ -35,7 +35,7 @@ MediaType = Literal["video", "images", "article"]
 
 # URLs on these hosts go to the fragile video resolver cascade; everything else
 # is treated as a readable article/post (docs/02 article path).
-_VIDEO_HOSTS = ("instagram.com", "tiktok.com", "youtube.com", "youtu.be")
+_VIDEO_HOSTS = ("instagram.com", "youtube.com", "youtu.be")
 
 # Optional keyless resolvers, in cascade order. Probed by name; missing ones skip.
 _KEYLESS_NAMES = [
@@ -180,36 +180,35 @@ def download_content(
     os.makedirs(job_dir, exist_ok=True)
     output_path = os.path.join(job_dir, "video.mp4")
 
-    # 1) Optional keyless resolvers — free, fragile, ordered. A raised exception in
-    #    one must not abort the cascade; it just moves to the next.
-    for name, fn in _keyless_resolvers():
-        log.debug("trying keyless resolver: %s", name)
-        res = _safe_call(name, lambda fn=fn: fn(url, output_path))
-        if res:
-            if len(res) == 3:
-                m_type, path_or_list, caption = res
-            else:
-                path_or_list, caption = res
-                m_type = "video"
-            log.info("download ok via %s", name)
-            return DownloadResult(m_type, path_or_list, caption, name)
+    # 1) Optional keyless resolvers & RapidAPI — free, fragile, ordered (Instagram only).
+    if "instagram.com" in url:
+        for name, fn in _keyless_resolvers():
+            log.debug("trying keyless resolver: %s", name)
+            res = _safe_call(name, lambda fn=fn: fn(url, output_path))
+            if res:
+                if len(res) == 3:
+                    m_type, path_or_list, caption = res
+                else:
+                    path_or_list, caption = res
+                    m_type = "video"
+                log.info("download ok via %s", name)
+                return DownloadResult(m_type, path_or_list, caption, name)
 
-    # 2) RapidAPI — optional, only if a key is configured and resolvers exposes it.
-    rapid = getattr(resolvers, "_download_rapidapi", None)
-    if config.rapidapi_key and callable(rapid):
-        log.debug("trying rapidapi")
-        res = _safe_call(
-            "rapidapi",
-            lambda: rapid(url, output_path, config.rapidapi_key),
-        )
-        if res:
-            if len(res) == 3:
-                m_type, path_or_list, caption = res
-            else:
-                path_or_list, caption = res
-                m_type = "video"
-            log.info("download ok via rapidapi")
-            return DownloadResult(m_type, path_or_list, caption, "rapidapi")
+        rapid = getattr(resolvers, "_download_rapidapi", None)
+        if config.rapidapi_key and callable(rapid):
+            log.debug("trying rapidapi")
+            res = _safe_call(
+                "rapidapi",
+                lambda: rapid(url, output_path, config.rapidapi_key),
+            )
+            if res:
+                if len(res) == 3:
+                    m_type, path_or_list, caption = res
+                else:
+                    path_or_list, caption = res
+                    m_type = "video"
+                log.info("download ok via rapidapi")
+                return DownloadResult(m_type, path_or_list, caption, "rapidapi")
 
     # 3) yt-dlp — local fallback for videos/reels.
     yt = getattr(resolvers, "_download_yt_dlp", None)

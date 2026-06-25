@@ -107,5 +107,42 @@ void main() {
       });
       expect(card.base.contentType, ContentType.other);
     });
+
+    test('action_items parse and round-trip through toJson (docs/13)', () {
+      final card = Card.fromJson({
+        'card_id': 'c4',
+        'state': 'ready',
+        'source': {'url': 'u'},
+        'action_items': {
+          'followed': true,
+          'items': [
+            {'id': 'a1', 'text': 'Drink water', 'done': true},
+            {'id': 'a2', 'text': 'Sleep early', 'done': false},
+          ],
+        },
+      });
+      expect(card.actionItems.followed, isTrue);
+      expect(card.actionItems.isPresent, isTrue);
+      expect(card.actionItems.items.first.text, 'Drink water');
+      expect(card.actionItems.items.first.done, isTrue);
+      // Survives serialization for caching / PATCH.
+      expect(card.actionItems.toJson(), {
+        'followed': true,
+        'items': [
+          {'id': 'a1', 'text': 'Drink water', 'done': true},
+          {'id': 'a2', 'text': 'Sleep early', 'done': false},
+        ],
+      });
+    });
+
+    test('missing action_items defaults to unfollowed empty', () {
+      final card = Card.fromJson({
+        'card_id': 'c5',
+        'state': 'ready',
+        'source': {'url': 'u'},
+      });
+      expect(card.actionItems.followed, isFalse);
+      expect(card.actionItems.isPresent, isFalse);
+    });
   });
 }

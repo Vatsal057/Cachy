@@ -9,7 +9,6 @@ import 'package:http/http.dart' as http;
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
-import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -126,6 +125,19 @@ class ApiClient {
     return Card.fromJson(_decodeMap(resp));
   }
 
+  /// Persist the card's action list (docs/13): follow toggle + per-item done.
+  Future<Card> patchCardActionItems(
+    String cardId,
+    Map<String, dynamic> actionItems,
+  ) async {
+    final resp = await _client.patch(
+      _uri('/cards/$cardId'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'action_items': actionItems}),
+    );
+    return Card.fromJson(_decodeMap(resp));
+  }
+
   Future<void> deleteCard(String cardId) async {
     final resp = await _client.delete(_uri('/cards/$cardId'));
     if (resp.statusCode >= 400) {
@@ -230,47 +242,6 @@ class ApiClient {
     );
   }
 
-  // ------------------------------------------------------------------------- //
-  // Collections — user-created groups of cards (docs/09)
-  // ------------------------------------------------------------------------- //
-
-  Future<List<Collection>> listCollections() async {
-    final resp = await _client.get(_uri('/collections'));
-    return _decodeList(resp).map(Collection.fromJson).toList();
-  }
-
-  Future<CollectionDetail> getCollection(String id) async {
-    final resp = await _client.get(_uri('/collections/$id'));
-    return CollectionDetail.fromJson(_decodeMap(resp));
-  }
-
-  Future<Collection> createCollection(String name) async {
-    final resp = await _client.post(
-      _uri('/collections'),
-      headers: const {'content-type': 'application/json'},
-      body: jsonEncode({'name': name}),
-    );
-    return Collection.fromJson(_decodeMap(resp));
-  }
-
-  Future<void> deleteCollection(String id) async {
-    final resp = await _client.delete(_uri('/collections/$id'));
-    if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
-  }
-
-  Future<Collection> addCardToCollection(String id, String cardId) async {
-    final resp = await _client.post(
-      _uri('/collections/$id/cards'),
-      headers: const {'content-type': 'application/json'},
-      body: jsonEncode({'card_id': cardId}),
-    );
-    return Collection.fromJson(_decodeMap(resp));
-  }
-
-  Future<Collection> removeCardFromCollection(String id, String cardId) async {
-    final resp = await _client.delete(_uri('/collections/$id/cards/$cardId'));
-    return Collection.fromJson(_decodeMap(resp));
-  }
 
   // ------------------------------------------------------------------------- //
   // SSE pipeline stream — GET /cards/{id}/stream

@@ -16,6 +16,8 @@ import re
 from app.config import get_settings
 from app.models.artifact import Artifact, ArtifactType
 from app.models.card import (
+    ActionItem,
+    ActionItems,
     Base,
     Block,
     ContentType,
@@ -66,6 +68,7 @@ class StructuredCard:
         blocks: list[dict],
         primary_action: PrimaryAction,
         artifacts: list[Artifact] | None = None,
+        action_items: ActionItems | None = None,
         degraded: bool = False,
         degraded_reason: str = "",
     ):
@@ -73,6 +76,9 @@ class StructuredCard:
         self.blocks = blocks  # list of plain dicts (validated), ready for JSON column
         self.primary_action = primary_action
         self.artifacts = artifacts or []  # referenced things for the catalog (docs/12)
+        # Concrete to-dos the video tells the viewer to do (docs/13). Inert
+        # (followed=False) at ingestion; the user opts a card into the hub later.
+        self.action_items = action_items or ActionItems()
         # True when no LLM produced a usable structured card and we fell back to a
         # plain paragraph — a degraded result the worker surfaces as a warning.
         self.degraded = degraded
@@ -131,6 +137,9 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
        "title": str,         // the proper name of the thing
        "creator": str|null,  // author / director / artist / host / brand
        "year": int|null }}
+  ],
+  "action_items": [          // concrete things the viewer should DO (may be empty)
+    str                      // one short imperative task, e.g. "Batch emails into two daily windows"
   ]
 }}
 
@@ -147,6 +156,11 @@ Rules:
   (paragraph/bullet/step/callout — NOT table cells), wrap its name in double
   brackets where you introduce it, e.g. "I loved [[Atomic Habits]]." Wrap only
   names that are in your artifacts list, and wrap each name at most once.
+- action_items: the concrete, doable tasks the video is telling the viewer to take
+  away and DO (e.g. "Drink water before each meal", "Try the Notion template").
+  Short imperative phrases, max ~8. These are the takeaways to act on, NOT a
+  restatement of every step in a recipe/tutorial. Return an empty list if the
+  video is purely informational with nothing to act on.
 
 {vocab}
 
@@ -307,6 +321,27 @@ def _coerce_tags(raw_tags) -> list[str]:
     return out
 
 
+def _coerce_action_items(raw_items) -> ActionItems:
+    """Validate the to-do list (docs/13): keep non-empty strings, dedupe, cap at 8,
+    assign ids, done=False, followed=False (inert until the user opts in). Never
+    trust the model — non-list / non-string / empty entries are dropped."""
+    out: list[ActionItem] = []
+    if not isinstance(raw_items, list):
+        return ActionItems()
+    seen: set[str] = set()
+    for raw in raw_items:
+        if not isinstance(raw, str):
+            continue
+        text = " ".join(raw.split()).strip()
+        if not text or len(text) > 200 or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        out.append(ActionItem(text=text))
+        if len(out) >= 8:
+            break
+    return ActionItems(followed=False, items=out)
+
+
 def _synthesize_base(bundle: str, transcript: str, caption: str) -> Base:
     """When the model omits one_liner/tldr, build something usable from raw text."""
     source = (transcript or caption or "").strip()
@@ -381,11 +416,12 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
         base.tldr = base.tldr or synth.tldr
 
     artifacts = _coerce_artifacts(data.get("artifacts") or [])
+    action_items = _coerce_action_items(data.get("action_items") or [])
 
     blocks = _coerce_blocks(data.get("blocks") or [])
     if not blocks:
         # an empty/garbage block list still gets a usable body, but keep any
-        # artifacts the model did surface (the catalog doesn't need blocks).
+        # artifacts/action_items the model did surface (neither needs blocks).
         log.warning(
             "structuring: LLM produced no valid blocks -> paragraph fallback"
         )
@@ -393,10 +429,12 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
             bundle, transcript, caption, reason="no valid blocks in LLM output"
         )
         fallback.artifacts = artifacts
+        fallback.action_items = action_items
         return fallback
 
     return StructuredCard(
-        base, blocks, _primary_action_for(base.content_type), artifacts
+        base, blocks, _primary_action_for(base.content_type), artifacts,
+        action_items=action_items,
     )
 
 

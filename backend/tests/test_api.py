@@ -18,7 +18,7 @@ async def client(database):
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "1.2"
+    assert r.json()["schema_version"] == "1.3"
 
 
 async def test_create_returns_id_and_queued(client):
@@ -54,6 +54,24 @@ async def test_get_list_patch_delete(client):
     p = await client.patch(f"/cards/{card_id}", json={"blocks": blocks})
     assert p.status_code == 200
     assert p.json()["blocks"][0]["items"][0]["checked"] is True
+
+    # action_items (docs/13): follow toggle + per-item done round-trips via PATCH.
+    actions = {
+        "followed": True,
+        "items": [{"id": "a1", "text": "Drink water", "done": True}],
+    }
+    pa = await client.patch(f"/cards/{card_id}", json={"action_items": actions})
+    assert pa.status_code == 200
+    body = pa.json()["action_items"]
+    assert body["followed"] is True
+    assert body["items"][0]["done"] is True
+    # default card is unfollowed with an empty list
+    fresh = await client.post(
+        "/cards", json={"url": "https://instagram.com/reel/actions-default"}
+    )
+    fid = fresh.json()["card_id"]
+    fa = (await client.get(f"/cards/{fid}")).json()["action_items"]
+    assert fa == {"followed": False, "items": []}
 
     d = await client.delete(f"/cards/{card_id}")
     assert d.status_code == 200
@@ -181,65 +199,6 @@ async def test_catalog_detail_and_delete(client, database):
     d = await client.delete(f"/catalog/{artifact_id}")
     assert d.status_code == 200
     assert (await client.get(f"/catalog/{artifact_id}")).status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# Collections CRUD
-# ---------------------------------------------------------------------------
-
-async def test_collections_create_and_list(client):
-    r = await client.post("/collections", json={"name": "My reads"})
-    assert r.status_code == 200
-    col = r.json()
-    assert col["name"] == "My reads"
-    assert col["card_ids"] == []
-
-    lst = await client.get("/collections")
-    assert any(c["id"] == col["id"] for c in lst.json())
-
-
-async def test_collections_create_blank_name_422(client):
-    r = await client.post("/collections", json={"name": "   "})
-    assert r.status_code == 422
-
-
-async def test_collections_add_remove_card(client):
-    col_r = await client.post("/collections", json={"name": "Cooking"})
-    col_id = col_r.json()["id"]
-
-    card_r = await client.post("/cards", json={"url": "https://instagram.com/reel/coll1"})
-    card_id = card_r.json()["card_id"]
-
-    # add
-    add = await client.post(f"/collections/{col_id}/cards", json={"card_id": card_id})
-    assert add.status_code == 200
-    assert card_id in add.json()["card_ids"]
-
-    # idempotent second add
-    add2 = await client.post(f"/collections/{col_id}/cards", json={"card_id": card_id})
-    assert add2.json()["card_ids"].count(card_id) == 1
-
-    # detail resolves cards
-    detail = await client.get(f"/collections/{col_id}")
-    assert detail.status_code == 200
-    assert any(c["card_id"] == card_id for c in detail.json()["cards"])
-
-    # remove
-    rm = await client.delete(f"/collections/{col_id}/cards/{card_id}")
-    assert rm.status_code == 200
-    assert card_id not in rm.json()["card_ids"]
-
-
-async def test_collections_delete(client):
-    r = await client.post("/collections", json={"name": "Temp"})
-    col_id = r.json()["id"]
-    d = await client.delete(f"/collections/{col_id}")
-    assert d.status_code == 200
-    assert (await client.get(f"/collections/{col_id}")).status_code == 404
-
-
-async def test_collections_missing_404(client):
-    assert (await client.get("/collections/no-such-id")).status_code == 404
 
 
 # ---------------------------------------------------------------------------

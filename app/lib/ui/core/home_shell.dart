@@ -5,8 +5,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../features/actions/views/actions_screen.dart';
 import '../features/catalog/views/catalog_screen.dart';
-import '../features/collections/views/collections_screen.dart';
 import '../features/graph/views/graph_screen.dart';
 import '../features/library/views/library_screen.dart';
 
@@ -27,8 +27,8 @@ class _HomeShellState extends State<HomeShell> {
         index: _index,
         children: const [
           LibraryScreen(),
+          ActionsScreen(),
           GraphScreen(),
-          CollectionsScreen(),
           CatalogScreen(),
         ],
       ),
@@ -42,14 +42,14 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Library',
           ),
           NavigationDestination(
+            icon: Icon(Icons.checklist_outlined),
+            selectedIcon: Icon(Icons.checklist_rounded),
+            label: 'Actions',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.hub_outlined),
             selectedIcon: Icon(Icons.hub_rounded),
             label: 'Graph',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder_rounded),
-            label: 'Collections',
           ),
           NavigationDestination(
             icon: Icon(Icons.auto_stories_outlined),

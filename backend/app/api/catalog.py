@@ -46,7 +46,7 @@ async def list_catalog(
 async def get_catalog_entry(artifact_id: str) -> CatalogDetail:
     async with db.session() as session:
         row = await session.get(db.ArtifactRow, artifact_id)
-        if row is None:
+        if row is None or not row.saved:
             raise HTTPException(status_code=404, detail="artifact not found")
         entry = row.to_entry()
         return CatalogDetail(entry=entry, source_card_ids=entry.source_card_ids)

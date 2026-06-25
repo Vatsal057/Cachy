@@ -12,7 +12,6 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
-import '../../../../domain/models/collection.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/pipeline_event.dart';
 import '../../../core/content_accent.dart';
@@ -117,6 +116,9 @@ class _ReaderView extends StatelessWidget {
                       artifacts: vm.artifacts,
                       onOpenArtifact: (e) => openLookup(e),
                     ),
+                  // Action items (docs/13): follow into the Actions hub, tick off.
+                  if (card.isReady && card.actionItems.isPresent)
+                    _ActionItemsSection(card: card, accent: accent, vm: vm),
                   // Referenced things (books/products/places) as tappable covers.
                   if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
                   if (card.source.creator != null) ...[
@@ -157,14 +159,7 @@ class _FaceAppBar extends StatelessWidget {
       expandedHeight: 240,
       pinned: true,
       stretch: true,
-      actions: [
-        if (card.isReady)
-          IconButton(
-            tooltip: 'Add to collection',
-            icon: const Icon(Icons.playlist_add_rounded),
-            onPressed: () => _addToCollection(context, card),
-          ),
-      ],
+      actions: const [],
       flexibleSpace: FlexibleSpaceBar(
         background: Hero(
           tag: 'card-face-${card.cardId}',
@@ -173,116 +168,6 @@ class _FaceAppBar extends StatelessWidget {
       ),
     );
   }
-
-  Future<void> _addToCollection(BuildContext context, model.Card card) async {
-    final repo = context.read<CardRepository>();
-    List<Collection> collections;
-    try {
-      collections = await repo.listCollections();
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't load collections")),
-        );
-      }
-      return;
-    }
-    if (!context.mounted) return;
-    final choice = await showModalBottomSheet<_CollectionChoice>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Add to collection',
-                    style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700)),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.create_new_folder_outlined),
-              title: const Text('New collection…'),
-              onTap: () => Navigator.pop(ctx, const _CollectionChoice.create()),
-            ),
-            for (final c in collections)
-              ListTile(
-                leading: const Icon(Icons.folder_rounded),
-                title: Text(c.name),
-                onTap: () => Navigator.pop(ctx, _CollectionChoice.existing(c.id)),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (choice == null || !context.mounted) return;
-
-    var collectionId = choice.id;
-    if (choice.isCreate) {
-      final name = await _promptName(context);
-      if (name == null || name.trim().isEmpty || !context.mounted) return;
-      try {
-        collectionId = (await repo.createCollection(name.trim())).id;
-      } catch (_) {
-        return;
-      }
-    }
-    if (collectionId == null) return;
-    try {
-      await repo.addCardToCollection(collectionId, card.cardId);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Added to collection')),
-        );
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't add to collection")),
-        );
-      }
-    }
-  }
-
-  Future<String?> _promptName(BuildContext context) {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New collection'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Recipes to try'),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A pick from the add-to-collection sheet: an existing collection or "create".
-class _CollectionChoice {
-  const _CollectionChoice.existing(this.id) : isCreate = false;
-  const _CollectionChoice.create()
-      : id = null,
-        isCreate = true;
-  final String? id;
-  final bool isCreate;
 }
 
 class _TypeChip extends StatelessWidget {
@@ -518,6 +403,132 @@ class _ReferenceTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall
                   ?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Do this" section (docs/13): the concrete to-dos the reel hands you. Unfollowed
+/// it's a preview with a Follow button; once followed each item is checkable and
+/// the card appears in the Actions hub.
+class _ActionItemsSection extends StatelessWidget {
+  const _ActionItemsSection({
+    required this.card,
+    required this.accent,
+    required this.vm,
+  });
+  final model.Card card;
+  final ContentAccent accent;
+  final ReaderViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final actions = card.actionItems;
+    final followed = actions.followed;
+    return Container(
+      margin: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(Insets.radius),
+        border: Border.all(color: accent.color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.checklist_rounded, size: 18, color: accent.color),
+              const SizedBox(width: 8),
+              Text('Do this',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (final item in actions.items)
+            followed
+                ? _FollowedActionTile(
+                    item: item,
+                    accent: accent,
+                    onToggle: (v) => vm.toggleActionItem(item.id, v),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.circle, size: 7, color: accent.color),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(item.text,
+                              style: theme.textTheme.bodyMedium),
+                        ),
+                      ],
+                    ),
+                  ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: followed
+                ? OutlinedButton.icon(
+                    onPressed: () => vm.setActionsFollowed(false),
+                    icon: const Icon(Icons.check_circle_rounded, size: 18),
+                    label: const Text('Following — remove from Actions'),
+                  )
+                : FilledButton.icon(
+                    onPressed: () => vm.setActionsFollowed(true),
+                    icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
+                    label: const Text('Follow these actions'),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FollowedActionTile extends StatelessWidget {
+  const _FollowedActionTile({
+    required this.item,
+    required this.accent,
+    required this.onToggle,
+  });
+  final model.ActionItem item;
+  final ContentAccent accent;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: () => onToggle(!item.done),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              item.done
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              size: 22,
+              color: item.done ? accent.color : theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                item.text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  decoration: item.done ? TextDecoration.lineThrough : null,
+                  color: item.done ? theme.colorScheme.onSurfaceVariant : null,
+                ),
+              ),
             ),
           ],
         ),

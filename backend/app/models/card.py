@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.2"  # 1.1: artifacts list (docs/12); 1.2: base.tags auto-tagging (docs/09)
+SCHEMA_VERSION = "1.3"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13)
 
 
 # --------------------------------------------------------------------------- #
@@ -182,7 +182,7 @@ VOCAB: set[str] = {
 
 class Source(BaseModel):
     url: str
-    platform: Optional[str] = None  # instagram | tiktok | youtube
+    platform: Optional[str] = None  # instagram | youtube
     creator: Optional[str] = None
     caption: str = ""
     duration_seconds: Optional[int] = None
@@ -201,6 +201,20 @@ class PrimaryAction(BaseModel):
     kind: PrimaryActionKind = PrimaryActionKind.NONE
     label: str = ""
     payload: dict = Field(default_factory=dict)
+
+
+class ActionItem(BaseModel):
+    """One concrete thing the video tells the viewer to do (docs/13)."""
+    id: str = Field(default_factory=lambda: "a_" + uuid.uuid4().hex[:8])
+    text: str
+    done: bool = False
+
+
+class ActionItems(BaseModel):
+    """Per-card action list (docs/13). Generated inert at ingestion; `followed`
+    flips to True only when the user opts the card into the Actions hub."""
+    followed: bool = False
+    items: list[ActionItem] = Field(default_factory=list)
 
 
 class Media(BaseModel):
@@ -230,6 +244,7 @@ class Card(BaseModel):
     source: Source
     base: Base = Field(default_factory=Base)
     primary_action: PrimaryAction = Field(default_factory=PrimaryAction)
+    action_items: ActionItems = Field(default_factory=ActionItems)
     blocks: list[Block] = Field(default_factory=list)
     media: Media = Field(default_factory=Media)
     meta: Meta = Field(default_factory=Meta)
