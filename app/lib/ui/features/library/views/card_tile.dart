@@ -45,6 +45,7 @@ class CardTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onLongPress: () => _confirmDelete(context),
+      behavior: HitTestBehavior.opaque,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Stack(

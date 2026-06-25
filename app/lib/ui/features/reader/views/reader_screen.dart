@@ -14,9 +14,11 @@ import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/pipeline_event.dart';
+import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/card_face.dart';
+import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
@@ -48,22 +50,17 @@ class _ReaderView extends StatelessWidget {
     final api = context.read<CardRepository>().api;
 
     if (vm.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Brand.violet)),
+      );
     }
     if (vm.error != null && vm.card == null) {
       return Scaffold(
         appBar: AppBar(),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline_rounded, size: 48),
-              const SizedBox(height: 12),
-              const Text("Couldn't load this card"),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: vm.retry, child: const Text('Retry')),
-            ],
-          ),
+        body: ErrorState(
+          title: "Couldn't load this card",
+          message: 'It may still be processing, or the connection dropped.',
+          onRetry: vm.retry,
         ),
       );
     }
@@ -84,10 +81,10 @@ class _ReaderView extends StatelessWidget {
                 children: [
                   _TypeChip(accent: accent, label: card.base.contentType.label),
                   const SizedBox(height: 12),
-                  // Instant layer.
+                  // Instant layer — the headline, in the brand display face.
                   if (card.base.oneLiner.isNotEmpty)
                     Text(card.base.oneLiner,
-                        style: Theme.of(context).textTheme.headlineSmall),
+                        style: Theme.of(context).textTheme.headlineMedium),
                   // Skim layer.
                   if (card.base.tldr.isNotEmpty) ...[
                     const SizedBox(height: 12),
@@ -155,15 +152,67 @@ class _FaceAppBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SliverAppBar(
-      expandedHeight: 240,
+      expandedHeight: 260,
       pinned: true,
       stretch: true,
-      actions: const [],
+      leading: Padding(
+        padding: const EdgeInsets.all(8),
+        child: _CircleButton(
+          icon: Icons.arrow_back_rounded,
+          onTap: () => Navigator.of(context).maybePop(),
+        ),
+      ),
       flexibleSpace: FlexibleSpaceBar(
-        background: Hero(
-          tag: 'card-face-${card.cardId}',
-          child: CardFace(card: card, api: api),
+        stretchModes: const [StretchMode.zoomBackground],
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            Hero(
+              tag: 'card-face-${card.cardId}',
+              child: CardFace(card: card, api: api),
+            ),
+            // Scrim so the face melts into the content below + back button reads.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.25),
+                    Colors.transparent,
+                    scheme.surface,
+                  ],
+                  stops: const [0.0, 0.4, 1.0],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A translucent circular icon button for overlaying on imagery (reader header).
+class _CircleButton extends StatelessWidget {
+  const _CircleButton({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.35),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Icon(icon, color: Colors.white, size: 22),
         ),
       ),
     );
@@ -217,8 +266,9 @@ class _ProcessingPanel extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        color: Brand.violet.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(Insets.radius),
+        border: Border.all(color: Brand.violet.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

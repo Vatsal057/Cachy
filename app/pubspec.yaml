@@ -52,9 +52,18 @@ dependencies:
   url_launcher: ^6.3.1
   add_2_calendar: ^3.0.1
 
+  # Brand layer: expressive display/body type and a terse, declarative motion
+  # vocabulary (entrances, stagger, shimmer) so animation stays consistent.
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+  flutter_native_splash: ^2.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Generate the app icon + native splash from one brand source asset.
+  flutter_launcher_icons: ^0.14.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -73,6 +82,25 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/brand/
+
+# App launcher icon — generated from the brand glyph (flutter_launcher_icons).
+flutter_launcher_icons:
+  android: true
+  ios: false # iOS Runner not present in this repo; enable when it's scaffolded
+  image_path: "assets/brand/icon.png"
+  adaptive_icon_background: "#5B5BD6"
+  adaptive_icon_foreground: "assets/brand/icon.png"
+
+# Native splash shown before Flutter boots, continuing into SplashScreen.
+flutter_native_splash:
+  color: "#5B5BD6"
+  image: "assets/brand/splash_logo.png"
+  android_12:
+    color: "#5B5BD6"
+    image: "assets/brand/splash_logo.png"
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,19 +1,30 @@
 /// The design-visual system (docs/07): a calm, coherent frame that dials down so
 /// content-visuals (keyframes, maps) carry attention. Material 3, light + dark.
+///
+/// Bold-branded direction: the *frame* stays calm and flat (content wins), but
+/// identity is carried by the brand layer ([Brand], `brand.dart`) — expressive
+/// Sora/Inter type, the indigo→violet gradient on chrome, and one elevation tier
+/// of brand-tinted glow on interactive surfaces. Dark is first-class: vivid
+/// accents are meant to pop on the brand-ink canvas.
 library;
 
 import 'package:flutter/material.dart';
 
+import 'brand.dart';
+
 class AppTheme {
-  static const seed = Color(0xFF5B5BD6); // restrained indigo; accents per type
+  static const seed = Brand.indigo; // restrained indigo seed; accents per type
 
   static ThemeData light() => _build(Brightness.light);
   static ThemeData dark() => _build(Brightness.dark);
 
   static ThemeData _build(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
+      // Brand-ink canvas in dark so vivid accents and gradient chrome pop.
+      surface: isDark ? Brand.ink : null,
     );
     final base = ThemeData(
       colorScheme: scheme,
@@ -40,18 +51,9 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: scheme.surfaceContainerLow,
       ),
-      // Tighter, more deliberate typography (optical, slightly negative tracking
-      // on display sizes — make-interfaces-feel-better).
-      textTheme: base.textTheme.copyWith(
-        headlineSmall: base.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.4,
-          height: 1.15,
-        ),
-        titleLarge: base.textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.2,
-        ),
+      // Expressive brand type: Sora display + Inter body (brand.dart). Replaces
+      // stock Roboto — this is most of what reads as "branded".
+      textTheme: Brand.textTheme(base.textTheme).copyWith(
         bodyLarge: base.textTheme.bodyLarge?.copyWith(height: 1.45),
         bodyMedium: base.textTheme.bodyMedium?.copyWith(height: 1.45),
       ),
@@ -73,16 +75,25 @@ class AppTheme {
           ),
         ),
       ),
+      // Branded toasts: floating, rounded, consistent everywhere.
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        insetPadding: const EdgeInsets.all(16),
+      ),
     );
   }
 }
 
-/// Motion tokens (docs/07): fast, purposeful, no bounce.
+/// Motion tokens (docs/07): fast, purposeful, no idle bounce. One spring accent
+/// per interaction (capture press, success pop, check toggle).
 class Motion {
   static const fast = Duration(milliseconds: 180);
   static const medium = Duration(milliseconds: 260);
+  static const slow = Duration(milliseconds: 420);
   static const stagger = Duration(milliseconds: 45); // per-block build-in delay
   static const curve = Curves.easeOutCubic;
+  static const spring = Curves.easeOutBack; // gentle overshoot for branded pops
 }
 
 class Insets {

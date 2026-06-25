@@ -15,9 +15,23 @@ class LocalStore {
   static const _cardPrefix = 'card:';
   static const _indexKey = 'card_index';
   static const _shareQueueKey = 'share_queue';
+  static const _themeModeKey = 'theme_mode';
+  static const _seenOnboardingKey = 'seen_onboarding';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
+
+  // --------------------------------------------------------------------- //
+  // App preferences (presentation): theme mode + first-run gate.
+  // --------------------------------------------------------------------- //
+
+  /// 'system' | 'light' | 'dark'. Defaults to 'system'.
+  String get themeMode => _prefs.getString(_themeModeKey) ?? 'system';
+  Future<void> setThemeMode(String mode) => _prefs.setString(_themeModeKey, mode);
+
+  bool get seenOnboarding => _prefs.getBool(_seenOnboardingKey) ?? false;
+  Future<void> setSeenOnboarding(bool seen) =>
+      _prefs.setBool(_seenOnboardingKey, seen);
 
   // --------------------------------------------------------------------- //
   // Card cache
