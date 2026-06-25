@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../core/brand.dart';
+import '../../../core/theme.dart';
 import '../view_models/chat_view_model.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -77,9 +79,8 @@ class _ChatViewState extends State<_ChatView> {
             Text(widget.title.isEmpty ? 'Ask this card' : widget.title,
                 maxLines: 1, overflow: TextOverflow.ellipsis),
             Text(
-              'AI-generated · may contain errors',
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              'AI-GENERATED · MAY CONTAIN ERRORS',
+              style: Brand.label(size: 9, color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -113,14 +114,19 @@ class _ChatViewState extends State<_ChatView> {
         ),
       );
     }
-    return ListView.builder(
-      controller: _scroll,
-      padding: const EdgeInsets.all(16),
-      itemCount: vm.messages.length + (vm.busy ? 1 : 0),
-      itemBuilder: (ctx, i) {
-        if (i >= vm.messages.length) return const _TypingBubble();
-        return _Bubble(message: vm.messages[i]);
-      },
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: Insets.readingColumn),
+        child: ListView.builder(
+          controller: _scroll,
+          padding: const EdgeInsets.all(16),
+          itemCount: vm.messages.length + (vm.busy ? 1 : 0),
+          itemBuilder: (ctx, i) {
+            if (i >= vm.messages.length) return const _TypingBubble();
+            return _Bubble(message: vm.messages[i]);
+          },
+        ),
+      ),
     );
   }
 
@@ -163,24 +169,31 @@ class _Bubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final isUser = message.isUser;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.78,
         ),
         decoration: BoxDecoration(
-          color: isUser ? scheme.primaryContainer : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
+          color: isUser ? scheme.secondary : scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(14),
+            topRight: const Radius.circular(14),
+            bottomLeft: Radius.circular(isUser ? 14 : 4),
+            bottomRight: Radius.circular(isUser ? 4 : 14),
+          ),
+          border: isUser ? null : Border.all(color: scheme.outlineVariant),
         ),
         child: Text(
           message.content,
-          style: TextStyle(
-            color: isUser ? scheme.onPrimaryContainer : scheme.onSurface,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: isUser ? scheme.onSecondary : scheme.onSurface,
           ),
         ),
       ),

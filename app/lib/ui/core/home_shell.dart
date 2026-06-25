@@ -1,12 +1,15 @@
-/// Root navigation shell: four top-level spaces — Library (your cards), Graph
-/// (how they connect), Chat (ask AI), You (stats + settings) — with a prominent center
-/// Capture button, the app's hero action. An IndexedStack keeps each tab's state alive.
+/// Root navigation shell: five top-level spaces — Library (your cards), To-do
+/// (actions followed off reels), Catalog (referenced artifacts), Chat (ask AI),
+/// You (stats + settings) — with a floating corner Capture button. An IndexedStack
+/// keeps each tab's state alive. Editorial chrome: a flat bar with a hairline
+/// top rule, ink/rust icons, and mono labels.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
+import '../features/catalog/views/catalog_screen.dart';
 import '../features/library/views/library_chat_screen.dart';
 import '../features/library/views/library_screen.dart';
 import '../features/profile/views/profile_screen.dart';
@@ -33,52 +36,62 @@ class _HomeShellState extends State<HomeShell> {
         children: const [
           LibraryScreen(),
           ActionsScreen(),
+          CatalogScreen(),
           LibraryChatScreen(),
           ProfileScreen(),
         ],
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: _CaptureButton(onTap: () => showCaptureSheet(context)),
-      bottomNavigationBar: BottomAppBar(
-        height: 64,
-        color: scheme.surface,
-        elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.15),
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8,
-        padding: EdgeInsets.zero,
-        child: Row(
-          children: [
-            _NavItem(
-              icon: Icons.video_library_outlined,
-              activeIcon: Icons.video_library_rounded,
-              label: 'Library',
-              selected: _index == 0,
-              onTap: () => _select(0),
-            ),
-            _NavItem(
-              icon: Icons.checklist_rounded,
-              activeIcon: Icons.checklist_rounded,
-              label: 'To-do',
-              selected: _index == 1,
-              onTap: () => _select(1),
-            ),
-            const SizedBox(width: 72), // notch gap for the Capture button
-            _NavItem(
-              icon: Icons.forum_outlined,
-              activeIcon: Icons.forum_rounded,
-              label: 'Chat',
-              selected: _index == 2,
-              onTap: () => _select(2),
-            ),
-            _NavItem(
-              icon: Icons.person_outline_rounded,
-              activeIcon: Icons.person_rounded,
-              label: 'You',
-              selected: _index == 3,
-              onTap: () => _select(3),
-            ),
-          ],
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        ),
+        child: BottomAppBar(
+          height: 66,
+          color: scheme.surface,
+          elevation: 0,
+          padding: EdgeInsets.zero,
+          child: Row(
+            children: [
+              _NavItem(
+                icon: Icons.collections_bookmark_outlined,
+                activeIcon: Icons.collections_bookmark_rounded,
+                label: 'LIBRARY',
+                selected: _index == 0,
+                onTap: () => _select(0),
+              ),
+              _NavItem(
+                icon: Icons.checklist_rounded,
+                activeIcon: Icons.checklist_rounded,
+                label: 'TO-DO',
+                selected: _index == 1,
+                onTap: () => _select(1),
+              ),
+              _NavItem(
+                icon: Icons.category_outlined,
+                activeIcon: Icons.category_rounded,
+                label: 'CATALOG',
+                selected: _index == 2,
+                onTap: () => _select(2),
+              ),
+              _NavItem(
+                icon: Icons.forum_outlined,
+                activeIcon: Icons.forum_rounded,
+                label: 'CHAT',
+                selected: _index == 3,
+                onTap: () => _select(3),
+              ),
+              _NavItem(
+                icon: Icons.person_outline_rounded,
+                activeIcon: Icons.person_rounded,
+                label: 'YOU',
+                selected: _index == 4,
+                onTap: () => _select(4),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -96,17 +109,19 @@ class _CaptureButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 58,
         height: 58,
         decoration: BoxDecoration(
-          gradient: Brand.gradient,
+          color: scheme.primary,
           shape: BoxShape.circle,
-          boxShadow: Brand.glow(opacity: 0.5, blur: 22, y: 8),
+          border: Border.all(color: scheme.surface, width: 3),
+          boxShadow: Brand.softShadow(opacity: 0.18, blur: 14, y: 5),
         ),
-        child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+        child: Icon(Icons.add_rounded, color: scheme.onPrimary, size: 30),
       ),
     );
   }
@@ -130,7 +145,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = selected ? Brand.violet : scheme.onSurfaceVariant;
+    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -142,15 +157,16 @@ class _NavItem extends StatelessWidget {
               scale: selected ? 1.12 : 1.0,
               duration: Motion.fast,
               curve: Motion.spring,
-              child: Icon(selected ? activeIcon : icon, color: color, size: 24),
+              child: Icon(selected ? activeIcon : icon, color: color, size: 23),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              style: Brand.label(
+                size: 9,
                 color: color,
+                weight: selected ? FontWeight.w700 : FontWeight.w500,
+                letterSpacing: 0.8,
               ),
             ),
           ],

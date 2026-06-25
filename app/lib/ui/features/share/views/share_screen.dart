@@ -72,13 +72,13 @@ class _ShareView extends StatelessWidget {
     final theme = Theme.of(context);
     switch (vm.status) {
       case ShareStatus.submitting:
-        return const _Centered(
+        return _Centered(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: Brand.violet),
-              SizedBox(height: 16),
-              Text('Sending to Cachy…'),
+              CircularProgressIndicator(color: theme.colorScheme.primary),
+              const SizedBox(height: 16),
+              const Text('Sending to Cachy…'),
             ],
           ),
         );
@@ -176,6 +176,7 @@ class _ReadyViewState extends State<_ReadyView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -184,11 +185,11 @@ class _ReadyViewState extends State<_ReadyView> {
             width: 84,
             height: 84,
             decoration: BoxDecoration(
-              gradient: Brand.gradient,
+              color: scheme.primary,
               shape: BoxShape.circle,
-              boxShadow: Brand.glow(opacity: 0.5, blur: 26, y: 8),
+              boxShadow: Brand.softShadow(opacity: 0.2, blur: 26, y: 8),
             ),
-            child: const Icon(Icons.check_rounded, size: 46, color: Colors.white),
+            child: Icon(Icons.check_rounded, size: 46, color: scheme.onPrimary),
           )
               .animate()
               .scale(
@@ -198,25 +199,19 @@ class _ReadyViewState extends State<_ReadyView> {
                 end: const Offset(1, 1),
               )
               .fadeIn(duration: Motion.fast),
-          const SizedBox(height: 20),
-          Text('Card ready', style: theme.textTheme.headlineSmall)
+          const SizedBox(height: 24),
+          Text('Card ready', style: theme.textTheme.headlineMedium)
               .animate()
               .fadeIn(delay: 120.ms)
               .moveY(begin: 8, end: 0),
           const SizedBox(height: 24),
-          GestureDetector(
-            onTap: widget.onOpen,
-            child: Container(
+          FilledButton(
+            onPressed: widget.onOpen,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 0),
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
-              decoration: BoxDecoration(
-                gradient: Brand.gradient,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: Brand.glow(opacity: 0.35, blur: 18, y: 6),
-              ),
-              child: Text('Open card',
-                  style: Brand.wordmarkStyle(16, color: Colors.white)
-                      .copyWith(fontWeight: FontWeight.w700)),
             ),
+            child: const Text('Open card'),
           ).animate().fadeIn(delay: 220.ms).moveY(begin: 8, end: 0),
         ],
       ),

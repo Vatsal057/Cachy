@@ -10,7 +10,6 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/pipeline_event.dart';
-import '../brand.dart';
 
 class PipelineProgress extends StatelessWidget {
   const PipelineProgress({
@@ -89,8 +88,7 @@ class _StageRow extends StatelessWidget {
                     width: 2.5,
                     margin: const EdgeInsets.symmetric(vertical: 3),
                     decoration: BoxDecoration(
-                      gradient: done ? Brand.gradient : null,
-                      color: done ? null : scheme.outlineVariant,
+                      color: done ? scheme.primary : scheme.outlineVariant,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -132,31 +130,26 @@ class _StageRow extends StatelessWidget {
       return Container(
         width: 28,
         height: 28,
-        decoration: const BoxDecoration(gradient: Brand.gradient, shape: BoxShape.circle),
+        decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
         alignment: Alignment.center,
-        child: const Icon(Icons.check_rounded, size: 17, color: Colors.white),
+        child: Icon(Icons.check_rounded, size: 17, color: scheme.onPrimary),
       );
     }
     if (active) {
-      final node = Container(
+      return Container(
         width: 28,
         height: 28,
-        decoration: BoxDecoration(
-          gradient: Brand.gradient,
-          shape: BoxShape.circle,
-          boxShadow: Brand.glow(opacity: 0.45, blur: 14, y: 0),
-        ),
+        decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
         alignment: Alignment.center,
-        child: const SizedBox(
+        child: SizedBox(
           width: 13,
           height: 13,
           child: CircularProgressIndicator(
             strokeWidth: 2.2,
-            valueColor: AlwaysStoppedAnimation(Colors.white),
+            valueColor: AlwaysStoppedAnimation(scheme.onPrimary),
           ),
         ),
       );
-      return node;
     }
     return Container(
       width: 28,

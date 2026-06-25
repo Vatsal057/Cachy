@@ -77,29 +77,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
             .where((c) => c.base.contentType == ContentType.recipe ||
                 c.base.contentType == ContentType.workout)
             .length;
+        final scheme = theme.colorScheme;
         return Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            gradient: Brand.gradient,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: Brand.glow(opacity: 0.3, blur: 20, y: 8),
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(Insets.radius),
+            border: Border.all(color: scheme.outlineVariant),
           ),
           child: Row(
             children: [
-              const CachyGlyph(size: 44, color: Colors.white),
+              CachyGlyph(size: 44, color: scheme.onSurface, reelColor: scheme.primary),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Your shelf',
-                        style: Brand.wordmarkStyle(20, color: Colors.white)),
-                    const SizedBox(height: 4),
+                        style: Brand.wordmarkStyle(24, color: scheme.onSurface)),
+                    const SizedBox(height: 6),
                     Text(
-                      '$total ${total == 1 ? 'card' : 'cards'}'
-                      '${todo > 0 ? '  ·  $todo to do' : ''}',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
+                      '$total ${total == 1 ? 'CARD' : 'CARDS'}'
+                      '${todo > 0 ? '  ·  $todo TO DO' : ''}',
+                      style: Brand.label(size: 11, color: scheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -115,10 +115,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.only(left: 4, bottom: 10),
         child: Text(
           text.toUpperCase(),
-          style: theme.textTheme.labelSmall?.copyWith(
+          style: Brand.label(
+            size: 11,
             color: theme.colorScheme.onSurfaceVariant,
-            letterSpacing: 1.2,
-            fontWeight: FontWeight.w700,
+            weight: FontWeight.w700,
+            letterSpacing: 1.4,
           ),
         ),
       );
@@ -201,7 +202,7 @@ class _Tile extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          leading: Icon(icon, color: Brand.violet),
+          leading: Icon(icon, color: scheme.primary),
           title: Text(title,
               style: Theme.of(context).textTheme.titleMedium),
           subtitle: Text(subtitle),

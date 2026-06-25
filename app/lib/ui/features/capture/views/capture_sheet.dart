@@ -79,7 +79,9 @@ class _CaptureSheetState extends State<_CaptureSheet> {
       child: Container(
         decoration: BoxDecoration(
           color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: scheme.outlineVariant)),
+          boxShadow: Brand.softShadow(opacity: 0.16, blur: 28, y: -4),
         ),
         padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 24),
         child: Column(
@@ -129,10 +131,10 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            _GradientButton(
-              label: 'Capture',
-              icon: Icons.auto_awesome_rounded,
-              onTap: () => _capture(_controller.text),
+            FilledButton.icon(
+              onPressed: () => _capture(_controller.text),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+              label: const Text('Capture'),
             ),
           ],
         ),
@@ -150,24 +152,28 @@ class _ClipboardChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Brand.violet.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(14),
+      color: scheme.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
           padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: scheme.primary.withValues(alpha: 0.4)),
+          ),
           child: Row(
             children: [
-              const Icon(Icons.content_paste_rounded, size: 20, color: Brand.violet),
+              Icon(Icons.content_paste_rounded, size: 20, color: scheme.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Capture from clipboard',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Brand.violet, fontWeight: FontWeight.w700)),
+                    Text('CAPTURE FROM CLIPBOARD',
+                        style: Brand.label(size: 10, color: scheme.primary, weight: FontWeight.w700)),
+                    const SizedBox(height: 2),
                     Text(url,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -176,44 +182,9 @@ class _ClipboardChip extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_rounded, size: 18, color: Brand.violet),
+              Icon(Icons.arrow_forward_rounded, size: 18, color: scheme.primary),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Brand-gradient CTA used across capture/reader. Local to keep brand.dart
-/// widget-light; promote later if a third caller appears.
-class _GradientButton extends StatelessWidget {
-  const _GradientButton({required this.label, required this.icon, required this.onTap});
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 54,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: Brand.gradient,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: Brand.glow(opacity: 0.35, blur: 18, y: 6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Text(label,
-                style: Brand.wordmarkStyle(16, color: Colors.white)
-                    .copyWith(letterSpacing: 0.2, fontWeight: FontWeight.w700)),
-          ],
         ),
       ),
     );

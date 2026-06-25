@@ -50,8 +50,12 @@ class _ReaderView extends StatelessWidget {
     final api = context.read<CardRepository>().api;
 
     if (vm.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: Brand.violet)),
+      return Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
       );
     }
     if (vm.error != null && vm.card == null) {
@@ -73,56 +77,60 @@ class _ReaderView extends StatelessWidget {
         slivers: [
           _FaceAppBar(card: card, api: api, accent: accent),
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  Insets.page, 18, Insets.page, 120),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _TypeChip(accent: accent, label: card.base.contentType.label),
-                  const SizedBox(height: 12),
-                  // Instant layer — the headline, in the brand display face.
-                  if (card.base.oneLiner.isNotEmpty)
-                    Text(card.base.oneLiner,
-                        style: Theme.of(context).textTheme.headlineMedium),
-                  // Skim layer.
-                  if (card.base.tldr.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      card.base.tldr,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ],
-                  if (card.base.tags.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _TagChips(tags: card.base.tags, accent: accent),
-                  ],
-                  const SizedBox(height: 20),
-                  if (card.isProcessing) _ProcessingPanel(vm: vm),
-                  if (card.isFailed) _FailedPanel(card: card),
-                  // Depth layer — the structured blocks.
-                  if (card.blocks.isNotEmpty)
-                    BlockList(
-                      blocks: card.blocks,
-                      onToggleChecklist: vm.toggleChecklistItem,
-                      onToggleStep: vm.toggleStep,
-                      onOpenUrl: (url) => _copyUrl(context, url),
-                      artifacts: vm.artifacts,
-                      onOpenArtifact: (e) => openLookup(e),
-                    ),
-                  // Action items (docs/13): follow into the Actions hub, tick off.
-                  if (card.isReady && card.actionItems.isPresent)
-                    _ActionItemsSection(card: card, accent: accent, vm: vm),
-                  // Referenced things (books/products/places) as tappable covers.
-                  if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
-                  if (card.source.creator != null) ...[
-                    const SizedBox(height: 8),
-                    _SourceLine(card: card),
-                  ],
-                ],
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: Insets.readingColumn),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      Insets.page, 22, Insets.page, 128),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _TypeChip(accent: accent, label: card.base.contentType.label),
+                      const SizedBox(height: 16),
+                      // Instant layer — the headline, in the serif display face.
+                      if (card.base.oneLiner.isNotEmpty)
+                        Text(card.base.oneLiner,
+                            style: Theme.of(context).textTheme.headlineLarge),
+                      // Skim layer.
+                      if (card.base.tldr.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          card.base.tldr,
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                      if (card.base.tags.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _TagChips(tags: card.base.tags, accent: accent),
+                      ],
+                      const SizedBox(height: 24),
+                      if (card.isProcessing) _ProcessingPanel(vm: vm),
+                      if (card.isFailed) _FailedPanel(card: card),
+                      // Depth layer — the structured blocks.
+                      if (card.blocks.isNotEmpty)
+                        BlockList(
+                          blocks: card.blocks,
+                          onToggleChecklist: vm.toggleChecklistItem,
+                          onToggleStep: vm.toggleStep,
+                          onOpenUrl: (url) => _copyUrl(context, url),
+                          artifacts: vm.artifacts,
+                          onOpenArtifact: (e) => openLookup(e),
+                        ),
+                      // Action items (docs/13): follow into the Actions hub, tick off.
+                      if (card.isReady && card.actionItems.isPresent)
+                        _ActionItemsSection(card: card, accent: accent, vm: vm),
+                      // Referenced things (books/products/places) as tappable covers.
+                      if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
+                      if (card.source.creator != null) ...[
+                        const SizedBox(height: 8),
+                        _SourceLine(card: card),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -228,28 +236,16 @@ class _TypeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: accent.color.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(accent.icon, size: 14, color: accent.color),
-            const SizedBox(width: 6),
-            Text(
-              label.toUpperCase(),
-              style: TextStyle(
-                color: accent.color,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(accent.icon, size: 15, color: accent.color),
+          const SizedBox(width: 7),
+          Text(
+            label.toUpperCase(),
+            style: Brand.label(size: 11, color: accent.color, weight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
@@ -261,14 +257,15 @@ class _ProcessingPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final stage = vm.lastEvent?.stage ?? _stageFromState(vm.card!.state);
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Brand.violet.withValues(alpha: 0.06),
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(Insets.radius),
-        border: Border.all(color: Brand.violet.withValues(alpha: 0.18)),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,16 +329,12 @@ class _TagChips extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: accent.color.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: accent.color.withValues(alpha: 0.5)),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              '#$tag',
-              style: TextStyle(
-                color: accent.color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+              tag.toUpperCase(),
+              style: Brand.label(size: 10, color: accent.color),
             ),
           ),
       ],
@@ -374,7 +367,7 @@ class _ReferencesStrip extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: entries.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (ctx, i) => _ReferenceTile(entry: entries[i]),
             ),
           ),
@@ -442,7 +435,7 @@ class _ReferenceTile extends StatelessWidget {
                         imageUrl: entry.thumbnail!,
                         fit: BoxFit.cover,
                         placeholder: (c, _) => placeholder,
-                        errorWidget: (c, _, __) => placeholder,
+                        errorWidget: (c, _, _) => placeholder,
                       ),
               ),
             ),

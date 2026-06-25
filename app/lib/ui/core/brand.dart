@@ -1,114 +1,145 @@
-/// The Cachy brand layer (docs/07, bold-branded direction).
+/// The Cachy brand layer — editorial / magazine direction.
 ///
-/// `theme.dart` is the calm frame that lets *content-visuals* carry attention;
-/// this file is the opposite — the small, loud surface that carries *identity*.
-/// The brand gradient colors chrome only (capture button, splash, primary CTAs,
-/// progress); per-content-type accents (`content_accent.dart`) still color cards.
+/// One bold color world: **cream + ink**, accented by a single **rust**. Light is
+/// cream ground / ink text; dark is the nocturnal version of the same world —
+/// ink ground / cream text. The accent (rust) is constant across both.
 ///
-/// Identity = a lowercase `cachy` wordmark + one glyph, "the catch": a rounded
-/// bracket that catches a falling reel. Used in the splash, onboarding, the
-/// library app bar, and (rasterized) the launcher icon.
+/// `theme.dart` wires these tokens into Material's [ColorScheme]; this file is the
+/// single source of truth for the palette, the three-face type system (serif
+/// display + sans body + mono labels), and the masthead identity (the painted
+/// "catch" glyph + the `cachy` wordmark, both flat — no gradient).
 library;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class Brand {
-  // Signature ramp: electric indigo → violet. Flat seed stays in theme.dart for
-  // Material's scheme; the gradient is what reads as "Cachy".
-  static const indigo = Color(0xFF5B5BD6);
-  static const violet = Color(0xFF7C5CFF);
-  static const violetLight = Color(0xFFA38BFF);
-  static const ink = Color(0xFF14121F); // brand near-black (splash/dark canvas)
+  // ---- Palette ------------------------------------------------------------- //
+  // Light world.
+  static const creamGround = Color(0xFFF4EFE6); // scaffold
+  static const creamRaised = Color(0xFFECE4D5); // cards / sheets
+  static const ink = Color(0xFF1A1714); // text on cream
+  static const inkMuted = Color(0xFF6B6359); // secondary text on cream
 
-  /// The chrome gradient. Top-left indigo → bottom-right violet.
-  static const gradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [indigo, violet],
-  );
+  // Dark world.
+  static const inkGround = Color(0xFF1A1714); // scaffold
+  static const inkRaised = Color(0xFF232019); // cards / sheets
+  static const cream = Color(0xFFF4EFE6); // text on ink
+  static const creamMuted = Color(0xFFA89F92); // secondary text on ink
 
-  /// A slightly brighter variant for pressed/active legs and glows.
-  static const gradientBright = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [violet, violetLight],
-  );
+  // The constant accent.
+  static const rust = Color(0xFFC8412B); // light
+  static const rustBright = Color(0xFFD9543B); // dark (slightly lifted)
 
-  /// Soft brand-tinted glow for raised interactive surfaces (capture button,
-  /// primary CTA, success pop). One elevation tier — cards stay flat.
-  static List<BoxShadow> glow({double opacity = 0.45, double blur = 24, double y = 8}) => [
+  /// The accent for a given brightness.
+  static Color accentFor(Brightness b) =>
+      b == Brightness.dark ? rustBright : rust;
+
+  /// Secondary/muted text color for a given brightness.
+  static Color mutedFor(Brightness b) =>
+      b == Brightness.dark ? creamMuted : inkMuted;
+
+  /// Hairline color (borders, rules, dividers) for a given brightness.
+  static Color hairlineFor(Brightness b) => b == Brightness.dark
+      ? cream.withValues(alpha: 0.14)
+      : ink.withValues(alpha: 0.12);
+
+  /// One subtle paper shadow for genuinely raised surfaces (capture sheet,
+  /// primary action bar). Cards stay flat with a hairline instead.
+  static List<BoxShadow> softShadow({double opacity = 0.12, double blur = 20, double y = 6}) => [
         BoxShadow(
-          color: violet.withValues(alpha: opacity),
+          color: ink.withValues(alpha: opacity),
           blurRadius: blur,
           offset: Offset(0, y),
-          spreadRadius: -4,
+          spreadRadius: -6,
         ),
       ];
 
-  // ---- Type ---------------------------------------------------------------- //
-  // Expressive display face for headlines/wordmark; clean body face for reading.
+  // ---- Type: serif display + sans body + mono labels ----------------------- //
+  // Fraunces carries the editorial headlines; Inter is the calm reading body;
+  // IBM Plex Mono sets uppercase metadata (eyebrows, timestamps, tags, labels).
   static TextTheme textTheme(TextTheme base) {
-    final display = GoogleFonts.sora(textStyle: base.bodyLarge);
-    return GoogleFonts.interTextTheme(base).copyWith(
-      displayLarge: display.copyWith(fontWeight: FontWeight.w800, letterSpacing: -1.0),
-      displayMedium: display.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.8),
-      displaySmall: display.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.6),
-      headlineMedium: display.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5, height: 1.12),
-      headlineSmall: display.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.4, height: 1.15),
-      titleLarge: display.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2),
+    final serif = GoogleFonts.frauncesTextTheme(base);
+    final body = GoogleFonts.interTextTheme(base);
+    return body.copyWith(
+      displayLarge: serif.displayLarge?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -1.0, height: 1.02),
+      displayMedium: serif.displayMedium?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.8, height: 1.04),
+      displaySmall: serif.displaySmall?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.5, height: 1.06),
+      headlineLarge: serif.headlineLarge?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.5, height: 1.1),
+      headlineMedium: serif.headlineMedium?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.4, height: 1.12),
+      headlineSmall: serif.headlineSmall?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.3, height: 1.15),
+      titleLarge: serif.titleLarge?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.2),
     );
   }
 
-  static TextStyle wordmarkStyle(double size, {Color? color}) => GoogleFonts.sora(
+  /// Uppercase mono label — the editorial "eyebrow". Used for metadata, section
+  /// labels, type chips, timestamps, tags. Callers pass already-cased text; this
+  /// just supplies the face, tracking and weight.
+  static TextStyle label({
+    double size = 11,
+    Color? color,
+    FontWeight weight = FontWeight.w600,
+    double letterSpacing = 1.1,
+  }) =>
+      GoogleFonts.ibmPlexMono(
         fontSize: size,
-        fontWeight: FontWeight.w800,
-        letterSpacing: -1.2,
+        fontWeight: weight,
+        letterSpacing: letterSpacing,
+        color: color,
+      );
+
+  /// The `cachy` wordmark face — the serif display, tight.
+  static TextStyle wordmarkStyle(double size, {Color? color}) => GoogleFonts.fraunces(
+        fontSize: size,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.8,
         color: color,
       );
 }
 
-/// The "catch" glyph: a rounded bracket cradling a falling reel-square.
-/// Painted (not an asset) so it scales crisply and can be tinted to context —
-/// solid brand on light chrome, white on the gradient, mono on the icon.
+/// The "catch" glyph: a rounded bracket cradling a falling reel-square. Painted
+/// (not an asset) so it scales crisply and tints to context. Editorial direction:
+/// flat ink or rust, no gradient.
 class CachyGlyph extends StatelessWidget {
   const CachyGlyph({
     super.key,
     this.size = 28,
     this.color,
-    this.gradient,
+    this.reelColor,
     this.reelDrop = 1.0,
   });
 
   final double size;
 
-  /// Solid tint. Ignored when [gradient] is set.
+  /// Bracket tint. Defaults to ink.
   final Color? color;
 
-  /// When set, the bracket strokes with this gradient (used on splash/icon).
-  final Gradient? gradient;
+  /// Reel tint. Defaults to the rust accent, for a two-tone editorial mark.
+  final Color? reelColor;
 
-  /// 0 = reel up at the top, 1 = reel resting in the bracket. Drives the splash
-  /// "catch" animation; defaults to resting.
+  /// 0 = reel up at the top, 1 = reel resting in the bracket (splash animation).
   final double reelDrop;
 
   @override
   Widget build(BuildContext context) {
-    final tint = color ?? Brand.violet;
     return SizedBox.square(
       dimension: size,
       child: CustomPaint(
-        painter: _GlyphPainter(color: tint, gradient: gradient, reelDrop: reelDrop),
+        painter: _GlyphPainter(
+          bracket: color ?? Brand.ink,
+          reel: reelColor ?? Brand.rust,
+          reelDrop: reelDrop,
+        ),
       ),
     );
   }
 }
 
 class _GlyphPainter extends CustomPainter {
-  _GlyphPainter({required this.color, required this.gradient, required this.reelDrop});
+  _GlyphPainter({required this.bracket, required this.reel, required this.reelDrop});
 
-  final Color color;
-  final Gradient? gradient;
+  final Color bracket;
+  final Color reel;
   final double reelDrop;
 
   @override
@@ -116,18 +147,13 @@ class _GlyphPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final stroke = w * 0.13;
-    final rect = Offset.zero & size;
 
     final bracketPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    if (gradient != null) {
-      bracketPaint.shader = gradient!.createShader(rect);
-    } else {
-      bracketPaint.color = color;
-    }
+      ..strokeJoin = StrokeJoin.round
+      ..color = bracket;
 
     // The bracket: a U that opens upward, catching the reel.
     final path = Path()
@@ -150,43 +176,35 @@ class _GlyphPainter extends CustomPainter {
       Rect.fromCenter(center: Offset(w * 0.5, cy), width: reelSize, height: reelSize),
       Radius.circular(reelSize * 0.32),
     );
-    final reelPaint = Paint()..style = PaintingStyle.fill;
-    if (gradient != null) {
-      reelPaint.shader = gradient!.createShader(rect);
-    } else {
-      reelPaint.color = color;
-    }
-    canvas.drawRRect(reelRect, reelPaint);
+    canvas.drawRRect(reelRect, Paint()..color = reel);
   }
 
   @override
   bool shouldRepaint(_GlyphPainter old) =>
-      old.reelDrop != reelDrop || old.color != color || old.gradient != gradient;
+      old.reelDrop != reelDrop || old.bracket != bracket || old.reel != reel;
 }
 
-/// The full wordmark: glyph + lowercase `cachy`. Defaults to brand-tinted for
-/// light chrome; pass [onGradient] true to render white for the splash/CTA.
+/// The full wordmark: glyph + lowercase `cachy`, set in the serif display face.
+/// Defaults to ink/rust for cream chrome; pass [onDark] for the ink ground.
 class CachyWordmark extends StatelessWidget {
-  const CachyWordmark({super.key, this.size = 26, this.onGradient = false});
+  const CachyWordmark({super.key, this.size = 26, this.onDark = false});
 
   final double size;
-  final bool onGradient;
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
-    final color = onGradient ? Colors.white : null;
+    final wordColor = onDark ? Brand.cream : Brand.ink;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        CachyGlyph(size: size * 1.08, color: onGradient ? Colors.white : Brand.violet),
-        SizedBox(width: size * 0.28),
-        Text(
-          'cachy',
-          style: Brand.wordmarkStyle(
-            size,
-            color: color ?? Theme.of(context).colorScheme.onSurface,
-          ),
+        CachyGlyph(
+          size: size * 1.08,
+          color: wordColor,
+          reelColor: onDark ? Brand.rustBright : Brand.rust,
         ),
+        SizedBox(width: size * 0.30),
+        Text('cachy', style: Brand.wordmarkStyle(size, color: wordColor)),
       ],
     );
   }
