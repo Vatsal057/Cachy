@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.api.graph import invalidate_graph_cache
 from app.models.artifact import ArtifactType, CatalogEntry
 from app.services import llm_catalog
 from app.store import db
@@ -59,6 +60,7 @@ async def save_catalog_entry(artifact_id: str) -> CatalogEntry:
         row = await db.set_artifact_saved(session, artifact_id, True)
         if row is None:
             raise HTTPException(status_code=404, detail="artifact not found")
+        invalidate_graph_cache()
         return row.to_entry()
 
 
@@ -90,4 +92,5 @@ async def delete_catalog_entry(artifact_id: str) -> dict:
         if row is None:
             raise HTTPException(status_code=404, detail="artifact not found")
         await session.commit()
+    invalidate_graph_cache()
     return {"removed": artifact_id}

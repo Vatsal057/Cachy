@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 
+from app.api.graph import invalidate_graph_cache
 from app.models.card import Card, CardState
 from app.models.job import JobState
 from app.pipeline.ingestion.source import platform_for_url
@@ -164,6 +165,7 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
             row.action_items = req.action_items  # follow toggle + per-item done state
         await session.commit()
         await session.refresh(row)
+        invalidate_graph_cache()
         return row.to_card()
 
 
@@ -204,6 +206,7 @@ async def delete_card(card_id: str) -> dict:
         await session.execute(delete(db.CardRow).where(db.CardRow.id == card_id))
         await session.commit()
     media.remove_card_media(card_id, [thumb, *keyframes])
+    invalidate_graph_cache()
     return {"deleted": card_id}
 
 
