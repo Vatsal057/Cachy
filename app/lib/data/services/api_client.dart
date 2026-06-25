@@ -11,6 +11,7 @@ import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
+import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
 
 class ApiException implements Exception {
@@ -172,11 +173,34 @@ class ApiClient {
     }
   }
 
+  /// Save a referenced artifact into the catalog tab (long-press to save).
+  Future<CatalogEntry> saveCatalogEntry(String artifactId) async {
+    final resp = await _client.post(_uri('/catalog/$artifactId/save'));
+    return CatalogEntry.fromJson(_decodeMap(resp));
+  }
+
+  /// Generate + persist the on-demand LLM detail for an artifact (Fetch info).
+  Future<CatalogEntry> fetchCatalogInfo(String artifactId) async {
+    final resp = await _client.post(_uri('/catalog/$artifactId/fetch-info'));
+    return CatalogEntry.fromJson(_decodeMap(resp));
+  }
+
   /// Artifacts a single card references (docs/12) — the reader "References" strip.
   Future<List<CatalogEntry>> cardArtifacts(String cardId, {int limit = 50}) async {
     final resp =
         await _client.get(_uri('/catalog', {'card_id': cardId, 'limit': limit}));
     return _decodeList(resp).map(CatalogEntry.fromJson).toList();
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Knowledge graph — cards as nodes, similarity as edges
+  // ------------------------------------------------------------------------- //
+
+  Future<GraphData> graph({double threshold = 0.55, int topK = 4}) async {
+    final resp = await _client.get(
+      _uri('/graph', {'threshold': threshold, 'top_k': topK}),
+    );
+    return GraphData.fromJson(_decodeMap(resp));
   }
 
   // ------------------------------------------------------------------------- //

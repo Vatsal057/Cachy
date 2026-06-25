@@ -9,6 +9,7 @@ import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
+import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
 import '../services/api_client.dart';
 import '../services/local_store.dart';
@@ -116,9 +117,21 @@ class CardRepository {
   Future<void> deleteCatalogEntry(String artifactId) =>
       _api.deleteCatalogEntry(artifactId);
 
+  /// Save a referenced artifact into the catalog tab (long-press to save).
+  Future<CatalogEntry> saveCatalogEntry(String artifactId) =>
+      _api.saveCatalogEntry(artifactId);
+
+  /// Generate the on-demand LLM detail for a catalog item (Fetch info button).
+  Future<CatalogEntry> fetchCatalogInfo(String artifactId) =>
+      _api.fetchCatalogInfo(artifactId);
+
   /// Artifacts a single card references (docs/12) — reader "References" strip.
   Future<List<CatalogEntry>> cardArtifacts(String cardId) =>
       _api.cardArtifacts(cardId);
+
+  /// The knowledge graph: cards as nodes, similarity as edges. Network-only.
+  Future<GraphData> graph({double threshold = 0.55, int topK = 4}) =>
+      _api.graph(threshold: threshold, topK: topK);
 
   /// Cross-card grounded Q&A (docs/09). Network-only; history held client-side.
   Future<LibraryChatResult> libraryChat(List<Map<String, String>> messages) =>

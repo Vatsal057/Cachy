@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart';
 import '../../../../domain/models/pipeline_event.dart';
 
@@ -29,6 +30,9 @@ class ReaderViewModel extends ChangeNotifier {
   PipelineEvent? _lastEvent;
   PipelineEvent? get lastEvent => _lastEvent;
 
+  List<CatalogEntry> _artifacts = const [];
+  List<CatalogEntry> get artifacts => _artifacts;
+
   StreamSubscription<PipelineEvent>? _sub;
   bool _disposed = false;
 
@@ -40,8 +44,20 @@ class ReaderViewModel extends ChangeNotifier {
       notifyListeners();
     }
     await _fetch();
+    await _loadArtifacts();
     if (_card?.isProcessing ?? false) {
       _subscribe();
+    }
+  }
+
+  /// The artifacts this card references — feeds both the inline `[[Name]]` links
+  /// and the bottom References strip. Best-effort: failure leaves it empty.
+  Future<void> _loadArtifacts() async {
+    try {
+      _artifacts = await _repository.cardArtifacts(cardId);
+      _safeNotify();
+    } catch (_) {
+      // best-effort; inline links + strip simply stay absent.
     }
   }
 
@@ -66,6 +82,7 @@ class ReaderViewModel extends ChangeNotifier {
           await _fetch();
         }
         if (event.isTerminal) {
+          await _loadArtifacts(); // catalog populated after cards finish
           await _sub?.cancel();
         }
       },

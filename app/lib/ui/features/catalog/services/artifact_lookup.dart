@@ -29,7 +29,9 @@ Uri lookupUri(CatalogEntry entry) {
     case ArtifactType.music:
       return Uri.parse('https://music.apple.com/search?term=$query');
     case ArtifactType.app:
-      return Uri.parse('https://play.google.com/store/search?q=$query&c=apps');
+      // Plain Google search — apps aren't always Android/Play Store (could be
+      // macOS, iOS, web, open-source), so don't force the Play Store.
+      return Uri.parse('https://www.google.com/search?q=$query');
     case ArtifactType.place:
       return Uri.parse(
           'https://www.google.com/maps/search/?api=1&query=$query');

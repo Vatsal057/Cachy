@@ -189,6 +189,66 @@ def _ocr(frames: list[str]) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Vision reader (Groq VLM, free tier) — for stylized carousel slides
+# --------------------------------------------------------------------------- #
+
+_VISION_PROMPT = (
+    "This is one slide from a social-media carousel post. Transcribe ALL text "
+    "shown on it verbatim, preserving reading order, and briefly note any key "
+    "visual that carries meaning (chart, diagram, product, place). Output plain "
+    "text only — no preamble, no markdown, no commentary."
+)
+
+
+def _vision_read(frames: list[str]) -> str:
+    """Read stylized carousel/infographic slides with Groq's free vision model.
+
+    Tesseract mangles social-media text (docs/03 step 5: stylized overlays read
+    far worse than a VLM). Carousel slides are text-as-image, so a vision model
+    recovers the slide's real content + structure that OCR loses. Each image is an
+    isolated call — one failure skips that slide, never the whole pass."""
+    settings = get_settings()
+    if not frames or not settings.groq_vision_enabled:
+        return ""
+    try:
+        import base64
+
+        from groq import Groq
+    except Exception:
+        return ""
+
+    client = Groq(api_key=settings.groq_api_key)
+    chunks: list[str] = []
+    for idx, path in enumerate(frames, 1):
+        try:
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            ext = os.path.splitext(path)[1].lstrip(".").lower() or "jpeg"
+            if ext == "jpg":
+                ext = "jpeg"
+            resp = client.chat.completions.create(
+                model=settings.groq_vision_model,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _VISION_PROMPT},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:image/{ext};base64,{b64}"}},
+                    ],
+                }],
+                temperature=0.0,
+                max_tokens=512,
+            )
+            text = (resp.choices[0].message.content or "").strip() if resp.choices else ""
+        except Exception as e:
+            log.warning("groq vision failed on slide %d: %s", idx, e)
+            continue
+        if text and text.lower() not in {"none", "no text", "no text shown"}:
+            chunks.append(f"[slide {idx}] {text}")
+    return "\n".join(chunks)
+
+
+# --------------------------------------------------------------------------- #
 # Aggregate
 # --------------------------------------------------------------------------- #
 
@@ -247,6 +307,8 @@ def extract(
         return _extract_article(download, source_line)
 
     os.makedirs(work_dir, exist_ok=True)
+    settings = get_settings()
+    is_carousel = download.media_type != "video"
     transcript = ""
     frames: list[str] = []
 
@@ -257,11 +319,24 @@ def extract(
         raw_frames = _extract_frames(video_path, os.path.join(work_dir, _FRAME_DIR))
         frames = _dedup_frames(raw_frames)
     else:
-        # image carousel: the images themselves are the frames (docs/03)
+        # Image carousel: every slide is curated, distinct content. Do NOT
+        # perceptual-dedup — that's for redundant video frames and would collapse
+        # infographic slides that share a template, dropping real content (docs/03).
         imgs = download.data if isinstance(download.data, list) else [download.data]
-        frames = _dedup_frames([str(p) for p in imgs])
+        frames = [str(p) for p in imgs][:_MAX_FRAMES]
 
-    ocr_text = _ocr(frames)
+    # Carousel slides are stylized text-as-image; Tesseract reads them poorly
+    # (docs/03 step 5), so prefer the free Groq VLM, falling back to OCR.
+    had_visual = False
+    if is_carousel and settings.groq_vision_enabled:
+        ocr_text = _vision_read(frames)
+        if ocr_text.strip():
+            had_visual = True
+        else:
+            ocr_text = _ocr(frames)
+    else:
+        ocr_text = _ocr(frames)
+
     thumbnail = frames[0] if frames else None
 
     aggregated = _aggregate(download.caption or "", transcript, ocr_text, source_line)
@@ -274,7 +349,7 @@ def extract(
         keyframes=frames,
         had_transcript=bool(transcript.strip()),
         had_ocr=bool(ocr_text.strip()),
-        had_visual=False,  # scene description omitted in v1
+        had_visual=had_visual,
     )
 
 

@@ -10,8 +10,8 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../core/theme.dart';
-import '../services/artifact_lookup.dart';
 import '../view_models/catalog_view_model.dart';
+import 'catalog_detail_screen.dart';
 
 class CatalogScreen extends StatelessWidget {
   const CatalogScreen({super.key});
@@ -67,10 +67,10 @@ class _CatalogView extends StatelessWidget {
       case CatalogStatus.empty:
         return const _Message(
           icon: Icons.auto_stories_outlined,
-          title: 'Nothing catalogued yet',
+          title: 'Nothing saved yet',
           subtitle:
-              'Books, movies, podcasts and places mentioned in your cards '
-              'show up here automatically.',
+              'Long-press any reference on a card to save it here — books, '
+              'movies, apps, products, places and more.',
         );
       case CatalogStatus.idle:
       case CatalogStatus.ready:
@@ -133,7 +133,7 @@ class _ArtifactTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GestureDetector(
-      onTap: () => _lookup(context),
+      onTap: () => _openDetail(context),
       onLongPress: () => _confirmDelete(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,13 +166,10 @@ class _ArtifactTile extends StatelessWidget {
     );
   }
 
-  Future<void> _lookup(BuildContext context) async {
-    final ok = await openLookup(entry);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't open a lookup for this")),
-      );
-    }
+  void _openDetail(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => CatalogDetailScreen(entry: entry)),
+    );
   }
 
   Future<void> _confirmDelete(BuildContext context) async {

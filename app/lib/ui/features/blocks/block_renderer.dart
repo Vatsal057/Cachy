@@ -3,8 +3,10 @@
 /// render `text`/`items` if present, else skip. Never crashes on a bad block.
 library;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Step;
 
+import '../../../domain/models/artifact.dart';
 import '../../../domain/models/block.dart';
 import '../../core/theme.dart';
 
@@ -19,6 +21,8 @@ class BlockList extends StatelessWidget {
     this.onToggleChecklist,
     this.onToggleStep,
     this.onOpenUrl,
+    this.artifacts = const [],
+    this.onOpenArtifact,
     this.animate = true,
   });
 
@@ -26,13 +30,19 @@ class BlockList extends StatelessWidget {
   final ToggleCallback? onToggleChecklist;
   final ToggleCallback? onToggleStep;
   final OpenUrlCallback? onOpenUrl;
+
+  /// The card's referenced artifacts, used to resolve inline `[[Name]]` markers
+  /// into tappable links right where the text introduces them.
+  final List<CatalogEntry> artifacts;
+  final void Function(CatalogEntry)? onOpenArtifact;
+
   final bool animate;
 
   @override
   Widget build(BuildContext context) {
     final widgets = <Widget>[];
-    for (var i = 0; i < blocks.length; i++) {
-      final w = _renderBlock(context, blocks[i]);
+    for (final segment in _segment(blocks)) {
+      final w = _renderSegment(context, segment);
       if (w == null) continue; // skipped (e.g. empty unknown block)
       widgets.add(Padding(
         padding: EdgeInsets.only(bottom: Insets.block),
@@ -41,9 +51,82 @@ class BlockList extends StatelessWidget {
             : w,
       ));
     }
-    return Column(
+    final column = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: widgets,
+    );
+    // Provide the inline-reference resolver to descendant rich-text widgets.
+    if (artifacts.isEmpty || onOpenArtifact == null) return column;
+    return _ReferenceScope(
+      refs: {
+        for (final a in artifacts)
+          if (a.title.trim().isNotEmpty) a.title.toLowerCase().trim(): a,
+      },
+      onTap: onOpenArtifact!,
+      child: column,
+    );
+  }
+
+  /// A block that already carries its own surface/visual treatment, so it
+  /// renders standalone rather than being boxed inside a section card.
+  bool _isSelfCarded(Block b) =>
+      b is CalloutBlock ||
+      b is LinkBlock ||
+      b is TableBlock ||
+      b is MapBlock ||
+      b is KeyValueBlock;
+
+  /// Group the flat block list into render segments so the reader shows
+  /// carded sections instead of a flat text dump: a `heading` opens a section,
+  /// the flow blocks beneath it (paragraphs, lists, steps, checklists) join it,
+  /// and self-carded blocks (callout/table/key_value/map/link) stand alone.
+  List<List<Block>> _segment(List<Block> input) {
+    final out = <List<Block>>[];
+    List<Block>? section; // currently open flow section, if any
+    for (final b in input) {
+      if (_isSelfCarded(b)) {
+        // A self-carded block right after a lone heading attaches to it, so a
+        // category heading sits as the title atop its table; otherwise it stands
+        // alone.
+        if (section != null &&
+            section.length == 1 &&
+            section.first is HeadingBlock) {
+          section.add(b);
+        } else {
+          out.add([b]);
+        }
+        section = null;
+      } else if (b is HeadingBlock) {
+        section = [b];
+        out.add(section);
+      } else if (section != null) {
+        section.add(b);
+      } else {
+        section = [b];
+        out.add(section);
+      }
+    }
+    return out;
+  }
+
+  /// Render one segment: a lone self-carded block as-is, otherwise the flow
+  /// blocks stacked inside a single section card.
+  Widget? _renderSegment(BuildContext context, List<Block> segment) {
+    if (segment.length == 1 && _isSelfCarded(segment.first)) {
+      return _renderBlock(context, segment.first);
+    }
+    final children = <Widget>[];
+    for (final b in segment) {
+      final w = _renderBlock(context, b);
+      if (w == null) continue;
+      if (children.isNotEmpty) {
+        children.add(SizedBox(height: b is HeadingBlock ? 14 : 10));
+      }
+      children.add(w);
+    }
+    if (children.isEmpty) return null;
+    return _SectionCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
     );
   }
 
@@ -86,6 +169,149 @@ class BlockList extends StatelessWidget {
   }
 }
 
+/// Surfaced container that turns a run of flow blocks into a distinct,
+/// scannable section card (vs. a flat text dump).
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(Insets.radius),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: child,
+    );
+  }
+}
+
+// --------------------------------------------------------------------------- //
+// Inline rich text (lightweight markdown: **bold**, *italic* / _italic_, `code`)
+// --------------------------------------------------------------------------- //
+
+/// Inline grammar: `[[Reference]]`, then **bold**, *italic* / _italic_, `code`.
+final _richPattern = RegExp(
+  r'\[\[(.+?)\]\]|\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`(.+?)`',
+  dotAll: true,
+);
+
+/// Carries the card's inline-reference resolver down to rich-text widgets, so a
+/// `[[Name]]` marker becomes a tappable link without drilling params everywhere.
+class _ReferenceScope extends InheritedWidget {
+  const _ReferenceScope({
+    required this.refs,
+    required this.onTap,
+    required super.child,
+  });
+
+  final Map<String, CatalogEntry> refs; // normalised title -> entry
+  final void Function(CatalogEntry) onTap;
+
+  CatalogEntry? resolve(String label) => refs[label.toLowerCase().trim()];
+
+  static _ReferenceScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ReferenceScope>();
+
+  @override
+  bool updateShouldNotify(_ReferenceScope old) => old.refs != refs;
+}
+
+/// Drop-in for `Text` rendering the inline subset above. Stateful so tap
+/// recognizers for `[[Name]]` references are disposed properly.
+class _RichText extends StatefulWidget {
+  const _RichText(this.text, {this.style});
+  final String text;
+  final TextStyle? style;
+
+  @override
+  State<_RichText> createState() => _RichTextState();
+}
+
+class _RichTextState extends State<_RichText> {
+  final _recognizers = <TapGestureRecognizer>[];
+
+  void _clearRecognizers() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+  }
+
+  @override
+  void dispose() {
+    _clearRecognizers();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _clearRecognizers(); // rebuilt fresh each build
+    final base = widget.style ?? DefaultTextStyle.of(context).style;
+    final scope = _ReferenceScope.maybeOf(context);
+    return Text.rich(TextSpan(children: _spans(widget.text, base, scope)));
+  }
+
+  List<InlineSpan> _spans(String text, TextStyle? base, _ReferenceScope? scope) {
+    final spans = <InlineSpan>[];
+    var last = 0;
+    for (final m in _richPattern.allMatches(text)) {
+      if (m.start > last) {
+        spans.add(TextSpan(text: text.substring(last, m.start), style: base));
+      }
+      final ref = m.group(1);
+      if (ref != null) {
+        spans.add(_referenceSpan(ref, base, scope));
+      } else if (m.group(2) != null || m.group(3) != null) {
+        spans.add(TextSpan(
+          text: m.group(2) ?? m.group(3),
+          style: base?.copyWith(fontWeight: FontWeight.w700),
+        ));
+      } else if (m.group(4) != null || m.group(5) != null) {
+        spans.add(TextSpan(
+          text: m.group(4) ?? m.group(5),
+          style: base?.copyWith(fontStyle: FontStyle.italic),
+        ));
+      } else if (m.group(6) != null) {
+        spans.add(TextSpan(
+          text: m.group(6),
+          style: base?.copyWith(
+            fontFamily: 'monospace',
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ));
+      }
+      last = m.end;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(text: text.substring(last), style: base));
+    }
+    return spans;
+  }
+
+  /// A `[[Name]]` marker: a tappable link if it resolves to a card artifact,
+  /// otherwise the bare name (brackets stripped) so unknown refs never leak.
+  InlineSpan _referenceSpan(String label, TextStyle? base, _ReferenceScope? scope) {
+    final entry = scope?.resolve(label);
+    if (entry == null) return TextSpan(text: label, style: base);
+    final recognizer = TapGestureRecognizer()..onTap = () => scope!.onTap(entry);
+    _recognizers.add(recognizer);
+    return TextSpan(
+      text: label,
+      style: base?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
+      recognizer: recognizer,
+    );
+  }
+}
+
 // --------------------------------------------------------------------------- //
 // Per-block widgets
 // --------------------------------------------------------------------------- //
@@ -115,7 +341,7 @@ class _Paragraph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      Text(block.text, style: Theme.of(context).textTheme.bodyLarge);
+      _RichText(block.text, style: Theme.of(context).textTheme.bodyLarge);
 }
 
 class _BulletList extends StatelessWidget {
@@ -146,7 +372,7 @@ class _BulletList extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: Text(item, style: theme.textTheme.bodyLarge),
+                  child: _RichText(item, style: theme.textTheme.bodyLarge),
                 ),
               ],
             ),
@@ -274,7 +500,7 @@ class _StepRow extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: Text(
+                child: _RichText(
                   step.text,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     decoration: done ? TextDecoration.lineThrough : null,
@@ -482,7 +708,7 @@ class _Callout extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(block.text, style: theme.textTheme.bodyMedium),
+                _RichText(block.text, style: theme.textTheme.bodyMedium),
                 if (block.confidence != 'unverified' ||
                     block.sourceUrl != null) ...[
                   const SizedBox(height: 6),
@@ -635,19 +861,26 @@ class _Table extends StatelessWidget {
           ),
         ),
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        // First column is the auto-number; keep it tight, let the rest flex.
+        columnWidths: const {0: IntrinsicColumnWidth()},
         children: [
           TableRow(
             decoration: BoxDecoration(color: scheme.surfaceContainerHigh),
             children: [
+              _numCell('#', theme.textTheme.labelLarge, scheme),
               for (final h in block.headers)
-                _cell(h, theme.textTheme.labelLarge),
+                _cell(h, theme.textTheme.labelLarge, bold: true),
             ],
           ),
-          for (final row in block.rows)
+          for (var r = 0; r < block.rows.length; r++)
             TableRow(
               children: [
+                _numCell('${r + 1}', theme.textTheme.bodyMedium, scheme),
                 for (var i = 0; i < block.headers.length; i++)
-                  _cell(i < row.length ? row[i] : '', theme.textTheme.bodyMedium),
+                  _cell(
+                    i < block.rows[r].length ? block.rows[r][i] : '',
+                    theme.textTheme.bodyMedium,
+                  ),
               ],
             ),
         ],
@@ -655,9 +888,23 @@ class _Table extends StatelessWidget {
     );
   }
 
-  Widget _cell(String text, TextStyle? style) => Padding(
+  Widget _numCell(String text, TextStyle? style, ColorScheme scheme) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Text(text, style: style),
+        child: Text(
+          text,
+          style: style?.copyWith(
+            color: scheme.onSurfaceVariant,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      );
+
+  Widget _cell(String text, TextStyle? style, {bool bold = false}) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: _RichText(
+          text,
+          style: bold ? style?.copyWith(fontWeight: FontWeight.w700) : style,
+        ),
       );
 }
 

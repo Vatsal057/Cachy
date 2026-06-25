@@ -114,9 +114,11 @@ class _ReaderView extends StatelessWidget {
                       onToggleChecklist: vm.toggleChecklistItem,
                       onToggleStep: vm.toggleStep,
                       onOpenUrl: (url) => _copyUrl(context, url),
+                      artifacts: vm.artifacts,
+                      onOpenArtifact: (e) => openLookup(e),
                     ),
                   // Referenced things (books/products/places) as tappable covers.
-                  if (card.isReady) _ReferencesStrip(cardId: card.cardId),
+                  if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
                   if (card.source.creator != null) ...[
                     const SizedBox(height: 8),
                     _SourceLine(card: card),
@@ -415,36 +417,13 @@ class _TagChips extends StatelessWidget {
 /// "References" strip: the artifacts this card mentions, as tappable covers that
 /// open a store/lookup (docs/09). Fetched once; renders nothing if there are none
 /// or the fetch fails (graceful — never blocks the reader).
-class _ReferencesStrip extends StatefulWidget {
-  const _ReferencesStrip({required this.cardId});
-  final String cardId;
-
-  @override
-  State<_ReferencesStrip> createState() => _ReferencesStripState();
-}
-
-class _ReferencesStripState extends State<_ReferencesStrip> {
-  List<CatalogEntry> _entries = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final entries =
-          await context.read<CardRepository>().cardArtifacts(widget.cardId);
-      if (mounted) setState(() => _entries = entries);
-    } catch (_) {
-      // Best-effort: leave the strip empty on any failure.
-    }
-  }
+class _ReferencesStrip extends StatelessWidget {
+  const _ReferencesStrip({required this.entries});
+  final List<CatalogEntry> entries;
 
   @override
   Widget build(BuildContext context) {
-    if (_entries.isEmpty) return const SizedBox.shrink();
+    if (entries.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 24),
@@ -459,9 +438,9 @@ class _ReferencesStripState extends State<_ReferencesStrip> {
             height: 150,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: _entries.length,
+              itemCount: entries.length,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (ctx, i) => _ReferenceTile(entry: _entries[i]),
+              itemBuilder: (ctx, i) => _ReferenceTile(entry: entries[i]),
             ),
           ),
         ],
@@ -473,6 +452,20 @@ class _ReferencesStripState extends State<_ReferencesStrip> {
 class _ReferenceTile extends StatelessWidget {
   const _ReferenceTile({required this.entry});
   final CatalogEntry entry;
+
+  Future<void> _save(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<CardRepository>().saveCatalogEntry(entry.id);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Saved “${entry.title}” to catalog')),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text("Couldn't save to catalog")),
+      );
+    }
+  }
 
   static const _icons = {
     ArtifactType.book: Icons.menu_book_rounded,
@@ -498,6 +491,7 @@ class _ReferenceTile extends StatelessWidget {
     );
     return GestureDetector(
       onTap: () => openLookup(entry),
+      onLongPress: () => _save(context),
       child: SizedBox(
         width: 92,
         child: Column(

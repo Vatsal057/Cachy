@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import cards, catalog, collections, library_chat, search
+from app.api import cards, catalog, collections, graph, library_chat, search
 from app.models.card import SCHEMA_VERSION
 from app.pipeline import worker
 from app.store import db, media
@@ -61,6 +61,7 @@ app.include_router(catalog.router)
 app.include_router(collections.router)
 app.include_router(library_chat.router)
 app.include_router(search.router)
+app.include_router(graph.router)
 
 # Serve extracted keyframes/thumbnails so the frontend faces load (docs/05).
 # Ephemeral on HF free tier; survives only the container's life (docs/01, docs/11).

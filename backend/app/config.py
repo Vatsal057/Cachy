@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     llm_backend: str = "huggingface"  # huggingface | groq | none
     hf_api_key: str = ""
     hf_model: str = "Qwen/Qwen2.5-72B-Instruct"
+    groq_llm_model: str = "llama-3.3-70b-versatile"  # Groq structuring + HF fallback
+
+    # vision reader for stylized carousel slides (free Groq tier; reuses groq_api_key)
+    groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     # semantic search embeddings (free, reuses hf_api_key; docs/09)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
@@ -51,6 +55,11 @@ class Settings(BaseSettings):
     @property
     def groq_llm_enabled(self) -> bool:
         return self.llm_backend == "groq" and bool(self.groq_api_key.strip())
+
+    @property
+    def groq_vision_enabled(self) -> bool:
+        # vision only needs a Groq key, independent of the structuring backend
+        return bool(self.groq_api_key.strip())
 
 
 @lru_cache

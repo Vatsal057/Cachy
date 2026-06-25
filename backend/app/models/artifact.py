@@ -58,3 +58,8 @@ class CatalogEntry(BaseModel):
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    # User must explicitly save a referenced artifact into the catalog (long-press);
+    # unsaved rows still exist as per-card references but stay out of the catalog tab.
+    saved: bool = False
+    # Optional LLM-generated "what is this" detail, filled on-demand via Fetch info.
+    description: Optional[str] = None
