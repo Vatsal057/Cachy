@@ -14,6 +14,7 @@ import logging
 import re
 
 from app.config import get_settings
+from app.models.artifact import Artifact, ArtifactType
 from app.models.card import (
     Base,
     Block,
@@ -57,12 +58,19 @@ _ACTION_FOR_TYPE: dict[ContentType, tuple[PrimaryActionKind, str]] = {
 
 
 class StructuredCard:
-    """Validated structuring output: base + blocks + primary_action."""
+    """Validated structuring output: base + blocks + primary_action + artifacts."""
 
-    def __init__(self, base: Base, blocks: list[dict], primary_action: PrimaryAction):
+    def __init__(
+        self,
+        base: Base,
+        blocks: list[dict],
+        primary_action: PrimaryAction,
+        artifacts: list[Artifact] | None = None,
+    ):
         self.base = base
         self.blocks = blocks  # list of plain dicts (validated), ready for JSON column
         self.primary_action = primary_action
+        self.artifacts = artifacts or []  # referenced things for the catalog (docs/12)
 
 
 # --------------------------------------------------------------------------- #
@@ -92,7 +100,13 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
     "content_type": "recipe|workout|tutorial|tip|product_list|travel|news_explainer|other",
     "type_confidence": 0.0-1.0
   }},
-  "blocks": [ ... ]          // ordered list using ONLY the allowed block types
+  "blocks": [ ... ],         // ordered list using ONLY the allowed block types
+  "artifacts": [             // real, named things the video REFERENCES (may be empty)
+    {{ "type": "book|movie|tv_show|podcast|music|product|place|app|other",
+       "title": str,         // the proper name of the thing
+       "creator": str|null,  // author / director / artist / host / brand
+       "year": int|null }}
+  ]
 }}
 
 Rules:
@@ -100,6 +114,9 @@ Rules:
 - Choose content_type, then arrange blocks to fit it (e.g. recipe -> heading,
   key_value(time/serves), checklist(ingredients), step_list(steps)).
 - Use ONLY the allowed block types below. Output strict JSON.
+- artifacts: include ONLY concrete, named, real-world things the video names
+  (e.g. a specific book, movie, podcast, product, or place). Do NOT invent any;
+  if the video names none, return an empty list. Use the most specific type.
 
 {vocab}
 
@@ -202,6 +219,36 @@ def _coerce_blocks(raw_blocks: list) -> list[dict]:
     return out
 
 
+def _coerce_artifacts(raw_artifacts: list) -> list[Artifact]:
+    """Validate referenced things; drop anything without a usable title or with a
+    bad shape. Never trust the model — a malformed entry is silently skipped."""
+    out: list[Artifact] = []
+    if not isinstance(raw_artifacts, list):
+        return out
+    seen: set[tuple[str, str]] = set()
+    for raw in raw_artifacts:
+        if not isinstance(raw, dict):
+            continue
+        title = (raw.get("title") or "").strip()
+        if not title:
+            continue
+        try:
+            atype = ArtifactType(raw.get("type", "other"))
+        except ValueError:
+            atype = ArtifactType.OTHER
+        key = (atype.value, title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        creator = (raw.get("creator") or None)
+        if isinstance(creator, str):
+            creator = creator.strip() or None
+        year = raw.get("year")
+        year = int(year) if isinstance(year, (int, float)) else None
+        out.append(Artifact(type=atype, title=title, creator=creator, year=year))
+    return out
+
+
 def _synthesize_base(bundle: str, transcript: str, caption: str) -> Base:
     """When the model omits one_liner/tldr, build something usable from raw text."""
     source = (transcript or caption or "").strip()
@@ -262,12 +309,19 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
         base.one_liner = base.one_liner or synth.one_liner
         base.tldr = base.tldr or synth.tldr
 
+    artifacts = _coerce_artifacts(data.get("artifacts") or [])
+
     blocks = _coerce_blocks(data.get("blocks") or [])
     if not blocks:
-        # an empty/garbage block list still gets a usable body
-        return _paragraph_fallback(bundle, transcript, caption)
+        # an empty/garbage block list still gets a usable body, but keep any
+        # artifacts the model did surface (the catalog doesn't need blocks).
+        fallback = _paragraph_fallback(bundle, transcript, caption)
+        fallback.artifacts = artifacts
+        return fallback
 
-    return StructuredCard(base, blocks, _primary_action_for(base.content_type))
+    return StructuredCard(
+        base, blocks, _primary_action_for(base.content_type), artifacts
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -46,6 +46,12 @@ dependencies:
   # Cached, progressive thumbnail/keyframe loading in the library grid.
   cached_network_image: ^3.4.1
 
+  # Action layer (docs/09): export/shopping-list -> OS share sheet,
+  # save-place -> Maps, reminder/schedule -> native calendar event.
+  share_plus: ^10.1.4
+  url_launcher: ^6.3.1
+  add_2_calendar: ^3.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -27,11 +27,15 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Literal, Optional, Union
 
-from . import resolvers  # the resolver functions, unchanged
+from . import article, resolvers  # resolvers unchanged; article is the text path
 
 log = logging.getLogger("ingestion.downloader")
 
-MediaType = Literal["video", "images"]
+MediaType = Literal["video", "images", "article"]
+
+# URLs on these hosts go to the fragile video resolver cascade; everything else
+# is treated as a readable article/post (docs/02 article path).
+_VIDEO_HOSTS = ("instagram.com", "tiktok.com", "youtube.com", "youtu.be")
 
 # Optional keyless resolvers, in cascade order. Probed by name; missing ones skip.
 _KEYLESS_NAMES = [
@@ -61,10 +65,16 @@ class DownloaderConfig:
 @dataclass
 class DownloadResult:
     """What the pipeline's extraction stage consumes next."""
-    media_type: MediaType            # "video" or "images"
-    data: Union[str, list[str]]      # path to .mp4, OR list of image paths
+    media_type: MediaType            # "video" | "images" | "article"
+    data: Union[str, list[str]]      # path to .mp4, list of image paths, or "" for article
     caption: str                     # may be empty; OCR/transcript compensates
     resolver: str                    # which strategy succeeded (for observability)
+
+    # Article path only (media_type == "article"): the content is text, not media.
+    text: str = ""                   # extracted readable body
+    title: str = ""                  # article/post title
+    author: str | None = None        # byline, if any
+    image_url: str | None = None     # remote lead-image URL (hotlinked, not downloaded)
 
 
 class DownloadError(RuntimeError):
@@ -97,6 +107,44 @@ def _safe_call(name: str, fn: Callable):
         return None
 
 
+def _is_video_url(url: str) -> bool:
+    """True for the short-form video platforms handled by the resolver cascade."""
+    u = url.lower()
+    return any(host in u for host in _VIDEO_HOSTS)
+
+
+def _article_result(url: str) -> DownloadResult | None:
+    """The text path: extract a readable article. None if nothing usable."""
+    art = article.fetch_article(url)
+    if art is None:
+        return None
+    log.info("download ok via article extractor (%d chars)", len(art.text))
+    return DownloadResult(
+        media_type="article",
+        data="",
+        caption=art.title,
+        resolver="article",
+        text=art.text,
+        title=art.title,
+        author=art.author,
+        image_url=art.image_url,
+    )
+
+
+def _yt_dlp_result(url: str, output_path: str, cookies_path: str | None) -> DownloadResult | None:
+    """yt-dlp as a video safety net — it supports far more sites than the keyless
+    scrapers, so it can rescue a non-video host that is actually a video page."""
+    yt = getattr(resolvers, "_download_yt_dlp", None)
+    if not callable(yt):
+        return None
+    res = _safe_call("yt-dlp", lambda: yt(url, output_path, cookies_path))
+    if res:
+        path, caption = res
+        log.info("download ok via yt-dlp")
+        return DownloadResult("video", path, caption, "yt-dlp")
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration (sync core)
 # --------------------------------------------------------------------------- #
@@ -111,6 +159,22 @@ def download_content(
     """
     config = config or DownloaderConfig()
 
+    # Article path: non-video hosts carry readable text, not media. Try text
+    # extraction first; if it yields nothing, fall through to yt-dlp in case the
+    # page is actually a video the cascade can handle (docs/02 article path).
+    if not _is_video_url(url):
+        art = _article_result(url)
+        if art is not None:
+            return art
+        job_dir = os.path.join(config.output_dir, uuid.uuid4().hex)
+        os.makedirs(job_dir, exist_ok=True)
+        yt = _yt_dlp_result(
+            url, os.path.join(job_dir, "video.mp4"), config.cookies_path
+        )
+        if yt is not None:
+            return yt
+        raise DownloadError(f"no article or video extracted for {url}")
+
     # Per-job isolation: unique dir per call so concurrent downloads never collide.
     job_dir = os.path.join(config.output_dir, uuid.uuid4().hex)
     os.makedirs(job_dir, exist_ok=True)
@@ -122,9 +186,13 @@ def download_content(
         log.debug("trying keyless resolver: %s", name)
         res = _safe_call(name, lambda fn=fn: fn(url, output_path))
         if res:
-            path, caption = res
+            if len(res) == 3:
+                m_type, path_or_list, caption = res
+            else:
+                path_or_list, caption = res
+                m_type = "video"
             log.info("download ok via %s", name)
-            return DownloadResult("video", path, caption, name)
+            return DownloadResult(m_type, path_or_list, caption, name)
 
     # 2) RapidAPI — optional, only if a key is configured and resolvers exposes it.
     rapid = getattr(resolvers, "_download_rapidapi", None)
@@ -135,9 +203,13 @@ def download_content(
             lambda: rapid(url, output_path, config.rapidapi_key),
         )
         if res:
-            path, caption = res
+            if len(res) == 3:
+                m_type, path_or_list, caption = res
+            else:
+                path_or_list, caption = res
+                m_type = "video"
             log.info("download ok via rapidapi")
-            return DownloadResult("video", path, caption, "rapidapi")
+            return DownloadResult(m_type, path_or_list, caption, "rapidapi")
 
     # 3) yt-dlp — local fallback for videos/reels.
     yt = getattr(resolvers, "_download_yt_dlp", None)

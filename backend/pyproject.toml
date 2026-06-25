@@ -13,8 +13,10 @@ dependencies = [
     "aiosqlite>=0.20",
     "python-multipart>=0.0.9",
     # ingestion
+    "requests>=2.31",
     "yt-dlp>=2024.4.9",
     "instaloader>=4.11",
+    "trafilatura>=1.8",  # keyless readable-article extraction (docs/02 article path)
     # extraction
     "Pillow>=10.0",
     "imagehash>=4.3",

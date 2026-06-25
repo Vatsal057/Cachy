@@ -12,8 +12,8 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'data/repositories/card_repository.dart';
 import 'data/services/api_client.dart';
 import 'data/services/local_store.dart';
+import 'ui/core/home_shell.dart';
 import 'ui/core/theme.dart';
-import 'ui/features/library/views/library_screen.dart';
 import 'ui/features/share/views/share_screen.dart';
 
 Future<void> main() async {
@@ -100,7 +100,7 @@ class _CachyAppState extends State<CachyApp> {
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
-        home: const LibraryScreen(),
+        home: const HomeShell(),
       ),
     );
   }

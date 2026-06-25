@@ -75,6 +75,41 @@ async def ingest(job):
 - **Resolver rot.** Expect individual resolvers to break over time. Monitor
   per-resolver success rate (it's recorded on every card) and prune/replace dead ones.
 
+## Article path (non-video sources)
+
+Not every shared link is short-form video. Reddit, Wikipedia, LinkedIn,
+Substack, news, and blogs are **text** — there is no media to download, the
+content *is* the article. These take a parallel path instead of the resolver
+cascade.
+
+**Routing (domain classify).** `downloader._is_video_url` checks the host:
+Instagram / TikTok / YouTube go to the fragile resolver cascade (unchanged);
+**everything else is treated as an article**. yt-dlp stays a safety net — if
+article extraction yields nothing usable, a non-video host is retried through
+yt-dlp in case the page is actually a video it supports.
+
+**Extraction.** `ingestion/article.py` (new orchestration the app owns — *not*
+title, readable body, author, and a remote lead-image URL. Best-effort: a thin
+body (paywall/login wall) or any error → `None` → normal ingestion failure (a
+LinkedIn post behind auth simply fails gracefully, same model as a dead
+resolver).
+
+```
+DownloadResult(media_type="article", data="", caption=title, resolver="article",
+               text=…, title=…, author=…, image_url=…)
+```
+
+**Pipeline fit.** The extraction stage branches on `media_type == "article"`:
+it skips ffmpeg / Whisper / OCR entirely, builds the labeled text bundle from
+title + body, and uses the remote `image_url` directly as the thumbnail
+(nothing is downloaded — fits the ephemeral free tier). Structuring (docs/04) is
+**unchanged**: article text flows in as the bundle exactly like a transcript
+does. No block-schema change.
+
+**Platform label.** `ingestion/source.py::platform_for_url` maps a URL to a
+label (reddit / wikipedia / linkedin / substack / medium / known video
+platforms), falling back to the bare host — shown in the card's source line.
+
 ## Caching
 
 Cache by source URL. Re-sharing the same reel returns the existing card instead

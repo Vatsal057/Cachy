@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -119,6 +120,41 @@ class ApiClient {
   Future<List<Card>> search(String query, {int limit = 30}) async {
     final resp = await _client.get(_uri('/search', {'q': query, 'limit': limit}));
     return _decodeList(resp).map(Card.fromJson).toList();
+  }
+
+  /// Grounded Q&A over one card (docs/13). Stateless: send the full history each
+  /// turn as [{'role','content'}]; returns the assistant's reply text.
+  Future<String> chat(String cardId, List<Map<String, String>> messages) async {
+    final resp = await _client.post(
+      _uri('/cards/$cardId/chat'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'messages': messages}),
+    );
+    return (_decodeMap(resp)['reply'] as String?) ?? '';
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Catalog — referenced artifacts aggregated across cards (docs/12)
+  // ------------------------------------------------------------------------- //
+
+  Future<List<CatalogEntry>> listCatalog({
+    ArtifactType? type,
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final resp = await _client.get(_uri('/catalog', {
+      'type': ?type?.wire,
+      'limit': limit,
+      'offset': offset,
+    }));
+    return _decodeList(resp).map(CatalogEntry.fromJson).toList();
+  }
+
+  Future<void> deleteCatalogEntry(String artifactId) async {
+    final resp = await _client.delete(_uri('/catalog/$artifactId'));
+    if (resp.statusCode >= 400) {
+      throw ApiException(resp.statusCode, resp.body);
+    }
   }
 
   // ------------------------------------------------------------------------- //

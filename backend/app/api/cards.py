@@ -14,7 +14,8 @@ from sqlalchemy import delete, select
 
 from app.models.card import Card, CardState
 from app.models.job import JobState
-from app.services import cache, events
+from app.pipeline.ingestion.source import platform_for_url
+from app.services import cache, events, llm_chat
 from app.store import db, media
 
 log = logging.getLogger("api.cards")
@@ -41,15 +42,21 @@ class PatchCardRequest(BaseModel):
     state: None = None  # state is server-controlled; ignored if sent
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
 def _platform_for(url: str) -> str | None:
-    u = url.lower()
-    if "instagram.com" in u:
-        return "instagram"
-    if "tiktok.com" in u:
-        return "tiktok"
-    if "youtube.com" in u or "youtu.be" in u:
-        return "youtube"
-    return None
+    return platform_for_url(url)
 
 
 # --------------------------------------------------------------------------- #
@@ -154,6 +161,31 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
         await session.commit()
         await session.refresh(row)
         return row.to_card()
+
+
+@router.post("/{card_id}/chat", response_model=ChatResponse)
+async def chat_card(card_id: str, req: ChatRequest) -> ChatResponse:
+    """Grounded Q&A over one card (docs/13). Stateless: the client replays the
+    conversation each turn; nothing is stored. The model answers from the card's
+    structured content only."""
+    if not req.messages or req.messages[-1].role != "user":
+        raise HTTPException(status_code=422, detail="last message must be from user")
+
+    async with db.session() as session:
+        row = await db.get_card_row(session, card_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="card not found")
+        if row.state != CardState.READY.value:
+            raise HTTPException(status_code=409, detail="card is not ready")
+        card = row.to_card()
+
+    history = [m.model_dump() for m in req.messages]
+    reply = await asyncio.to_thread(llm_chat.answer, card, history)
+    if reply is None:
+        raise HTTPException(
+            status_code=503, detail="chat is unavailable (no LLM backend configured)"
+        )
+    return ChatResponse(reply=reply)
 
 
 @router.delete("/{card_id}")

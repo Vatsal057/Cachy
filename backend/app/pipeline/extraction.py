@@ -202,6 +202,38 @@ def _aggregate(caption: str, transcript: str, ocr_text: str, source_line: str) -
     return "\n".join(parts)
 
 
+def _aggregate_article(
+    title: str, text: str, author: str | None, source_line: str
+) -> str:
+    """Text-source bundle (docs/02 article path): no audio/frames, the body is the
+    content. Same labeled shape the structuring prompt already consumes."""
+    parts = [
+        f"TITLE: {title.strip()}" if title.strip() else "TITLE:",
+        f"AUTHOR: {author.strip()}" if author and author.strip() else "AUTHOR:",
+        f"ARTICLE TEXT: {text.strip()}" if text.strip() else "ARTICLE TEXT:",
+        f"SOURCE: {source_line}",
+    ]
+    return "\n".join(parts)
+
+
+def _extract_article(download: DownloadResult, source_line: str) -> ExtractionResult:
+    """Article path: skip ffmpeg/Whisper/OCR entirely. The lead image (if any) is
+    a remote URL used directly as the thumbnail — nothing is downloaded."""
+    aggregated = _aggregate_article(
+        download.title, download.text, download.author, source_line
+    )
+    return ExtractionResult(
+        aggregated_text=aggregated,
+        transcript=download.text,  # gives base-synth / paragraph-fallback real text
+        ocr_text="",
+        thumbnail=download.image_url,
+        keyframes=[],
+        had_transcript=False,
+        had_ocr=False,
+        had_visual=False,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
@@ -211,6 +243,9 @@ def extract(
 ) -> ExtractionResult:
     """Run the extraction pipeline against a DownloadResult. `work_dir` is the
     per-card directory where audio/frames live."""
+    if download.media_type == "article":
+        return _extract_article(download, source_line)
+
     os.makedirs(work_dir, exist_ok=True)
     transcript = ""
     frames: list[str] = []
