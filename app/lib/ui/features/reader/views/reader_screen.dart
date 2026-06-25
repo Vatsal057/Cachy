@@ -117,9 +117,7 @@ class _ReaderView extends StatelessWidget {
           ),
         ],
       ),
-      bottomSheet: card.primaryAction.isPresent && card.isReady
-          ? PrimaryActionBar(action: card.primaryAction)
-          : null,
+      bottomSheet: card.isReady ? PrimaryActionBar(card: card) : null,
     );
   }
 

@@ -49,17 +49,27 @@ class _LibraryView extends StatelessWidget {
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(50),
-          child: _FilterBar(
-            selected: vm.filter,
-            onSelect: vm.setFilter,
+          preferredSize: const Size.fromHeight(108),
+          child: Column(
+            children: [
+              _SearchField(
+                query: vm.query,
+                busy: vm.searchBusy,
+                onChanged: vm.setQuery,
+                onClear: vm.clearSearch,
+              ),
+              _FilterBar(
+                selected: vm.filter,
+                onSelect: vm.setFilter,
+              ),
+            ],
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openPaste(context),
         icon: const Icon(Icons.add_link_rounded),
-        label: const Text('Add reel'),
+        label: const Text('Add link'),
       ),
       body: RefreshIndicator(
         onRefresh: vm.refresh,
@@ -69,6 +79,21 @@ class _LibraryView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, LibraryViewModel vm, api) {
+    // An active search overrides the normal library/status views.
+    if (vm.searching) {
+      if (vm.searchBusy && vm.results.isEmpty) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (vm.results.isEmpty) {
+        return _Message(
+          icon: Icons.search_off_rounded,
+          title: 'No matches',
+          subtitle: 'Nothing in your library matches “${vm.query.trim()}”.',
+        );
+      }
+      return _grid(context, vm.results, vm, api);
+    }
+
     switch (vm.status) {
       case LibraryStatus.loading:
         return const Center(child: CircularProgressIndicator());
@@ -83,36 +108,40 @@ class _LibraryView extends StatelessWidget {
         return const _Message(
           icon: Icons.video_library_outlined,
           title: 'No cards yet',
-          subtitle: 'Share a reel or paste a link to make your first card.',
+          subtitle: 'Share or paste any link — a reel, article, or post.',
         );
       case LibraryStatus.idle:
       case LibraryStatus.ready:
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(
-              Insets.page, 12, Insets.page, 96),
-          physics: const AlwaysScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: 0.72,
-          ),
-          itemCount: vm.cards.length,
-          itemBuilder: (ctx, i) {
-            final card = vm.cards[i];
-            return CardTile(
-              card: card,
-              api: api,
-              onTap: () => Navigator.of(ctx).push(
-                MaterialPageRoute(
-                  builder: (_) => ReaderScreen(cardId: card.cardId),
-                ),
-              ),
-              onDelete: () => vm.delete(card.cardId),
-            );
-          },
-        );
+        return _grid(context, vm.cards, vm, api);
     }
+  }
+
+  Widget _grid(
+      BuildContext context, List cards, LibraryViewModel vm, api) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
+      physics: const AlwaysScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        childAspectRatio: 0.72,
+      ),
+      itemCount: cards.length,
+      itemBuilder: (ctx, i) {
+        final card = cards[i];
+        return CardTile(
+          card: card,
+          api: api,
+          onTap: () => Navigator.of(ctx).push(
+            MaterialPageRoute(
+              builder: (_) => ReaderScreen(cardId: card.cardId),
+            ),
+          ),
+          onDelete: () => vm.delete(card.cardId),
+        );
+      },
+    );
   }
 
   Future<void> _openPaste(BuildContext context) async {
@@ -131,15 +160,19 @@ class _LibraryView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Paste a reel link',
+            Text('Paste a link',
                 style: Theme.of(ctx).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text('Reel, article, post, or page — any source.',
+                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 14),
             TextField(
               controller: controller,
               autofocus: true,
               keyboardType: TextInputType.url,
               decoration: const InputDecoration(
-                hintText: 'https://instagram.com/reel/…',
+                hintText: 'https://…',
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (v) => Navigator.pop(ctx, v),
@@ -159,6 +192,72 @@ class _LibraryView extends StatelessWidget {
       MaterialPageRoute(builder: (_) => ShareScreen(sharedUrl: url.trim())),
     );
     await libraryVm.refresh();
+  }
+}
+
+class _SearchField extends StatefulWidget {
+  const _SearchField({
+    required this.query,
+    required this.busy,
+    required this.onChanged,
+    required this.onClear,
+  });
+  final String query;
+  final bool busy;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  State<_SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<_SearchField> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.query);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.page, 4, Insets.page, 4),
+      child: TextField(
+        controller: _controller,
+        textInputAction: TextInputAction.search,
+        onChanged: (v) {
+          setState(() {}); // refresh the clear-button affordance
+          widget.onChanged(v);
+        },
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search your cards',
+          prefixIcon: widget.busy
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : const Icon(Icons.search_rounded),
+          suffixIcon: _controller.text.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () {
+                    _controller.clear();
+                    widget.onClear();
+                  },
+                ),
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
   }
 }
 

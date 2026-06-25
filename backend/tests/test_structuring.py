@@ -67,3 +67,34 @@ def test_primary_action_mapping():
     raw_recipe = '{"base":{"one_liner":"a","tldr":"b","content_type":"recipe"},"blocks":[{"type":"paragraph","text":"x"}]}'
     sc = structuring._validate(raw_recipe, bundle="", transcript="", caption="")
     assert sc.primary_action.kind == PrimaryActionKind.SHOPPING_LIST
+
+
+def test_artifacts_extracted_and_validated():
+    raw = (
+        '{"base":{"one_liner":"5 books","tldr":"reading list","content_type":"tip"},'
+        '"blocks":[{"type":"bullet_list","items":["a"]}],'
+        '"artifacts":['
+        '{"type":"book","title":"Atomic Habits","creator":"James Clear","year":2018},'
+        '{"type":"bogus","title":"Dune"},'
+        '{"title":""},'
+        '"not a dict",'
+        '{"type":"book","title":"atomic habits"}]}'  # dup of first (case-insensitive)
+    )
+    sc = structuring._validate(raw, bundle="", transcript="", caption="")
+    titles = [(a.type.value, a.title) for a in sc.artifacts]
+    assert ("book", "Atomic Habits") in titles
+    assert ("other", "Dune") in titles  # bad type coerced to other
+    assert len(sc.artifacts) == 2  # empty-title, non-dict, and dup dropped
+
+
+def test_artifacts_kept_even_when_blocks_empty():
+    raw = '{"base":{"one_liner":"x","tldr":"y"},"blocks":[],"artifacts":[{"type":"movie","title":"Inception"}]}'
+    sc = structuring._validate(raw, bundle="", transcript="body text", caption="")
+    assert any(b["type"] == "paragraph" for b in sc.blocks)  # fallback body
+    assert [a.title for a in sc.artifacts] == ["Inception"]
+
+
+def test_no_artifacts_is_normal():
+    raw = '{"base":{"one_liner":"x","tldr":"y","content_type":"tip"},"blocks":[{"type":"paragraph","text":"z"}]}'
+    sc = structuring._validate(raw, bundle="", transcript="", caption="")
+    assert sc.artifacts == []

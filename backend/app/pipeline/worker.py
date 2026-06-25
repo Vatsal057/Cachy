@@ -26,7 +26,7 @@ from app.pipeline.ingestion.downloader import (
     download_content_async,
 )
 from app.pipeline.structuring import structure_async
-from app.services import events, notify
+from app.services import artifact_images, events, notify
 from app.store import db, media
 
 log = logging.getLogger("pipeline.worker")
@@ -36,17 +36,6 @@ _stop = asyncio.Event()
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _platform_for(url: str) -> str | None:
-    u = url.lower()
-    if "instagram.com" in u:
-        return "instagram"
-    if "tiktok.com" in u:
-        return "tiktok"
-    if "youtube.com" in u or "youtu.be" in u:
-        return "youtube"
-    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -115,24 +104,47 @@ async def _write_blocks(session, card_id: str, blocks: list[dict]) -> None:
 
 
 async def _write_media_and_meta(
-    session, card_id: str, extraction, caption: str, resolver: str
+    session, card_id: str, extraction, caption: str, resolver: str,
+    creator: str | None = None,
 ) -> None:
+    values = dict(
+        thumbnail=extraction.thumbnail,
+        keyframes=extraction.keyframes,
+        caption=caption,
+        resolver=resolver,
+        extraction={
+            "transcript": extraction.had_transcript,
+            "ocr": extraction.had_ocr,
+            "visual": extraction.had_visual,
+        },
+    )
+    if creator:  # article byline -> shown in the source line
+        values["creator"] = creator
     await session.execute(
-        update(db.CardRow)
-        .where(db.CardRow.id == card_id)
-        .values(
-            thumbnail=extraction.thumbnail,
-            keyframes=extraction.keyframes,
-            caption=caption,
-            resolver=resolver,
-            extraction={
-                "transcript": extraction.had_transcript,
-                "ocr": extraction.had_ocr,
-                "visual": extraction.had_visual,
-            },
-        )
+        update(db.CardRow).where(db.CardRow.id == card_id).values(**values)
     )
     await session.commit()
+
+
+async def _persist_artifacts(session, card_id: str, artifacts) -> None:
+    """Aggregate referenced things into the global catalog (docs/12). Each lookup
+    is best-effort and isolated — a failure here never affects the card itself."""
+    for art in artifacts:
+        try:
+            thumbnail = await asyncio.to_thread(
+                artifact_images.resolve_thumbnail, art
+            )
+            await db.upsert_artifact(
+                session,
+                card_id=card_id,
+                type_=art.type.value,
+                title=art.title,
+                creator=art.creator,
+                year=art.year,
+                thumbnail=thumbnail,
+            )
+        except Exception:  # noqa: BLE001 — catalog is non-critical to the card
+            log.warning("catalog upsert failed for %r", art.title, exc_info=True)
 
 
 async def _finish_ready(session, card_id: str, job: db.JobRow) -> None:
@@ -220,8 +232,14 @@ async def _run_job(session, job: db.JobRow) -> None:
     await _write_base(session, card_id, structured)
     await _write_blocks(session, card_id, structured.blocks)
     await _write_media_and_meta(
-        session, card_id, extraction, download.caption or "", download.resolver
+        session, card_id, extraction, download.caption or "", download.resolver,
+        creator=download.author,
     )
+
+    # 5) Catalog: aggregate any referenced artifacts + fetch their thumbnails.
+    if structured.artifacts:
+        events.publish(card_id, "cataloging", "processing", "Cataloging references")
+        await _persist_artifacts(session, card_id, structured.artifacts)
 
     # Optionally discard the source video, keep keyframes+thumbnail (docs/11)
     if get_settings().discard_source_video and download.media_type == "video":

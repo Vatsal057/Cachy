@@ -26,6 +26,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.config import get_settings
 from app.store import media as media_store
+from app.models.artifact import ArtifactType, CatalogEntry
 from app.models.card import (
     Base as CardBase,
     Card,
@@ -124,6 +125,38 @@ class CardRow(Base):
         )
 
 
+class ArtifactRow(Base):
+    """A deduplicated catalog item (docs/12): one referenced thing, many source
+    cards. Dedupe key is (type, title_norm). Thumbnails are remote URLs."""
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_uuid)
+    type: Mapped[str] = mapped_column(String, default="other", index=True)
+    title: Mapped[str] = mapped_column(Text)
+    title_norm: Mapped[str] = mapped_column(String, index=True)
+    creator: Mapped[str | None] = mapped_column(String, nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_card_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    def to_entry(self) -> CatalogEntry:
+        return CatalogEntry(
+            id=self.id,
+            type=ArtifactType(self.type) if self.type else ArtifactType.OTHER,
+            title=self.title,
+            creator=self.creator,
+            year=self.year,
+            thumbnail=self.thumbnail,
+            source_card_ids=list(self.source_card_ids or []),
+            created_at=(self.created_at or _utcnow()).isoformat(),
+        )
+
+
 class JobRow(Base):
     __tablename__ = "jobs"
 
@@ -184,3 +217,50 @@ async def get_card_row(db: AsyncSession, card_id: str) -> CardRow | None:
 async def find_card_by_url(db: AsyncSession, url: str) -> CardRow | None:
     res = await db.execute(select(CardRow).where(CardRow.source_url == url))
     return res.scalar_one_or_none()
+
+
+def _norm_title(title: str) -> str:
+    return " ".join(title.lower().split())
+
+
+async def upsert_artifact(
+    db: AsyncSession,
+    *,
+    card_id: str,
+    type_: str,
+    title: str,
+    creator: str | None,
+    year: int | None,
+    thumbnail: str | None,
+) -> ArtifactRow:
+    """Insert a catalog item or merge into the existing one (dedupe by type+title).
+    Appends card_id to source_card_ids and backfills a missing thumbnail."""
+    norm = _norm_title(title)
+    res = await db.execute(
+        select(ArtifactRow).where(
+            ArtifactRow.type == type_, ArtifactRow.title_norm == norm
+        )
+    )
+    row = res.scalar_one_or_none()
+    if row is None:
+        row = ArtifactRow(
+            type=type_,
+            title=title,
+            title_norm=norm,
+            creator=creator,
+            year=year,
+            thumbnail=thumbnail,
+            source_card_ids=[card_id],
+        )
+        db.add(row)
+    else:
+        if card_id not in (row.source_card_ids or []):
+            row.source_card_ids = [*(row.source_card_ids or []), card_id]
+        if not row.thumbnail and thumbnail:
+            row.thumbnail = thumbnail
+        if not row.creator and creator:
+            row.creator = creator
+        if not row.year and year:
+            row.year = year
+    await db.commit()
+    return row

@@ -5,6 +5,8 @@ Full feature list by area. Phase tags: **[P1]** MVP, **[P2]**, **[P3]**.
 ## Ingestion
 - Share-sheet integration (Instagram first) **[P1]**, TikTok + YouTube Shorts **[P2]**
 - Link paste fallback **[P1]**
+- Article/text sources — Reddit, Wikipedia, LinkedIn, Substack, blogs, news (docs/02) **[done]**
+- Domain-classified routing (video cascade vs. keyless article extraction) **[done]**
 - Batch share — multiple reels queue independently without blocking **[P1]**
 - Duplicate detection — re-share returns existing card **[P1]**
 - Graceful late-surfaced failure for unsupported/private/unavailable **[P1]**
@@ -31,16 +33,26 @@ Full feature list by area. Phase tags: **[P1]** MVP, **[P2]**, **[P3]**.
 - Lookup-able products **[P2]**
 - Mappable places **[P2]**
 
-## Action layer
+## Action layer (docs/13)
 - One primary action per card **[P1]** (kind derived from content type)
-- Shopping/checklist generation **[P2]**
-- Reminders / calendar events **[P2]**
-- Export to Notion / Obsidian / Apple Notes / markdown **[P2]**
+- Content-aware action set — actions unlocked by the blocks a card contains **[done]**
+- Common actions on every card: Copy, Share, Open original **[done]**
+- Shopping/checklist generation (share as checkable list) **[done]**
+- Reminders / calendar events (native add-event) **[done]**
+- Export to Notion / Obsidian / Apple Notes / markdown (share markdown) **[done]**
+- Open place in Maps; open card links **[done]**
+- Grounded chat — Ask questions about a single card **[done]**
 
 ## Visual
 - Keyframe thumbnails + visual library grid **[P1]**
 - Color/motion/depth system, progressive-render animation **[P1]**
 - Maps with pins, charts, product thumbnails, visual step strips **[P2]**
+
+## Catalog (artifacts)
+- Artifact extraction from referenced things (book/movie/podcast/product/place…) **[P1]**
+- Global deduplicated catalog space, grouped by type **[P1]**
+- Free keyless thumbnail retrieval (iTunes / Open Library / Wikipedia) **[P1]**
+- Source-card backreferences per artifact **[P1]**
 
 ## Library & retrieval
 - Card states surfaced (queued/processing/ready/failed) **[P1]**

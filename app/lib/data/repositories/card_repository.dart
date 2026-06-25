@@ -5,6 +5,7 @@ library;
 
 import 'dart:convert';
 
+import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -100,6 +101,19 @@ class CardRepository {
   }
 
   Future<List<Card>> search(String query) => _api.search(query);
+
+  /// Grounded chat over one card (docs/13). Network-only; the conversation is
+  /// held in the view model and replayed each turn.
+  Future<String> chat(String cardId, List<Map<String, String>> messages) =>
+      _api.chat(cardId, messages);
+
+  /// The aggregated artifact catalog (docs/12). Network-only for now — these
+  /// are remote-thumbnail entries with no offline-render requirement.
+  Future<List<CatalogEntry>> catalog({ArtifactType? type}) =>
+      _api.listCatalog(type: type);
+
+  Future<void> deleteCatalogEntry(String artifactId) =>
+      _api.deleteCatalogEntry(artifactId);
 
   /// Reconstruct the raw JSON for caching. Uses preserved `rawBlocks` so block
   /// state round-trips losslessly.

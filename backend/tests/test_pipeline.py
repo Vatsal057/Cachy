@@ -69,6 +69,37 @@ async def test_job_reaches_ready_with_sane_card(database, stub_pipeline):
     assert card.meta.extraction.transcript is True
 
 
+async def test_article_job_reaches_ready(database, monkeypatch):
+    """A non-video source runs through the article path: no media, real
+    extraction branch + structuring (offline -> paragraph fallback), READY."""
+    async def fake_download(url, config=None):
+        return DownloadResult(
+            media_type="article", data="", caption="Sleep Guide",
+            resolver="article", text="Sleep early. Avoid screens. " * 20,
+            title="Sleep Guide", author="Jane Doe",
+            image_url="https://img/cover.jpg",
+        )
+
+    monkeypatch.setattr(worker, "download_content_async", fake_download)
+    card_id, _ = await _make_card_and_job("https://en.wikipedia.org/wiki/Sleep")
+
+    async with db.session() as s:
+        jid = await _first_job_id(s, card_id)
+        job = await s.get(db.JobRow, jid)
+        await worker._run_job(s, job)
+
+    async with db.session() as s:
+        row = await db.get_card_row(s, card_id)
+        card = row.to_card()
+
+    assert card.state == CardState.READY
+    assert card.base.one_liner and card.base.tldr
+    assert card.blocks  # paragraph fallback at minimum
+    assert card.media.thumbnail == "https://img/cover.jpg"  # remote passthrough
+    assert card.source.resolver == "article"
+    assert card.source.creator == "Jane Doe"  # byline persisted
+
+
 async def test_ingestion_failure_dead_letters_after_retries(database, monkeypatch):
     async def boom(url, config=None):
         raise DownloadError("all resolvers failed")

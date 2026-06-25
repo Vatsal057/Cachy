@@ -2,6 +2,8 @@
 /// pull-to-refresh, filtering by state, and delete. Falls back to cache offline.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -30,6 +32,63 @@ class LibraryViewModel extends ChangeNotifier {
 
   bool _offline = false;
   bool get offline => _offline;
+
+  // --- search (full-text, /search endpoint) ------------------------------ //
+  String _query = '';
+  String get query => _query;
+  bool get searching => _query.trim().isNotEmpty;
+
+  List<Card> _results = const [];
+  List<Card> get results => List.unmodifiable(_results);
+
+  bool _searchBusy = false;
+  bool get searchBusy => _searchBusy;
+
+  Timer? _debounce;
+
+  /// Cards to render: search hits when a query is active, else the library.
+  List<Card> get visibleCards => searching ? _results : cards;
+
+  void setQuery(String value) {
+    _query = value;
+    notifyListeners();
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      _results = const [];
+      _searchBusy = false;
+      notifyListeners();
+      return;
+    }
+    _searchBusy = true;
+    notifyListeners();
+    _debounce = Timer(const Duration(milliseconds: 300), () => _runSearch(value));
+  }
+
+  void clearSearch() {
+    _debounce?.cancel();
+    _query = '';
+    _results = const [];
+    _searchBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> _runSearch(String value) async {
+    try {
+      final hits = await _repository.search(value.trim());
+      if (value != _query) return; // a newer keystroke superseded this one
+      _results = hits;
+    } catch (_) {
+      _results = const [];
+    }
+    _searchBusy = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
 
   Future<void> load({bool showSpinner = true}) async {
     if (showSpinner) {

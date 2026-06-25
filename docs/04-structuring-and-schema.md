@@ -17,7 +17,7 @@ not new UI code.
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "card_id": "uuid",
   "state": "queued | processing | ready | failed",
   "failure_reason": null,
@@ -170,8 +170,18 @@ The guarantee: **a card always renders something sane**, even on a degraded
 model response. This validation step is the difference between "occasionally
 renders garbage" and "always usable."
 
+## Artifacts (catalog) — separate from blocks
+
+The same single structuring call also emits an `artifacts` list — concrete,
+named things the video *references* (books, movies, podcasts, products, places).
+These are **not blocks** and never render inside the card; they feed the global
+catalog. Validated separately (title required, dedupe, drop malformed). See
+`@docs/12-catalog-and-artifacts.md`. Their addition to the structuring output is
+what took `schema_version` to `1.1`.
+
 ## Versioning
 
 `schema_version` is on every card. When the vocabulary changes, bump it; the
 client renders known versions and degrades gracefully on unknown future blocks
-(render their `text`/`items` if present, else skip).
+(render their `text`/`items` if present, else skip). **1.1** added the
+`artifacts` list to the structuring output (block vocabulary unchanged).
