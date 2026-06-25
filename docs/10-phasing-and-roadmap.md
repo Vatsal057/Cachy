@@ -11,7 +11,7 @@ card → read it → find it later.
 - Share-sheet ingestion (Instagram), link paste, batch + dedup
 - Async pipeline: queue + worker + state machine
 - Ingestion cascade integrated (resolvers + downloader async layer)
-- Extraction: ffmpeg + Whisper + Gemini (OCR/visual folded in)
+- Extraction: ffmpeg + Whisper + Tesseract OCR (conditional HF VLM for visual)
 - Single adaptive structuring pass + schema validation + fallback
 - Base layer + core block vocabulary (8 blocks)
 - Library with card states (visual grid + keyframe thumbnails)

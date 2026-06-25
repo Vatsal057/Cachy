@@ -1,9 +1,9 @@
 # 03 — Extraction
 
 Turns downloaded media into the raw signal the structuring step consumes. Goal:
-an all-free stack that **keeps Gemini doing as little as possible**, so the free
-tier survives bursts. Heavy lifting (transcription, OCR) runs off Gemini — on
-free hosted Whisper and on local compute — and Gemini receives pre-digested text.
+an all-free stack that **keeps the structuring LLM doing as little as possible**, so
+the free tier survives bursts. Heavy lifting (transcription, OCR) runs off the LLM —
+on free hosted Whisper and on local compute — and the LLM receives pre-digested text.
 
 ## Pipeline
 
@@ -11,16 +11,16 @@ free hosted Whisper and on local compute — and Gemini receives pre-digested te
 media (video.mp4 or images)
   → ffmpeg:        extract audio + sample candidate frames (scene-change based)
   → frame dedup:   drop near-identical frames → keep distinct frames
-  → Groq Whisper:  audio → transcript                         (off Gemini)
-  → Tesseract OCR: distinct frames → on-screen text (local)   (off Gemini)
+  → Groq Whisper:  audio → transcript                         (off the LLM)
+  → Tesseract OCR: distinct frames → on-screen text (local)   (off the LLM)
   → [conditional]  scene description: ONLY if transcript+OCR thin → HF Inference VLM
   → aggregate:     labeled text bundle
-  → Gemini (Flash): text-only structuring call → validated blocks   (see 04)
+  → Structuring LLM: text-only call → validated blocks        (see 04)
 ```
 
-Per card, Gemini does **one text-only call** — always. Every vision task (OCR via
-local Tesseract, scene description via a hosted open VLM) runs off Gemini, so the
-Gemini free tier only ever sees lightweight text structuring.
+Per card, the structuring LLM does **one text-only call** — always. Every vision
+task (OCR via local Tesseract, scene description via a hosted open VLM) runs off the
+LLM, so the structuring model (text-only by design) only ever sees lightweight text.
 
 ### 1. ffmpeg (free, local)
 - Extract the audio track for transcription.
@@ -33,25 +33,26 @@ Gemini free tier only ever sees lightweight text structuring.
 Drop near-identical frames before OCR so Tesseract runs on a handful of *distinct*
 frames, not 30 copies of the same overlay. Cheap perceptual-hash comparison.
 
-### 3. Transcription — Groq Whisper (free tier, off Gemini)
+### 3. Transcription — Groq Whisper (free tier, off the LLM)
 Audio → transcript via Groq's hosted Whisper (free, fast, off-device — keeps the
 HF Space light). `faster-whisper` (local) is the fallback if you move to a GPU
 Space. Empty/music-only audio is valid; the card leans on OCR + caption instead.
 
-### 4. OCR — Tesseract (local, free, off Gemini)
+### 4. OCR — Tesseract (local, free, off the LLM)
 On-screen text overlays often carry the real information. Run Tesseract locally on
 the distinct frames. No API, no quota — unlimited local compute.
 
 > **Quality trade-off (test early):** Tesseract reads stylized social-media text
-> (fancy fonts, text over busy backgrounds, emoji) noticeably worse than Gemini's
-> vision. For a project demo the quota safety usually wins, but test on a real reel
-> — if Tesseract mangles the overlay text, consider a Gemini vision OCR call for
-> that case. Measure, then decide.
+> (fancy fonts, text over busy backgrounds, emoji) noticeably worse than a hosted
+> vision model. For a project demo the quota safety usually wins, but test on a real
+> reel — if Tesseract mangles the overlay text, route that frame to the conditional
+> HF Inference VLM (step 5) for a vision OCR pass. Measure, then decide.
 
 ### 5. Scene description — conditional, HF Inference VLM (rare)
 Scene description is a vision task and can't run on the free HF Space CPU (a local
 captioning model is too slow/RAM-heavy there). Instead, route it to a **hosted
-open VLM via HF Inference** — keeping it off both the Space CPU *and* Gemini:
+open VLM via HF Inference** — keeping it off both the Space CPU *and* the structuring
+LLM:
 
 - **Model:** `HuggingFaceM4/idefics2-8b` (strong open VLM for captioning/VQA), or
   its lighter successor **SmolVLM** / Idefics3. Prefer whichever is currently live
@@ -85,40 +86,40 @@ SOURCE: platform / creator / duration
 Timestamp-aligning OCR-vs-transcript-vs-scene is a real technique but a phase-2
 refinement with marginal payoff for structured cards. Don't build it now.
 
-### 7. Structuring — Gemini Flash, text-only (see 04)
-The aggregated text bundle goes to a single **text-only** Gemini call that returns
-the validated block list. Use a **Flash-tier** model (higher free limits than Pro;
-plenty for text structuring). No images in this call in the normal case.
+### 7. Structuring — text-only LLM call (see 04)
+The aggregated text bundle goes to a single **text-only** LLM call that returns the
+validated block list. Default backend is **HuggingFace Inference Providers**
+(`Qwen/Qwen2.5-72B-Instruct`); **Groq** (`llama-3.1-70b-versatile`) is a selectable
+fallback. Both are free-tier, both text-only — no images in this call.
 
 ## The free stack, summarized
 
-| Stage | Tool | Free path | On Gemini? |
-|-------|------|-----------|------------|
+| Stage | Tool | Free path | On the LLM? |
+|-------|------|-----------|-------------|
 | Audio + frame extract | ffmpeg | free, local | no |
 | Frame dedup | perceptual hash | free, local | no |
 | Transcription | Groq Whisper | hosted free tier | no |
 | OCR | Tesseract | free, local | no |
 | Scene description | HF Inference VLM (Idefics2 / SmolVLM) | hosted free tier, **conditional/rare** | no |
-| Structuring | Gemini Flash | free tier | yes — **text-only, always** |
+| Structuring | HF Inference (Qwen2.5-72B) / Groq (llama-3.1-70b) | free tier | yes — **text-only, always** |
 
 ## Quota reality
 
 The biggest levers against the free-tier ceiling are **call count** (one text-only
 call per card) and **duplicate caching** (re-shared reels never re-call the model).
-This pipeline adds a third: most Gemini calls carry **no images**, which keeps each
-call light on tokens and protects the heavier vision quota for the rare case that
-needs it.
+This pipeline adds a third: the structuring call carries **no images**, which keeps
+each call light on tokens and leaves any vision work to the rare conditional VLM pass.
 
 At project scale (tens–low hundreds of reels/day) the free tier likely survives
 regardless; this design is the defensive version, strongest against burst-sharing.
 
-Verify current Gemini/Groq free-tier limits before budgeting around them — numbers
-shift. Use Gemini Flash for the higher free ceiling.
+Verify current HF Inference / Groq free-tier limits before budgeting around them —
+numbers shift. The structuring backend is selectable via `LLM_BACKEND` (see 05).
 
 ## Inputs handed to structuring
 
 - `aggregated_text` (caption + transcript + OCR [+ scene], labeled)
-- `keyframes` (only attached to the Gemini call in the conditional vision case)
+- `keyframes` (used only by the conditional HF Inference VLM pass, never the LLM)
 - `source` metadata (platform, creator, url, duration, resolver)
 
 Must produce a usable card even if transcript *and* OCR *and* caption are all thin,

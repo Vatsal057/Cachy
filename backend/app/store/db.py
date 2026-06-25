@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.config import get_settings
+from app.store import media as media_store
 from app.models.card import (
     Base as CardBase,
     Card,
@@ -109,8 +110,12 @@ class CardRow(Base):
             primary_action=PrimaryAction(**(self.primary_action or {})),
             blocks=self.blocks or [],
             media=Media(
-                thumbnail=self.thumbnail,
-                keyframes=self.keyframes or [],
+                thumbnail=media_store.to_media_url(self.thumbnail),
+                keyframes=[
+                    u
+                    for f in (self.keyframes or [])
+                    if (u := media_store.to_media_url(f)) is not None
+                ],
             ),
             meta=Meta(
                 created_at=(self.created_at or _utcnow()).isoformat(),

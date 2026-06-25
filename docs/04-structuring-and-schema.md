@@ -138,10 +138,12 @@ Every block has `type` and `id`. Type-specific fields below. Phase-2 blocks mark
 | product_list | export |
 | other | none |
 
-## The LLM output contract (Gemini)
+## The LLM output contract
 
-The structuring call is a **single text-only Gemini Flash call** — always. All
-vision (OCR, scene description) is handled upstream off Gemini (see `03`), so the
+The structuring call is a **single text-only LLM call** — always. The default
+backend is **HuggingFace Inference Providers** (`Qwen/Qwen2.5-72B-Instruct`), with
+**Groq** (`llama-3.1-70b-versatile`) as a selectable fallback; both are text-only.
+All vision (OCR, scene description) is handled upstream (see `03`), so the
 structuring call never carries images. It receives the aggregated text bundle and
 returns **only** a JSON card object matching this schema — no prose, no markdown
 fences. The prompt:

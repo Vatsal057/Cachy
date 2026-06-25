@@ -19,7 +19,7 @@ backend/
         resolvers.py   # working resolver functions (untouched)
         downloader.py  # async orchestration layer
       extraction.py    # ffmpeg + Whisper + keyframes
-      structuring.py   # Gemini call + schema validation
+      structuring.py   # text-only LLM call (HF/Groq) + schema validation
     models/
       card.py          # Card / Block ORM + Pydantic schemas
       job.py           # Job + state machine
@@ -75,10 +75,13 @@ structuring + validation → persist (writing `base` first for progressive rende
 ```
 DATABASE_URL=
 MEDIA_DIR=./downloads          # or object-store creds
-GEMINI_API_KEY=
+LLM_BACKEND=huggingface|groq|none   # structuring backend (default: huggingface)
+HF_API_KEY=                    # if LLM_BACKEND=huggingface
+HF_MODEL=Qwen/Qwen2.5-72B-Instruct
 RAPIDAPI_KEY=                  # optional
-WHISPER_BACKEND=local|groq
-GROQ_API_KEY=                  # only if WHISPER_BACKEND=groq
+WHISPER_BACKEND=none|groq
+GROQ_API_KEY=                  # transcription, and structuring if LLM_BACKEND=groq
+GROQ_WHISPER_MODEL=whisper-large-v3-turbo
 PUSH_BACKEND=none|fcm          # FCM free tier
 ```
 
@@ -110,4 +113,4 @@ fit (no Redis to host).
 - Per-resolver success rate (recorded on each card via `source.resolver`).
 - Per-stage processing time (ingest / extract / structure).
 - Failure counts by reason.
-- LLM call count (watch against the Gemini free-tier ceiling).
+- LLM call count (watch against the HF Inference / Groq free-tier ceiling).

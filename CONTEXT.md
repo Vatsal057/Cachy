@@ -4,7 +4,7 @@
 
 A mobile app + backend that turns short-form videos (Instagram Reels, TikTok, YouTube Shorts) into structured, readable, actionable knowledge cards. Users share a reel → async pipeline (ingest → extract → structure → persist) → progressive card via SSE → read/search.
 
-**Status:** Backend Phase 1 complete. Tests pass (17/17). Core pipeline verified end-to-end. Ready for Flutter frontend.
+**Status:** Backend Phase 1 complete (17/17 tests). Frontend Phase 1 foundation built in `/app` (Flutter, layered MVVM): schema-mirroring models, API client + SSE, repository (offline cache), block renderer, library/reader/share screens. `dart analyze` clean, 6/6 contract tests pass, `flutter build bundle` OK.
 
 ## Architecture Overview
 
@@ -17,7 +17,7 @@ share URL
   → Worker background loop:
       1. ingest:     download media (yt-dlp + instaloader)
       2. extract:    ffmpeg → audio + frames + Groq Whisper → Tesseract OCR → bundle
-      3. structure:  Groq LLM (mixtral or llama) → JSON blocks + validation
+      3. structure:  text-only LLM (HF Qwen2.5-72B default, Groq llama fallback) → JSON blocks + validation
       4. persist:    progressive (base → blocks → media)
       5. state:      QUEUED → PROCESSING → READY (or FAILED)
   → SSE stream emits stage events for UI transparency
@@ -41,7 +41,7 @@ See `/docs/01-architecture.md` for the full diagram.
 - **[pipeline/ingestion/resolvers.py](backend/app/pipeline/ingestion/resolvers.py)** — **user's file, untouched**. yt-dlp + instaloader. Drop in a richer cascade later (keyless scrapers, RapidAPI) without editing downloader.py.
 - **[pipeline/ingestion/downloader.py](backend/app/pipeline/ingestion/downloader.py)** — orchestration layer. `DownloaderConfig`, `DownloadResult`, `DownloadError`. Cascade probes for optional resolvers via `getattr`, falls back to yt-dlp → instaloader. Records winning resolver.
 - **[pipeline/extraction.py](backend/app/pipeline/extraction.py)** — ffmpeg (audio + scene-frames), phash frame dedup, Groq Whisper (optional), Tesseract OCR (optional), labeled text bundle. Every step degrades, never aborts.
-- **[pipeline/structuring.py](backend/app/pipeline/structuring.py)** — single text-only Groq LLM call (mixtral/llama). **Mandatory validation**: strip fences, parse JSON, drop out-of-vocab/invalid blocks, force non-empty one_liner/tldr, primary_action map, assign ids. **Paragraph fallback** on no-key/bad-JSON/empty. Guarantee: card always renderable.
+- **[pipeline/structuring.py](backend/app/pipeline/structuring.py)** — single text-only LLM call; selectable backend (`LLM_BACKEND`): HF Inference (`Qwen/Qwen2.5-72B-Instruct`, default) or Groq (`llama-3.1-70b-versatile`). **Mandatory validation**: strip fences, parse JSON, drop out-of-vocab/invalid blocks, force non-empty one_liner/tldr, primary_action map, assign ids. **Paragraph fallback** on no-key/bad-JSON/empty. Guarantee: card always renderable.
 - **[pipeline/worker.py](backend/app/pipeline/worker.py)** — background job loop. State machine (QUEUED→PROCESSING→READY|FAILED). Progressive persist (base first for read-now streaming). Retry transient errors; dead-letter after `MAX_ATTEMPTS`. Emits stage events for SSE.
 - **[api/cards.py](backend/app/api/cards.py)** — endpoints: POST (+dedup), GET, list, PATCH (checked items), DELETE (+media cleanup). GET `/cards/{id}/stream` is the SSE endpoint.
 - **[api/search.py](backend/app/api/search.py)** — GET `/search?q=` full-text over one_liner+tldr+blocks (SQLite LIKE, upgrade to FTS5 in P2).
@@ -56,6 +56,42 @@ See `/docs/01-architecture.md` for the full diagram.
 - **[test_api.py](backend/tests/test_api.py)** — HTTP contract: POST returns id, dedup, GET/list/PATCH/DELETE.
 
 **Result:** 17/17 pass. No API keys needed.
+
+### Frontend (`/app/lib/`) — Phase 1 foundation
+
+Layered MVVM (data → domain → ui) per the Flutter architecture skill. Conforms to
+the docs/04 block contract; unknown block types degrade gracefully, never crash.
+
+- **domain/models/** — `card.dart`, `block.dart` (sealed `Block` + `fromJson`
+  dispatch, `UnknownBlock` fallback), `enums.dart`, `pipeline_event.dart`. Mirrors
+  backend `models/card.py` exactly. Tolerant parsing (partial/progressive cards).
+- **data/services/api_client.dart** — REST (POST/GET/list/PATCH/DELETE/search) +
+  SSE stream parsing for `GET /cards/{id}/stream`. `CACHY_API_BASE` dart-define
+  (default `http://10.0.2.2:8000` for Android emulator).
+- **data/services/local_store.dart** — shared_preferences cache + offline share queue.
+- **data/repositories/card_repository.dart** — single source of truth; offline
+  fallback to cache; optimistic checklist/step toggle → PATCH (lossless via `rawBlocks`).
+- **ui/core/** — `theme.dart` (M3 light/dark, motion/inset tokens), `content_accent.dart`
+  (per-type color+icon), widgets: `card_face` (thumbnail→accent fallback),
+  `state_badge`, `pipeline_progress` (stepped transparent-pipeline track).
+- **ui/features/blocks/block_renderer.dart** — one widget per vocabulary entry;
+  checkable step/checklist rows; unknown blocks render text/items or skip.
+- **ui/features/library/** — visual grid of card faces + state badges, filter,
+  pull-to-refresh, paste-link entry (`LibraryViewModel`).
+- **ui/features/reader/** — progressive top-down render (instant/skim/depth),
+  SSE-driven processing panel, dominant primary-action bar (`ReaderViewModel`).
+- **ui/features/share/** — visible pipeline on share/paste (`ShareViewModel`).
+- **main.dart** — Provider DI + Android share-intent (`receive_sharing_intent`).
+
+**Frontend gotchas:**
+1. `receive_sharing_intent` is Swift-PM-only; ran `flutter config --enable-swift-package-manager`
+   (otherwise every `flutter` CLI command short-circuits with a warning).
+2. Backend serves no media yet (thumbnails are FS paths). `api_client.resolveMedia`
+   passes absolute URLs through and joins bare paths onto the base host; until the
+   backend mounts media (or uses absolute R2 URLs) tiles show the content-type face.
+   **Backend follow-up:** add a static `/media` mount (or R2) so faces load.
+3. iOS share extension needs a native Share Extension target + Info.plist (not wired
+   here); Android share intent-filter is wired. Link-paste works on all platforms.
 
 ### Config Files
 
@@ -160,8 +196,10 @@ Tested live: Instagram reel ingested, extracted, structured (with valid keys), m
 
 ## What's NOT Done (Phase 2+)
 
-- Flutter frontend (share extension, library grid, reader, actions)
-- Maps + tables block renderers
+- Frontend remaining: iOS share-extension native target, real primary-action
+  handlers (shopping list/calendar/export — currently acknowledged stubs), live
+  device run against the backend, widget/golden tests for screens
+- Maps + tables block renderers (map block currently a list placeholder)
 - Collections + auto-tagging
 - Semantic search + embeddings
 - Chat-with-library

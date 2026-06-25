@@ -16,7 +16,7 @@ backend and frontend, and most other docs depend on it.
 | `00-overview.md` | Product summary, the two usage modes, design principles |
 | `01-architecture.md` | System architecture, components, the share→card pipeline, state machine |
 | `02-ingestion.md` | The resolver cascade, how downloading works, integration |
-| `03-extraction.md` | ffmpeg + Whisper + Gemini; turning media into raw signal |
+| `03-extraction.md` | ffmpeg + Whisper + Tesseract; turning media into raw signal |
 | `04-structuring-and-schema.md` | **The block schema contract** (the keystone) |
 | `05-backend.md` | FastAPI structure, endpoints, job queue, storage, deployment |
 | `06-frontend.md` | Flutter structure, screens, share extension, card renderer |
