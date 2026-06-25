@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
+import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../view_models/catalog_view_model.dart';
 import 'catalog_detail_screen.dart';
@@ -97,18 +98,17 @@ class _Section extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 16, bottom: 10),
+          padding: const EdgeInsets.only(top: 20, bottom: 12),
           child: Text(
-            section.type.sectionLabel,
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
+            section.type.sectionLabel.toUpperCase(),
+            style: Brand.label(size: 12, color: theme.colorScheme.onSurface, weight: FontWeight.w700),
           ),
         ),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: (MediaQuery.of(context).size.width / 150).floor().clamp(3, 6),
             mainAxisSpacing: 14,
             crossAxisSpacing: 14,
             childAspectRatio: 0.58,

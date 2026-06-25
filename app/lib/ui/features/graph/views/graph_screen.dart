@@ -17,7 +17,6 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/graph.dart';
-import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
@@ -257,7 +256,11 @@ class _GraphScreenState extends State<GraphScreen>
 
   Widget _body() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Brand.violet));
+      return Center(
+        child: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      );
     }
     if (_error != null) {
       return ErrorState(

@@ -7,7 +7,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -91,7 +90,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     width: i == _index ? 22 : 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: i == _index ? Brand.violet : scheme.outlineVariant,
+                      color: i == _index ? scheme.primary : scheme.outlineVariant,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -100,22 +99,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(Insets.page, 0, Insets.page, 24),
-              child: GestureDetector(
-                onTap: _next,
-                child: Container(
-                  height: 56,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    gradient: Brand.gradient,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: Brand.glow(opacity: 0.35, blur: 18, y: 6),
-                  ),
-                  child: Text(
-                    _isLast ? 'Get started' : 'Next',
-                    style: Brand.wordmarkStyle(17, color: Colors.white)
-                        .copyWith(fontWeight: FontWeight.w700),
-                  ),
+              child: FilledButton(
+                onPressed: _next,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
                 ),
+                child: Text(_isLast ? 'Get started' : 'Next'),
               ),
             ),
           ],
@@ -143,17 +132,11 @@ class _Panel extends StatelessWidget {
             width: 132,
             height: 132,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Brand.violet.withValues(alpha: 0.16),
-                  Brand.indigo.withValues(alpha: 0.10),
-                ],
-              ),
+              color: theme.colorScheme.primary.withValues(alpha: 0.10),
               shape: BoxShape.circle,
+              border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
             ),
-            child: Icon(icon, size: 58, color: Brand.violet),
+            child: Icon(icon, size: 58, color: theme.colorScheme.primary),
           ),
           const SizedBox(height: 40),
           Text(title, textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),

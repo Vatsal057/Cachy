@@ -12,24 +12,26 @@ class ContentAccent {
   final Color color;
   final IconData icon;
 
+  // Earthy, muted accents that sit inside the cream+ink world — no neon. One
+  // accent per type; the rust brand accent stays reserved for chrome.
   static ContentAccent of(ContentType type) {
     switch (type) {
       case ContentType.recipe:
-        return const ContentAccent(Color(0xFFE8643C), Icons.restaurant_rounded);
+        return const ContentAccent(Color(0xFFB6502E), Icons.restaurant_rounded); // terracotta
       case ContentType.workout:
-        return const ContentAccent(Color(0xFF2EA86A), Icons.fitness_center_rounded);
+        return const ContentAccent(Color(0xFF4F6B4A), Icons.fitness_center_rounded); // moss
       case ContentType.tutorial:
-        return const ContentAccent(Color(0xFF4C7DF0), Icons.school_rounded);
+        return const ContentAccent(Color(0xFF3E5C73), Icons.school_rounded); // slate blue
       case ContentType.tip:
-        return const ContentAccent(Color(0xFFE0A92E), Icons.lightbulb_rounded);
+        return const ContentAccent(Color(0xFFB08227), Icons.lightbulb_rounded); // ochre
       case ContentType.productList:
-        return const ContentAccent(Color(0xFF8E5BD6), Icons.shopping_bag_rounded);
+        return const ContentAccent(Color(0xFF7A5A86), Icons.shopping_bag_rounded); // plum
       case ContentType.travel:
-        return const ContentAccent(Color(0xFF1FAFB5), Icons.place_rounded);
+        return const ContentAccent(Color(0xFF2F7E80), Icons.place_rounded); // teal
       case ContentType.newsExplainer:
-        return const ContentAccent(Color(0xFF6B7280), Icons.article_rounded);
+        return const ContentAccent(Color(0xFF6B6359), Icons.article_rounded); // ink-muted
       case ContentType.other:
-        return const ContentAccent(Color(0xFF5B5BD6), Icons.bookmark_rounded);
+        return const ContentAccent(Color(0xFF8A5A3C), Icons.bookmark_rounded); // tan
     }
   }
 }

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/card.dart' as model;
+import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/widgets/card_face.dart';
 import '../../../core/widgets/state_badge.dart';
@@ -80,24 +81,18 @@ class CardTile extends StatelessWidget {
                       const SizedBox(width: 5),
                       Text(
                         card.base.contentType.label.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                        ),
+                        style: Brand.label(size: 9, color: Colors.white70, weight: FontWeight.w700),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 5),
                   Text(
                     title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
+                    style: theme.textTheme.titleMedium?.copyWith(
                       color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
+                      height: 1.15,
                     ),
                   ),
                 ],

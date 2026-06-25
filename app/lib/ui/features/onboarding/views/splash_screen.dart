@@ -58,32 +58,31 @@ class _SplashScreenState extends State<SplashScreen>
     return GestureDetector(
       onTap: _finish,
       child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(gradient: Brand.gradient),
-          child: Center(
-            child: AnimatedBuilder(
-              animation: _c,
-              builder: (context, _) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CachyGlyph(
-                    size: 92,
-                    color: Colors.white,
-                    reelDrop: _drop.value,
-                  ),
-                  const SizedBox(height: 20),
-                  Opacity(
-                    opacity: _wordmark.value.clamp(0.0, 1.0),
-                    child: Transform.translate(
-                      offset: Offset(0, (1 - _wordmark.value) * 10),
-                      child: Text(
-                        'cachy',
-                        style: Brand.wordmarkStyle(40, color: Colors.white),
-                      ),
+        backgroundColor: Brand.creamGround,
+        body: Center(
+          child: AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CachyGlyph(
+                  size: 92,
+                  color: Brand.ink,
+                  reelColor: Brand.rust,
+                  reelDrop: _drop.value,
+                ),
+                const SizedBox(height: 20),
+                Opacity(
+                  opacity: _wordmark.value.clamp(0.0, 1.0),
+                  child: Transform.translate(
+                    offset: Offset(0, (1 - _wordmark.value) * 10),
+                    child: Text(
+                      'cachy',
+                      style: Brand.wordmarkStyle(44, color: Brand.ink),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -98,11 +97,9 @@ class SplashStatic extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: Brand.gradient),
-        child: const Center(child: CachyGlyph(size: 92, color: Colors.white)),
-      ),
+    return const Scaffold(
+      backgroundColor: Brand.creamGround,
+      body: Center(child: CachyGlyph(size: 92, color: Brand.ink, reelColor: Brand.rust)),
     );
   }
 }

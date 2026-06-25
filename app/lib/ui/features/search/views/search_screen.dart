@@ -120,10 +120,11 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       case _Status.results:
         final api = context.read<CardRepository>().api;
+        final cols = (MediaQuery.of(context).size.width / 200).floor().clamp(2, 5);
         return GridView.builder(
           padding: const EdgeInsets.all(Insets.page),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
             mainAxisSpacing: Insets.block,
             crossAxisSpacing: Insets.block,
             childAspectRatio: 0.72,

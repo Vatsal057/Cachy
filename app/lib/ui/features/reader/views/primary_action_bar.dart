@@ -8,7 +8,6 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 
 import '../../../../domain/models/card.dart';
-import '../../../core/brand.dart';
 import '../services/card_actions.dart';
 import 'chat_screen.dart';
 
@@ -70,7 +69,7 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
             if (hasPrimary) ...[
               const SizedBox(width: 10),
               Expanded(
-                child: _GradientActionButton(
+                child: _PrimaryActionButton(
                   busy: _busy,
                   icon: _iconFor(primaryType),
                   label: card.primaryAction.label,
@@ -165,9 +164,9 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
   }
 }
 
-/// The dominant action — brand-gradient, the loudest control in the reader.
-class _GradientActionButton extends StatelessWidget {
-  const _GradientActionButton({
+/// The dominant action — flat rust, the loudest control in the reader.
+class _PrimaryActionButton extends StatelessWidget {
+  const _PrimaryActionButton({
     required this.busy,
     required this.icon,
     required this.label,
@@ -180,44 +179,18 @@ class _GradientActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Opacity(
-        opacity: onTap == null ? 0.7 : 1,
-        child: Container(
-          height: 52,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            gradient: Brand.gradient,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: Brand.glow(opacity: 0.32, blur: 16, y: 5),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (busy)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)),
-                )
-              else
-                Icon(icon, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    return FilledButton.icon(
+      onPressed: onTap,
+      icon: busy
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, valueColor: AlwaysStoppedAnimation(scheme.onPrimary)),
+            )
+          : Icon(icon, size: 20),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }
 }

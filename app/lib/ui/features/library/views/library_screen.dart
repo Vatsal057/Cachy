@@ -73,13 +73,14 @@ class _LibraryView extends StatelessWidget {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             indicatorSize: TabBarIndicatorSize.label,
-            indicatorColor: Brand.violet,
-            labelColor: Brand.violet,
+            indicatorColor: scheme.primary,
+            labelColor: scheme.onSurface,
             unselectedLabelColor: scheme.onSurfaceVariant,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            labelStyle: Brand.label(size: 13, weight: FontWeight.w700),
+            unselectedLabelStyle: Brand.label(size: 13, weight: FontWeight.w500),
             tabs: const [
-              Tab(text: 'Cards'),
-              Tab(text: 'Graph'),
+              Tab(text: 'CARDS'),
+              Tab(text: 'GRAPH'),
             ],
           ),
         ),
@@ -103,7 +104,7 @@ class _CardsTab extends StatelessWidget {
     final api = context.read<CardRepository>().api;
 
     return RefreshIndicator(
-      color: Brand.violet,
+      color: Theme.of(context).colorScheme.primary,
       onRefresh: vm.refresh,
       child: _body(context, vm, api),
     );
@@ -138,7 +139,6 @@ class _CardsTab extends StatelessWidget {
         final visible = vm.visibleCards;
         return Column(
           children: [
-            _FilterBar(selected: vm.filter, onSelect: vm.setFilter),
             if (vm.availableTags.isNotEmpty)
               _TagBar(
                 tags: vm.availableTags,
@@ -178,11 +178,13 @@ class _CardsTab extends StatelessWidget {
 
   Widget _grid(
       BuildContext context, List<model.Card> cards, LibraryViewModel vm, dynamic api) {
+    final width = MediaQuery.of(context).size.width;
+    final cols = (width / 200).floor().clamp(2, 5);
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
       physics: const AlwaysScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols,
         mainAxisSpacing: 14,
         crossAxisSpacing: 14,
         childAspectRatio: 0.72,
@@ -202,51 +204,6 @@ class _CardsTab extends StatelessWidget {
         );
         return tile;
       },
-    );
-  }
-}
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.selected, required this.onSelect});
-  final CardState? selected;
-  final ValueChanged<CardState?> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final filters = <(String, CardState?)>[
-      ('All', null),
-      ('Ready', CardState.ready),
-      ('Working', CardState.processing),
-      ('Failed', CardState.failed),
-    ];
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(Insets.page, 6, Insets.page, 4),
-        children: [
-          for (final (label, state) in filters)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(label),
-                selected: selected == state,
-                onSelected: (_) => onSelect(state),
-                selectedColor: Brand.violet,
-                backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                labelStyle: TextStyle(
-                  color: selected == state ? Colors.white : scheme.onSurfaceVariant,
-                  fontWeight: selected == state ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 12.5,
-                ),
-                side: BorderSide.none,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                showCheckmark: false,
-              ),
-            ),
-        ],
-      ),
     );
   }
 }
@@ -274,18 +231,18 @@ class _TagBar extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
-                label: Text('#$tag'),
+                label: Text(tag.toUpperCase()),
                 selected: selected == tag,
                 onSelected: (_) => onSelect(tag),
-                selectedColor: Brand.violet.withValues(alpha: 0.85),
-                backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
-                labelStyle: TextStyle(
-                  color: selected == tag ? Colors.white : scheme.onSurfaceVariant,
-                  fontWeight: selected == tag ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 12,
+                selectedColor: scheme.primary,
+                backgroundColor: scheme.surface,
+                labelStyle: Brand.label(
+                  size: 10,
+                  color: selected == tag ? scheme.onPrimary : scheme.onSurfaceVariant,
+                  weight: selected == tag ? FontWeight.w700 : FontWeight.w500,
                 ),
-                side: BorderSide.none,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                side: BorderSide(color: scheme.outlineVariant),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 showCheckmark: false,
               ),
             ),

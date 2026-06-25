@@ -10,7 +10,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../domain/models/artifact.dart';
 import '../../../domain/models/block.dart';
-import '../../core/brand.dart';
 import '../../core/theme.dart';
 
 /// Callbacks the reader injects so checkable blocks can persist (PATCH).
@@ -435,7 +434,7 @@ class _StepStrip extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: steps.length,
-        separatorBuilder: (_, __) => _Connector(color: scheme.outlineVariant),
+        separatorBuilder: (_, _) => _Connector(color: scheme.outlineVariant),
         itemBuilder: (ctx, i) {
           final done = steps[i].checked;
           return AnimatedContainer(
@@ -443,13 +442,12 @@ class _StepStrip extends StatelessWidget {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              gradient: done ? Brand.gradient : null,
-              color: done ? null : scheme.primaryContainer,
+              color: done ? scheme.primary : scheme.primaryContainer,
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
             child: done
-                ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
+                ? Icon(Icons.check_rounded, size: 16, color: scheme.onPrimary)
                 : Text(
                     '${i + 1}',
                     style: TextStyle(
@@ -545,13 +543,12 @@ class _StepMarker extends StatelessWidget {
       width: 28,
       height: 28,
       decoration: BoxDecoration(
-        gradient: done ? Brand.gradient : null,
-        color: done ? null : scheme.primaryContainer,
+        color: done ? scheme.primary : scheme.primaryContainer,
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
       child: done
-          ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
+          ? Icon(Icons.check_rounded, size: 18, color: scheme.onPrimary)
           : Text(
               '$number',
               style: TextStyle(
@@ -681,14 +678,14 @@ class _CheckBox extends StatelessWidget {
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        gradient: checked ? Brand.gradient : null,
-        borderRadius: BorderRadius.circular(7),
+        color: checked ? scheme.primary : null,
+        borderRadius: BorderRadius.circular(6),
         border: checked
             ? null
             : Border.all(color: scheme.outline, width: 2),
       ),
       child: checked
-          ? const Icon(Icons.check_rounded, size: 17, color: Colors.white)
+          ? Icon(Icons.check_rounded, size: 17, color: scheme.onPrimary)
           : null,
     );
     if (!checked) return box;

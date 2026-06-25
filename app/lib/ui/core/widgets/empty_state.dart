@@ -64,26 +64,14 @@ class EmptyState extends StatelessWidget {
             ),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 24),
-              GestureDetector(
-                onTap: onAction,
-                child: Container(
+              FilledButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: Text(actionLabel!),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 0),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: Brand.gradient,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: Brand.glow(opacity: 0.3, blur: 16, y: 5),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.add_rounded, color: Colors.white, size: 20),
-                      const SizedBox(width: 8),
-                      Text(actionLabel!,
-                          style: Brand.wordmarkStyle(15, color: Colors.white)
-                              .copyWith(fontWeight: FontWeight.w700)),
-                    ],
-                  ),
                 ),
               ),
             ],
