@@ -42,6 +42,8 @@ class PatchCardRequest(BaseModel):
     blocks: list | None = None
     # User-mutable to-do state (docs/13): {followed, items:[{id,text,done}]}.
     action_items: dict | None = None
+    # Move card to a different collection (None = remove from collection).
+    collection_id: str | None = None
     state: None = None  # state is server-controlled; ignored if sent
 
 
@@ -139,6 +141,7 @@ async def get_card(card_id: str) -> Card:
 async def list_cards(
     state: CardState | None = None,
     content_type: str | None = None,
+    collection_id: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list[Card]:
@@ -148,6 +151,8 @@ async def list_cards(
             stmt = stmt.where(db.CardRow.state == state.value)
         if content_type is not None:
             stmt = stmt.where(db.CardRow.content_type == content_type)
+        if collection_id is not None:
+            stmt = stmt.where(db.CardRow.collection_id == collection_id)
         stmt = stmt.limit(limit).offset(offset)
         rows = (await session.execute(stmt)).scalars().all()
         return [r.to_card() for r in rows]
@@ -163,6 +168,8 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
             row.blocks = req.blocks  # e.g. updated checked flags (optimistic client)
         if req.action_items is not None:
             row.action_items = req.action_items  # follow toggle + per-item done state
+        if req.collection_id is not None:
+            row.collection_id = req.collection_id
         await session.commit()
         await session.refresh(row)
         invalidate_graph_cache()

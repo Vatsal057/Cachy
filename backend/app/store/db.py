@@ -44,6 +44,17 @@ from app.models.card import (
 )
 from app.models.job import JobState
 
+_COLLECTION_NAMES: dict[str, str] = {
+    "recipe": "Recipes",
+    "workout": "Workouts",
+    "tutorial": "Tutorials",
+    "tip": "Tips",
+    "product_list": "Products",
+    "travel": "Travel",
+    "news_explainer": "Explainers",
+    "other": "Notes",
+}
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -55,6 +66,21 @@ def _new_uuid() -> str:
 
 class Base(DeclarativeBase):
     pass
+
+
+class CollectionRow(Base):
+    """User-visible folder. System collections auto-created per content_type;
+    custom collections created by the user and manually populated."""
+
+    __tablename__ = "collections"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    # Wire value of ContentType (e.g. "recipe"). None for custom collections.
+    system_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
+    owner_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class CardRow(Base):
@@ -87,6 +113,11 @@ class CardRow(Base):
     thumbnail: Mapped[str | None] = mapped_column(String, nullable=True)
     keyframes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     extraction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Collection this card belongs to (auto-assigned by pipeline, user-overridable).
+    collection_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("collections.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     schema_version: Mapped[str] = mapped_column(String, default=SCHEMA_VERSION)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
@@ -134,6 +165,7 @@ class CardRow(Base):
                 created_at=(self.created_at or _utcnow()).isoformat(),
                 extraction=ExtractionFlags(**(self.extraction or {})),
             ),
+            collection_id=self.collection_id,
         )
 
 
@@ -225,6 +257,15 @@ async def init_db() -> None:
             {
                 "action_items": "JSON",  # docs/13 — added in schema 1.3
                 "insight": "JSON",  # docs/14 — added in schema 1.4
+                "collection_id": "TEXT",  # schema 1.5 — collections FK
+            },
+        )
+        await _add_missing_columns(
+            conn,
+            "collections",
+            {
+                "system_type": "TEXT",
+                "owner_id": "TEXT",
             },
         )
 
@@ -336,4 +377,112 @@ async def set_artifact_description(
         return None
     row.description = description
     await db.commit()
+    return row
+
+
+# --------------------------------------------------------------------------- #
+# Collections
+# --------------------------------------------------------------------------- #
+
+async def get_or_create_collection(
+    db_session: AsyncSession,
+    *,
+    owner_id: str | None,
+    system_type: str,
+) -> CollectionRow:
+    """Get the system collection for this owner+type, creating it if absent."""
+    res = await db_session.execute(
+        select(CollectionRow).where(
+            CollectionRow.owner_id == owner_id,
+            CollectionRow.system_type == system_type,
+            CollectionRow.is_custom.is_(False),
+        )
+    )
+    row = res.scalar_one_or_none()
+    if row is None:
+        row = CollectionRow(
+            name=_COLLECTION_NAMES.get(system_type, system_type.capitalize()),
+            system_type=system_type,
+            is_custom=False,
+            owner_id=owner_id,
+        )
+        db_session.add(row)
+        await db_session.commit()
+    return row
+
+
+async def list_collections(
+    db_session: AsyncSession, owner_id: str | None
+) -> list[tuple[CollectionRow, int]]:
+    """Return all collections for this owner with card counts."""
+    res = await db_session.execute(
+        select(CollectionRow)
+        .where(CollectionRow.owner_id == owner_id)
+        .order_by(CollectionRow.is_custom, CollectionRow.created_at)
+    )
+    rows = res.scalars().all()
+    result: list[tuple[CollectionRow, int]] = []
+    for row in rows:
+        count_res = await db_session.execute(
+            select(func.count()).select_from(CardRow).where(
+                CardRow.collection_id == row.id
+            )
+        )
+        count = count_res.scalar_one() or 0
+        result.append((row, count))
+    return result
+
+
+async def create_custom_collection(
+    db_session: AsyncSession, *, name: str, owner_id: str | None
+) -> CollectionRow:
+    row = CollectionRow(
+        name=name.strip(),
+        system_type=None,
+        is_custom=True,
+        owner_id=owner_id,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    return row
+
+
+async def rename_collection(
+    db_session: AsyncSession, collection_id: str, name: str
+) -> CollectionRow | None:
+    row = await db_session.get(CollectionRow, collection_id)
+    if row is None:
+        return None
+    row.name = name.strip()
+    await db_session.commit()
+    return row
+
+
+async def delete_collection(
+    db_session: AsyncSession, collection_id: str
+) -> bool:
+    """Delete a custom collection; returns False if not found or not custom."""
+    row = await db_session.get(CollectionRow, collection_id)
+    if row is None or not row.is_custom:
+        return False
+    # Detach cards from this collection before deleting.
+    from sqlalchemy import update as sa_update
+    await db_session.execute(
+        sa_update(CardRow)
+        .where(CardRow.collection_id == collection_id)
+        .values(collection_id=None)
+    )
+    await db_session.delete(row)
+    await db_session.commit()
+    return True
+
+
+async def move_card_to_collection(
+    db_session: AsyncSession, card_id: str, collection_id: str | None
+) -> CardRow | None:
+    row = await db_session.get(CardRow, card_id)
+    if row is None:
+        return None
+    row.collection_id = collection_id
+    await db_session.commit()
     return row

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select, update
 
 from app.config import get_settings
-from app.models.card import CardState, FailureReason
+from app.models.card import CardState, ContentType, FailureReason
 from app.models.job import JobState
 from app.pipeline.extraction import extract_async
 from app.pipeline.ingestion.downloader import (
@@ -102,6 +102,20 @@ async def _write_base(session, card_id: str, structured) -> None:
 async def _write_blocks(session, card_id: str, blocks: list[dict]) -> None:
     await session.execute(
         update(db.CardRow).where(db.CardRow.id == card_id).values(blocks=blocks)
+    )
+    await session.commit()
+
+
+async def _write_collection(session, card_id: str, content_type: ContentType, owner_id: str | None) -> None:
+    """Auto-assign the card to its system collection, creating the collection if absent."""
+    collection = await db.get_or_create_collection(
+        session, owner_id=owner_id, system_type=content_type.value
+    )
+    from sqlalchemy import update as sa_update
+    await session.execute(
+        sa_update(db.CardRow)
+        .where(db.CardRow.id == card_id)
+        .values(collection_id=collection.id)
     )
     await session.commit()
 
@@ -296,6 +310,7 @@ async def _run_job(session, job: db.JobRow) -> None:
     events.publish(card_id, "persisting", "processing", "Saving card")
     log.info("%s Step 4/6 persist: writing base -> blocks -> media", tag)
     await _write_base(session, card_id, structured)
+    await _write_collection(session, card_id, structured.base.content_type, card.owner_id)
     await _write_blocks(session, card_id, structured.blocks)
     await _write_media_and_meta(
         session, card_id, extraction, download.caption or "", download.resolver,

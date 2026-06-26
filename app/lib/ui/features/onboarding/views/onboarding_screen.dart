@@ -1,12 +1,12 @@
-/// First-run onboarding: three swipeable panels that teach the one loop —
-/// share → structured card → do it. Each panel is a single idea with a small
-/// motion accent (no external illustration assets). Skip or finish persists the
-/// first-run flag (via [AppController.completeOnboarding]) and hands off to the
-/// shell.
+/// First-run onboarding: detailed 3-phase showcase adapted from Insightr
+/// (demo) featuring Cachy logo headers, Fraunces serif display headlines,
+/// floating capability badges, mock structured feature cards, and library vault previews.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -21,31 +21,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _page = PageController();
   int _index = 0;
 
-  static const _panels = [
-    _Panel(
-      icon: Icons.ios_share_rounded,
-      title: 'Share a reel to Cachy',
-      body: 'See something worth keeping on Instagram, TikTok or YouTube? '
-          'Hit share and pick Cachy.',
-    ),
-    _Panel(
-      icon: Icons.auto_awesome_rounded,
-      title: 'We make it readable',
-      body: 'Cachy watches the video and turns it into a clean card — steps, '
-          'ingredients, places, the gist. No rewatching.',
-    ),
-    _Panel(
-      icon: Icons.checklist_rounded,
-      title: 'Then actually use it',
-      body: 'Tick off steps, build a shopping list, save the place, set a '
-          'reminder. The reel becomes something you do.',
-    ),
-  ];
-
-  bool get _isLast => _index == _panels.length - 1;
-
   void _next() {
-    if (_isLast) {
+    if (_index == 2) {
       widget.onDone();
     } else {
       _page.nextPage(duration: Motion.medium, curve: Motion.curve);
@@ -60,83 +37,222 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isLast = _index == 2;
+
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: widget.onDone,
-                child: const Text('Skip'),
-              ),
-            ),
-            Expanded(
-              child: PageView(
-                controller: _page,
-                onPageChanged: (i) => setState(() => _index = i),
-                children: _panels,
-              ),
-            ),
-            // Page dots.
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < _panels.length; i++)
-                  AnimatedContainer(
-                    duration: Motion.fast,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: i == _index ? 22 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: i == _index ? scheme.primary : scheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(4),
+      backgroundColor: scheme.surface,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.45),
+            radius: 1.3,
+            colors: [
+              scheme.primary.withValues(alpha: 0.12),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Top Bar: Logo + Skip
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _LogoBadge(),
+                    TextButton(
+                      onPressed: widget.onDone,
+                      child: Text('Skip', style: TextStyle(color: scheme.onSurfaceVariant)),
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Insets.page, 0, Insets.page, 24),
-              child: FilledButton(
-                onPressed: _next,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(56),
+                  ],
                 ),
-                child: Text(_isLast ? 'Get started' : 'Next'),
               ),
-            ),
-          ],
+              Expanded(
+                child: PageView(
+                  controller: _page,
+                  onPageChanged: (i) => setState(() => _index = i),
+                  children: const [
+                    _PageHook(),
+                    _PageStructure(),
+                    _PageLibrary(),
+                  ],
+                ),
+              ),
+              // Bottom Controls
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < 3; i++)
+                          AnimatedContainer(
+                            duration: Motion.fast,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            width: i == _index ? 24 : 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: i == _index ? scheme.primary : scheme.outlineVariant,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: _next,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            isLast ? 'Enter Cachy' : 'Continue',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          ),
+                          if (isLast) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.arrow_forward_rounded, size: 18),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Panel extends StatelessWidget {
-  const _Panel({required this.icon, required this.title, required this.body});
+class _LogoBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Icon(Icons.bolt_rounded, color: scheme.onPrimary, size: 20),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          'Cachy',
+          style: Brand.wordmarkStyle(20, color: scheme.onSurface),
+        ),
+      ],
+    );
+  }
+}
+
+class _FloatingPill extends StatelessWidget {
+  const _FloatingPill({required this.icon, required this.label});
   final IconData icon;
-  final String title;
-  final String body;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: scheme.primary),
+          const SizedBox(width: 8),
+          Text(label, style: Brand.label(size: 11, color: scheme.onSurface)),
+        ],
+      ),
+    );
+  }
+}
+
+class _PageHook extends StatelessWidget {
+  const _PageHook();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.page * 1.4),
+    final scheme = theme.colorScheme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _RingedIcon(icon: icon),
-          const SizedBox(height: 40),
-          Text(title, textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
-          const SizedBox(height: 14),
-          Text(
-            body,
+          const SizedBox(height: 24),
+          const _FloatingPill(icon: Icons.videocam_rounded, label: 'INSTAGRAM, TIKTOK & YOUTUBE'),
+          const SizedBox(height: 32),
+          RichText(
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.5),
+            text: TextSpan(
+              style: GoogleFonts.fraunces(
+                fontSize: 48,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1.2,
+                height: 1.1,
+                color: scheme.onSurface,
+              ),
+              children: [
+                const TextSpan(text: 'Reel Gist,\n'),
+                TextSpan(
+                  text: 'Captured.',
+                  style: TextStyle(
+                    color: scheme.primary,
+                    shadows: [
+                      Shadow(
+                        color: scheme.primary.withValues(alpha: 0.35),
+                        blurRadius: 24,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          const _FloatingPill(icon: Icons.auto_awesome_rounded, label: 'ZERO REWATCHING'),
+          const SizedBox(height: 32),
+          Text(
+            'See a recipe or workout worth saving? Just hit Share to Cachy. Our AI transcribes and organizes the takeaway instantly.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.6,
+            ),
           ),
         ],
       ),
@@ -144,40 +260,286 @@ class _Panel extends StatelessWidget {
   }
 }
 
-/// A haloed feature icon: a filled tinted core ringed by two concentric outlines
-/// that fade outward — the onboarding's "feature highlight" motif.
-class _RingedIcon extends StatelessWidget {
-  const _RingedIcon({required this.icon});
-  final IconData icon;
+class _PageStructure extends StatelessWidget {
+  const _PageStructure();
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    Widget ring(double size, double alpha) => Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: primary.withValues(alpha: alpha)),
-          ),
-        );
-    return SizedBox(
-      width: 168,
-      height: 168,
-      child: Stack(
-        alignment: Alignment.center,
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
         children: [
-          ring(168, 0.10),
-          ring(140, 0.20),
+          const SizedBox(height: 12),
           Container(
-            width: 108,
-            height: 108,
+            width: 76,
+            height: 76,
             decoration: BoxDecoration(
-              color: primary.withValues(alpha: 0.10),
               shape: BoxShape.circle,
-              border: Border.all(color: primary.withValues(alpha: 0.35)),
+              color: scheme.primaryContainer.withValues(alpha: 0.4),
+              border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
             ),
-            child: Icon(icon, size: 50, color: primary),
+            child: Icon(Icons.view_agenda_rounded, color: scheme.primary, size: 36),
+          ),
+          const SizedBox(height: 24),
+          RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: GoogleFonts.fraunces(
+                fontSize: 40,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                height: 1.1,
+                color: scheme.onSurface,
+              ),
+              children: [
+                const TextSpan(text: 'Every Video,\n'),
+                TextSpan(text: 'Structured.', style: TextStyle(color: scheme.primary)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Messy spoken instructions become clean action cards.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+          // Feature Showcase Card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Column(
+              children: [
+                _FeatureRow(
+                  icon: Icons.list_alt_rounded,
+                  title: 'Exact Ingredients & Steps',
+                  subtitle: 'Extracted directly from on-screen text + voice',
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1, color: scheme.outlineVariant),
+                ),
+                _FeatureRow(
+                  icon: Icons.place_rounded,
+                  title: 'Places & Coordinates',
+                  subtitle: 'Hidden cafes and travel spots mapped out',
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1, color: scheme.outlineVariant),
+                ),
+                _FeatureRow(
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'Immediate To-Dos',
+                  subtitle: 'Export checklists straight to your routine',
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _SmallTag('4 prep steps', active: true),
+                    _SmallTag('Kyoto Speakeasy'),
+                    _SmallTag('DIY Woodwork'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureRow extends StatelessWidget {
+  const _FeatureRow({required this.icon, required this.title, required this.subtitle});
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 20, color: scheme.primary),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SmallTag extends StatelessWidget {
+  const _SmallTag(this.text, {this.active = false});
+  final String text;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: active ? scheme.primary.withValues(alpha: 0.12) : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: active ? scheme.primary.withValues(alpha: 0.4) : scheme.outlineVariant),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          color: active ? scheme.primary : scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+class _PageLibrary extends StatelessWidget {
+  const _PageLibrary();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scheme.primaryContainer.withValues(alpha: 0.4),
+              border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+            ),
+            child: Icon(Icons.hub_rounded, color: scheme.primary, size: 36),
+          ),
+          const SizedBox(height: 24),
+          RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: GoogleFonts.fraunces(
+                fontSize: 40,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                height: 1.1,
+                color: scheme.onSurface,
+              ),
+              children: [
+                const TextSpan(text: 'Personal Web\n'),
+                TextSpan(text: 'Of Action.', style: TextStyle(color: scheme.primary)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Everything you keep is searchable and linked forever.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+          // Vault Preview Card
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('My Cachy Vault', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      Row(
+                        children: [
+                          Icon(Icons.bookmark_rounded, size: 14, color: scheme.primary),
+                          const SizedBox(width: 4),
+                          Text('18 cards', style: Brand.label(size: 11, color: scheme.primary)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: scheme.outlineVariant),
+                const _VaultRow(title: 'Crispy Chili Oil Eggs', tag: 'Recipe', time: 'Today'),
+                Divider(height: 1, color: scheme.outlineVariant),
+                const _VaultRow(title: 'Hidden Tokyo Speakeasy', tag: 'Travel', time: 'Yesterday'),
+                Divider(height: 1, color: scheme.outlineVariant),
+                const _VaultRow(title: 'Zone 2 Cardio Protocols', tag: 'Fitness', time: '3d ago'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VaultRow extends StatelessWidget {
+  const _VaultRow({required this.title, required this.tag, required this.time});
+  final String title;
+  final String tag;
+  final String time;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 3),
+                Text(time, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(tag, style: Brand.label(size: 9, color: scheme.primary)),
           ),
         ],
       ),

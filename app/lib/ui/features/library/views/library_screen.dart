@@ -19,6 +19,7 @@ import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../graph/views/graph_screen.dart';
+import '../../library/views/library_chat_screen.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
 import '../view_models/library_view_model.dart';
@@ -60,6 +61,13 @@ class _LibraryView extends StatelessWidget {
                   child: Icon(Icons.cloud_off_rounded, size: 20),
                 ),
               ),
+            IconButton(
+              tooltip: 'Chat',
+              icon: const Icon(Icons.forum_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LibraryChatScreen()),
+              ),
+            ),
             IconButton(
               tooltip: 'Search',
               icon: const Icon(Icons.search_rounded),
@@ -126,6 +134,7 @@ class _CardsTab extends StatelessWidget {
         return _scrollable(
           EmptyState(
             showGlyph: true,
+            halo: true,
             title: 'Your shelf is empty',
             message:
                 'Share a reel to Cachy — or paste a link — and watch it become '

@@ -40,8 +40,8 @@ class _PhysicsConfig {
   _PhysicsConfig({
     this.repelForce = 2.2,
     this.linkForce = 1.3,
-    this.centerForce = 0.005,
-    this.linkDistance = 90,
+    this.centerForce = 0.05,
+    this.linkDistance = 75,
   });
 }
 
@@ -74,7 +74,9 @@ class _GraphScreenState extends State<GraphScreen>
 
   // Star layout anchors — the ideal position each node should occupy.
   final Map<String, Offset> _starPos = {};
-  static const double _starRadius = 110.0;
+  final Map<String, Offset> _starRel = {};
+  final Map<String, String> _hubFor = {};
+  static const double _starRadius = 80.0;
   // Loose strength so the spring-back feels natural, not snappy.
   static const double _starRestoreStrength = 0.04;
   double _temperature = 0;
@@ -139,6 +141,8 @@ class _GraphScreenState extends State<GraphScreen>
     _adj.clear();
     _edgeWeights.clear();
     _starPos.clear();
+    _starRel.clear();
+    _hubFor.clear();
 
     // Initialise adjacency lists and zero velocities.
     for (final node in data.nodes) {
@@ -218,17 +222,21 @@ class _GraphScreenState extends State<GraphScreen>
               math.sin(hubAngle) * hubRingRadius,
             );
       result[hub.id] = hubPos;
+      _hubFor[hub.id] = hub.id;
+      _starRel[hub.id] = Offset.zero;
 
       // Place spoke nodes at equal angular intervals around the hub.
       final spokes = nodes.skip(1).toList();
       for (var si = 0; si < spokes.length; si++) {
         final spokeAngle =
             (si / math.max(1, spokes.length)) * 2 * math.pi - math.pi / 2;
-        result[spokes[si].id] = hubPos +
-            Offset(
-              math.cos(spokeAngle) * _starRadius,
-              math.sin(spokeAngle) * _starRadius,
-            );
+        final rel = Offset(
+          math.cos(spokeAngle) * _starRadius,
+          math.sin(spokeAngle) * _starRadius,
+        );
+        result[spokes[si].id] = hubPos + rel;
+        _hubFor[spokes[si].id] = hub.id;
+        _starRel[spokes[si].id] = rel;
       }
     }
 
@@ -241,6 +249,8 @@ class _GraphScreenState extends State<GraphScreen>
         math.cos(angle) * outerRadius,
         math.sin(angle) * outerRadius,
       );
+      _hubFor[isolated[ii].id] = isolated[ii].id;
+      _starRel[isolated[ii].id] = Offset.zero;
     }
 
     return result;
@@ -252,6 +262,8 @@ class _GraphScreenState extends State<GraphScreen>
     final data = _data;
     if (data == null) return;
     final visible = _visibleNodes(data);
+    _starRel.clear();
+    _hubFor.clear();
     _starPos
       ..clear()
       ..addAll(_computeStarLayout(data, visible));
@@ -319,7 +331,7 @@ class _GraphScreenState extends State<GraphScreen>
           d = delta.distance;
         }
         final sameFamily = family[ids[i]] == family[ids[j]];
-        final mult = sameFamily ? 1.0 : 8.0;
+        final mult = sameFamily ? 1.0 : 15.0;
         final force = (repelK * mult) / (d * d);
         final push = delta / d * force;
         disp[ids[i]] = disp[ids[i]]! + push;
@@ -353,23 +365,49 @@ class _GraphScreenState extends State<GraphScreen>
     }
 
     // --- Force 3: Center gravity ---
-    // Gentle pull toward origin keeps the graph from drifting off.
+    // Gentle pull toward origin keeps connected items centered inside.
     for (final id in ids) {
+      if ((_adj[id]?.isEmpty ?? true)) continue; // empty nodes bypass inward gravity
       final p = _pos[id];
       if (p == null) continue;
       disp[id] = disp[id]! - p * _physics.centerForce;
     }
 
-    // --- Force 4: Star restoring spring ---
-    // Pulls every non-dragged node gently back to its ideal star position.
-    // Strength 0.04 = loose and natural; large enough to correct drift over
-    // a few seconds, small enough not to fight the user's drag.
+    // --- Force 4: Relative Star Schema Restoring Spring ---
+    // Pulls every spoke node gently toward its ideal star offset relative to its CURRENT LIVE HUB POSITION.
     for (final id in ids) {
       if (id == _draggedNode) continue;
-      final target = _starPos[id];
-      final current = _pos[id];
-      if (target == null || current == null) continue;
-      disp[id] = disp[id]! + (target - current) * _starRestoreStrength;
+      final hubId = _hubFor[id];
+      final rel = _starRel[id];
+      if (hubId == null || rel == null || hubId == id) continue; // hub itself is free
+      final hubPos = _pos[hubId];
+      final curr = _pos[id];
+      if (hubPos == null || curr == null) continue;
+      final target = hubPos + rel;
+      disp[id] = disp[id]! + (target - curr) * 0.08;
+    }
+
+    // --- Force 5: Segregated Circle Containment Wall ---
+    // Connected clusters stay centered (< 130px). Empty nodes orbit far outer rim (220 - 260px).
+    for (final id in ids) {
+      if (id == _draggedNode) continue;
+      final p = _pos[id];
+      if (p == null) continue;
+      final dist = p.distance;
+      if (dist < 0.01) continue;
+      if ((_adj[id]?.isEmpty ?? true)) {
+        // Orbit rim halo for empty nodes.
+        if (dist > 260.0) {
+          disp[id] = disp[id]! - (p / dist) * (dist - 260.0) * 0.25;
+        } else if (dist < 220.0) {
+          disp[id] = disp[id]! + (p / dist) * (220.0 - dist) * 0.15;
+        }
+      } else {
+        // Interior containment for connected nodes.
+        if (dist > 130.0) {
+          disp[id] = disp[id]! - (p / dist) * (dist - 130.0) * 0.25;
+        }
+      }
     }
 
     // --- Apply forces with temperature clamping + velocity damping ---
@@ -436,11 +474,6 @@ class _GraphScreenState extends State<GraphScreen>
     if (_draggedNode != null && d.pointerCount == 1) {
       final center = Offset(size.width / 2, size.height / 2);
       final world = (d.localFocalPoint - center - _pan) / _zoom;
-      final oldPos = _pos[_draggedNode!];
-      if (oldPos != null) {
-        final delta = world - oldPos;
-        _dragFamily(_draggedNode!, delta);
-      }
       _pos[_draggedNode!] = world;
       // High heat while dragging so the constellation tracks smoothly.
       _temperature = math.max(_temperature, 35.0);
@@ -470,9 +503,9 @@ class _GraphScreenState extends State<GraphScreen>
     final visited = <String>{rootId};
     var frontier = <String>{rootId};
     var depth = 1;
-    while (frontier.isNotEmpty && depth <= 3) {
+    while (frontier.isNotEmpty && depth <= 25) {
       final next = <String>{};
-      final factor = math.pow(0.85, depth).toDouble();
+      final factor = math.pow(0.96, depth).toDouble();
       for (final id in frontier) {
         for (final neighbor in (_adj[id] ?? <String>[])) {
           if (visited.add(neighbor)) {
@@ -881,19 +914,25 @@ class _NodePreviewSheet extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isCard
                         ? scheme.primaryContainer
-                        : scheme.tertiaryContainer,
+                        : node.isFolder
+                            ? scheme.secondaryContainer
+                            : scheme.tertiaryContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     isCard
                         ? node.contentType.toUpperCase()
-                        : 'CATALOG · ${node.contentType.toUpperCase()}',
+                        : node.isFolder
+                            ? 'FOLDER · ${node.contentType.toUpperCase()}'
+                            : 'CATALOG · ${node.contentType.toUpperCase()}',
                     style: Brand.label(
                       size: 11,
                       weight: FontWeight.w700,
                       color: isCard
                           ? scheme.onPrimaryContainer
-                          : scheme.onTertiaryContainer,
+                          : node.isFolder
+                              ? scheme.onSecondaryContainer
+                              : scheme.onTertiaryContainer,
                     ),
                   ),
                 ),
@@ -1193,6 +1232,14 @@ class _GraphPainter extends CustomPainter {
   }
 
   Color _nodeColor(GraphNode node) {
+    if (node.isFolder) {
+      if (node.contentType != 'custom') {
+        try {
+          return ContentAccent.of(ContentType.fromWire(node.contentType)).color;
+        } catch (_) {}
+      }
+      return const Color(0xFF6B5C4E);
+    }
     if (node.isCard) {
       return ContentAccent.of(ContentType.fromWire(node.contentType)).color;
     }
@@ -1247,6 +1294,8 @@ class _GraphPainter extends CustomPainter {
         sw = (highlight ? 2.5 : 1.2 + e.weight) * clampedZoom;
       } else if (e.kind == 'tag') {
         sw = (highlight ? 1.5 : 0.5) * clampedZoom;
+      } else if (e.kind == 'membership') {
+        sw = (highlight ? 2.0 : 1.4) * clampedZoom;
       } else {
         sw = (highlight ? 2.2 : 0.6 + e.weight * 1.6) * clampedZoom;
       }
@@ -1276,8 +1325,14 @@ class _GraphPainter extends CustomPainter {
       if (p == null) continue;
       final s = _screen(p, size);
       final accent = _nodeColor(node);
-      final r =
-          (8.0 + node.degree * 1.8).clamp(8.0, 22.0) * clampedZoom;
+      final double r;
+      if (node.isFolder) {
+        r = (22.0 + node.degree * 0.6).clamp(22.0, 36.0) * clampedZoom;
+      } else if (node.isCard) {
+        r = (10.0 + node.degree * 0.8).clamp(10.0, 18.0) * clampedZoom;
+      } else {
+        r = (5.0 + node.degree * 0.4).clamp(5.0, 9.0) * clampedZoom;
+      }
 
       final bool faded;
       if (activeCluster != null && !_inActiveCluster(node)) {
@@ -1294,7 +1349,14 @@ class _GraphPainter extends CustomPainter {
             s, r + 6, Paint()..color = accent.withValues(alpha: 0.25));
       }
 
-      if (node.isCatalog) {
+      if (node.isFolder) {
+        final hex = _hexPath(s, r * 1.2);
+        canvas.drawPath(hex, Paint()..color = accent.withValues(alpha: faded ? 0.2 : 1.0));
+        canvas.drawPath(hex, Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..color = scheme.surface.withValues(alpha: faded ? 0.3 : 0.9));
+      } else if (node.isCatalog) {
         final rect = RRect.fromRectAndRadius(
           Rect.fromCenter(center: s, width: r * 2, height: r * 2),
           Radius.circular(r * 0.3),
@@ -1340,6 +1402,27 @@ class _GraphPainter extends CustomPainter {
         tp.paint(canvas, Offset(s.dx - tp.width / 2, s.dy + r + 3));
       }
 
+      // Folder icon badge.
+      if (node.isFolder && zoom > 0.6 && !faded) {
+        final iconSize = (r * 0.85).clamp(10.0, 20.0);
+        final iconPainter = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(Icons.folder_rounded.codePoint),
+            style: TextStyle(
+              fontFamily: Icons.folder_rounded.fontFamily,
+              package: Icons.folder_rounded.fontPackage,
+              fontSize: iconSize,
+              color: scheme.surface.withValues(alpha: 0.9),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        iconPainter.paint(
+          canvas,
+          Offset(s.dx - iconPainter.width / 2, s.dy - iconPainter.height / 2),
+        );
+      }
+
       // Catalog icon badge.
       if (node.isCatalog && zoom > 0.8 && !faded) {
         final iconSize = (r * 0.8).clamp(10.0, 18.0);
@@ -1363,6 +1446,18 @@ class _GraphPainter extends CustomPainter {
         );
       }
     }
+  }
+
+  Path _hexPath(Offset center, double r) {
+    final path = Path();
+    for (var i = 0; i < 6; i++) {
+      final angle = (i * 60 - 30) * math.pi / 180;
+      final x = center.dx + r * math.cos(angle);
+      final y = center.dy + r * math.sin(angle);
+      if (i == 0) path.moveTo(x, y);
+      else path.lineTo(x, y);
+    }
+    return path..close();
   }
 
   void _drawDashedLine(

@@ -344,21 +344,23 @@ class _TopicMapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return _Panel(
       title: 'Topic map',
       icon: Icons.hub_outlined,
       child: SizedBox(
-        height: 240,
+        height: 260,
         width: double.infinity,
         child: CustomPaint(
           painter: _TopicMapPainter(
             center: map.center,
             nodes: map.nodes,
             accent: accent.color,
-            line: Theme.of(context).colorScheme.outlineVariant,
-            centerText: Colors.white,
-            nodeFill: Theme.of(context).colorScheme.surfaceContainerHighest,
-            nodeText: Theme.of(context).colorScheme.onSurface,
+            line: scheme.outlineVariant,
+            centerText: scheme.onPrimary,
+            centerSubText: scheme.onPrimary.withValues(alpha: 0.7),
+            nodeFill: scheme.surfaceContainerHighest,
+            nodeText: scheme.onSurface,
           ),
         ),
       ),
@@ -373,6 +375,7 @@ class _TopicMapPainter extends CustomPainter {
     required this.accent,
     required this.line,
     required this.centerText,
+    required this.centerSubText,
     required this.nodeFill,
     required this.nodeText,
   });
@@ -382,20 +385,16 @@ class _TopicMapPainter extends CustomPainter {
   final Color accent;
   final Color line;
   final Color centerText;
+  final Color centerSubText;
   final Color nodeFill;
   final Color nodeText;
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2 - 38;
-    const centerR = 40.0;
+    final radius = math.min(size.width, size.height) / 2 - 40;
+    const centerR = 46.0;
     const nodeR = 30.0;
-
-    final linePaint = Paint()
-      ..color = line
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
 
     final positions = <Offset>[];
     for (var i = 0; i < nodes.length; i++) {
@@ -403,26 +402,63 @@ class _TopicMapPainter extends CustomPainter {
       positions.add(Offset(c.dx + radius * math.cos(angle), c.dy + radius * math.sin(angle)));
     }
 
-    // Connecting lines (dashed-ish: just straight, kept subtle).
+    // Dashed spokes from the hub — subtle connective tissue, not hard lines.
+    final dashPaint = Paint()
+      ..color = line
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
     for (final p in positions) {
-      canvas.drawLine(c, p, linePaint);
+      final dir = p - c;
+      final len = dir.distance;
+      if (len < 1) continue;
+      final unit = dir / len;
+      // Start/stop short of each disk so the dash meets the rims cleanly.
+      final start = c + unit * (centerR + 2);
+      final stop = c + unit * (len - nodeR - 2);
+      _dashedLine(canvas, start, stop, dashPaint, 4, 4);
     }
 
-    // Satellite nodes.
+    // Satellite nodes: a faint accent halo, a filled disk, a hairline rim.
+    final rimPaint = Paint()
+      ..color = line
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
     for (var i = 0; i < positions.length; i++) {
+      canvas.drawCircle(positions[i], nodeR + 4, Paint()..color = accent.withValues(alpha: 0.05));
       canvas.drawCircle(positions[i], nodeR, Paint()..color = nodeFill);
-      canvas.drawCircle(positions[i], nodeR, linePaint);
-      _label(canvas, nodes[i], positions[i], nodeR * 2 - 6, nodeText, 9);
+      canvas.drawCircle(positions[i], nodeR, rimPaint);
+      _label(canvas, nodes[i], positions[i], nodeR * 2 - 8, nodeText, 9);
     }
 
-    // Center node.
+    // Center hub: a soft outer glow, then the filled accent disk.
+    canvas.drawCircle(c, centerR + 10, Paint()..color = accent.withValues(alpha: 0.12));
     canvas.drawCircle(c, centerR, Paint()..color = accent);
-    _label(canvas, center, c, centerR * 2 - 6, centerText, 11, bold: true);
+
+    // Hub label + a "{n} subtopics" subtitle, stacked.
+    final mainTp = _layout(center, centerR * 2 - 10, centerText, 12, bold: true);
+    final subTp = _layout('${nodes.length} subtopics', centerR * 2 - 10, centerSubText, 9);
+    final totalH = mainTp.height + 2 + subTp.height;
+    mainTp.paint(canvas, Offset(c.dx - mainTp.width / 2, c.dy - totalH / 2));
+    subTp.paint(canvas, Offset(c.dx - subTp.width / 2, c.dy - totalH / 2 + mainTp.height + 2));
   }
 
-  void _label(Canvas canvas, String text, Offset at, double maxWidth, Color color,
-      double fontSize, {bool bold = false}) {
-    final tp = TextPainter(
+  void _dashedLine(Canvas canvas, Offset a, Offset b, Paint paint, double dash, double gap) {
+    final delta = b - a;
+    final len = delta.distance;
+    if (len < 1) return;
+    final dir = delta / len;
+    var drawn = 0.0;
+    while (drawn < len) {
+      final start = a + dir * drawn;
+      final end = a + dir * math.min(drawn + dash, len);
+      canvas.drawLine(start, end, paint);
+      drawn += dash + gap;
+    }
+  }
+
+  TextPainter _layout(String text, double maxWidth, Color color, double fontSize,
+      {bool bold = false}) {
+    return TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
@@ -437,6 +473,11 @@ class _TopicMapPainter extends CustomPainter {
       maxLines: 2,
       ellipsis: '…',
     )..layout(maxWidth: maxWidth);
+  }
+
+  void _label(Canvas canvas, String text, Offset at, double maxWidth, Color color,
+      double fontSize, {bool bold = false}) {
+    final tp = _layout(text, maxWidth, color, fontSize, bold: bold);
     tp.paint(canvas, Offset(at.dx - tp.width / 2, at.dy - tp.height / 2));
   }
 
