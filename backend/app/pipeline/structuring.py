@@ -60,7 +60,7 @@ _ACTION_FOR_TYPE: dict[ContentType, tuple[PrimaryActionKind, str]] = {
 
 
 class StructuredCard:
-    """Validated structuring output: base + blocks + primary_action + artifacts."""
+    """Validated structuring output: base + blocks + primary_action + artifacts + concepts."""
 
     def __init__(
         self,
@@ -72,6 +72,7 @@ class StructuredCard:
         depth: str = "shallow",
         degraded: bool = False,
         degraded_reason: str = "",
+        concepts: list[str] | None = None,
     ):
         self.base = base
         self.blocks = blocks  # list of plain dicts (validated), ready for JSON column
@@ -88,6 +89,8 @@ class StructuredCard:
         # plain paragraph — a degraded result the worker surfaces as a warning.
         self.degraded = degraded
         self.degraded_reason = degraded_reason
+        # Evergreen source-independent ideas mined from this card.
+        self.concepts: list[str] = concepts or []
 
 
 # --------------------------------------------------------------------------- #
@@ -146,6 +149,7 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
   "action_items": [          // concrete things the viewer should DO (may be empty)
     str                      // one short imperative task, e.g. "Batch emails into two daily windows"
   ],
+  "concepts": [str],         // 1-6 evergreen source-independent IDEAS (may be empty)
   "depth": "shallow|deep"    // does this content warrant deep analysis? (see below)
 }}
 
@@ -174,6 +178,12 @@ Rules:
   Answer "shallow" for practical/procedural or lightweight content with nothing
   to interrogate (a recipe, a workout, a product list, a quick how-to, a meme).
   When unsure, answer "shallow". Most videos are shallow.
+- concepts: 1-6 evergreen, source-independent IDEAS this content is about —
+  lowercase canonical noun phrases (e.g. "compounding", "loss aversion",
+  "intermittent fasting"). These are abstract ideas a reader might want to
+  understand and connect across multiple cards, NOT tags, NOT artifact names,
+  NOT procedural steps. Return an empty list if the card is purely procedural
+  (a recipe, a workout, a product list) and contains no abstract ideas.
 
 {vocab}
 
@@ -338,6 +348,25 @@ def _coerce_tags(raw_tags) -> list[str]:
     return out
 
 
+def _coerce_concepts(raw_concepts) -> list[str]:
+    """Validate concept names: lowercase strings, dedupe, cap at 6."""
+    out: list[str] = []
+    if not isinstance(raw_concepts, list):
+        return out
+    seen: set[str] = set()
+    for raw in raw_concepts:
+        if not isinstance(raw, str):
+            continue
+        concept = " ".join(raw.lower().split()).strip()
+        if not concept or len(concept) > 60 or concept in seen:
+            continue
+        seen.add(concept)
+        out.append(concept)
+        if len(out) >= 6:
+            break
+    return out
+
+
 def _coerce_action_items(raw_items) -> ActionItems:
     """Validate the to-do list (docs/13): keep non-empty strings, dedupe, cap at 8,
     assign ids, done=False, followed=False (inert until the user opts in). Never
@@ -434,12 +463,13 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
 
     artifacts = _coerce_artifacts(data.get("artifacts") or [])
     action_items = _coerce_action_items(data.get("action_items") or [])
+    concepts = _coerce_concepts(data.get("concepts") or [])
     depth = data.get("depth") if data.get("depth") in ("shallow", "deep") else "shallow"
 
     blocks = _coerce_blocks(data.get("blocks") or [])
     if not blocks:
         # an empty/garbage block list still gets a usable body, but keep any
-        # artifacts/action_items the model did surface (neither needs blocks).
+        # artifacts/action_items/concepts the model did surface (none need blocks).
         log.warning(
             "structuring: LLM produced no valid blocks -> paragraph fallback"
         )
@@ -448,11 +478,12 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
         )
         fallback.artifacts = artifacts
         fallback.action_items = action_items
+        fallback.concepts = concepts
         return fallback
 
     return StructuredCard(
         base, blocks, _primary_action_for(base.content_type), artifacts,
-        action_items=action_items, depth=depth,
+        action_items=action_items, depth=depth, concepts=concepts,
     )
 
 

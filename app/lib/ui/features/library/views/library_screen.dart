@@ -18,6 +18,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
 import '../../capture/views/capture_sheet.dart';
+import '../../concepts/views/concepts_screen.dart';
 import '../../graph/views/graph_screen.dart';
 import '../../library/views/library_chat_screen.dart';
 import '../../reader/views/reader_screen.dart';
@@ -47,7 +48,7 @@ class _LibraryView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           titleSpacing: Insets.page,
@@ -88,6 +89,7 @@ class _LibraryView extends StatelessWidget {
             unselectedLabelStyle: Brand.label(size: 13, weight: FontWeight.w500),
             tabs: const [
               Tab(text: 'CARDS'),
+              Tab(text: 'CONCEPTS'),
               Tab(text: 'GRAPH'),
             ],
           ),
@@ -95,6 +97,7 @@ class _LibraryView extends StatelessWidget {
         body: const TabBarView(
           children: [
             _CardsTab(),
+            ConceptsScreen(),
             GraphScreen(showAppBar: false),
           ],
         ),

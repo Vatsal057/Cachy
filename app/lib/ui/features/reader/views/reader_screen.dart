@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
+import '../../../../domain/models/concept.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/pipeline_event.dart';
 import '../../../core/brand.dart';
@@ -23,6 +24,7 @@ import '../../../core/widgets/pipeline_progress.dart';
 import '../../../core/widgets/processing_glyph.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
+import '../../concepts/views/concept_detail_screen.dart';
 import '../view_models/reader_view_model.dart';
 import 'insight_section.dart';
 import 'primary_action_bar.dart';
@@ -139,6 +141,8 @@ class _ReaderView extends StatelessWidget {
                         ),
                       // Referenced things (books/products/places) as tappable covers.
                       if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
+                      // Concepts this card contributed to — tappable chips.
+                      if (card.isReady) _ConceptsStrip(entries: vm.concepts),
                       if (card.source.creator != null) ...[
                         const SizedBox(height: 8),
                         _SourceLine(card: card),
@@ -376,6 +380,64 @@ class _TagChips extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// "Concepts" strip: evergreen ideas this card contributed to, as tappable chips.
+/// Fetched once; renders nothing if there are none or the fetch fails.
+class _ConceptsStrip extends StatelessWidget {
+  const _ConceptsStrip({required this.entries});
+  final List<ConceptEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Concepts',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: entries.map((entry) {
+              return GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ConceptDetailScreen(entry: entry),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lightbulb_rounded, size: 13, color: scheme.primary),
+                      const SizedBox(width: 5),
+                      Text(entry.name,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSecondaryContainer)),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 }

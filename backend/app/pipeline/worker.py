@@ -174,6 +174,16 @@ async def _persist_artifacts(session, card_id: str, artifacts) -> None:
             log.warning("catalog upsert failed for %r", art.title, exc_info=True)
 
 
+async def _persist_concepts(session, card_id: str, concepts: list[str]) -> None:
+    """Aggregate evergreen ideas into the global concept store. Best-effort and
+    isolated — a failure here never affects the card itself."""
+    for name in concepts:
+        try:
+            await db.upsert_concept(session, card_id=card_id, name=name)
+        except Exception:  # noqa: BLE001 — concepts are non-critical to the card
+            log.warning("concept upsert failed for %r", name, exc_info=True)
+
+
 async def _embed_card(session, card_id: str) -> None:
     """Compute + store a semantic-search embedding for the card (docs/09).
     Best-effort and isolated: any failure (no HF key, network) leaves the card
@@ -341,6 +351,15 @@ async def _run_job(session, job: db.JobRow) -> None:
                     "yes" if insight.topic_map else "no",
                     "yes" if insight.deep_research_prompt else "no",
                 )
+                # Hybrid backstop: promote topic-map center + nodes into concepts
+                # for free (they're already extracted by the insight pass).
+                if insight.topic_map:
+                    tm = insight.topic_map
+                    extra = [tm.center] + list(tm.nodes)
+                    structured.concepts = list({
+                        *structured.concepts,
+                        *[n.strip().lower() for n in extra if n.strip()],
+                    })
             else:
                 log.info("%s Step 4b deep-analysis: no usable layer produced", tag)
         except Exception:  # noqa: BLE001 — insight is non-critical to the card
@@ -356,6 +375,14 @@ async def _run_job(session, job: db.JobRow) -> None:
         await _persist_artifacts(session, card_id, structured.artifacts)
     else:
         log.info("%s Step 5/6 catalog: none referenced, skipping", tag)
+
+    # 5b) Concepts: aggregate evergreen ideas into the concept store.
+    if structured.concepts:
+        events.publish(card_id, "conceptualizing", "processing", "Indexing concepts")
+        log.info("%s Step 5b/6 concepts: %d concept(s)", tag, len(structured.concepts))
+        await _persist_concepts(session, card_id, structured.concepts)
+    else:
+        log.info("%s Step 5b/6 concepts: none extracted, skipping", tag)
 
     # 6) Semantic index: embed the card for search (best-effort, no-op without a key).
     log.info("%s Step 6/6 index: embedding card for semantic search", tag)

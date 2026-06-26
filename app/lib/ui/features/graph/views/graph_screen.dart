@@ -19,12 +19,14 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../domain/models/concept.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/graph.dart';
 import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
+import '../../concepts/views/concept_detail_screen.dart';
 import '../../reader/views/reader_screen.dart';
 
 // ========================================================================== //
@@ -98,6 +100,9 @@ class _GraphScreenState extends State<GraphScreen>
   bool _localMode = false;
   int _localDepth = 1;
   String? _localRoot; // node ID that is the ego-center
+
+  // Concept node visibility (off by default — they can bloat the graph).
+  bool _showConcepts = false;
 
   @override
   void initState() {
@@ -434,24 +439,26 @@ class _GraphScreenState extends State<GraphScreen>
   // --------------------------------------------------------------------------
 
   List<GraphNode> _visibleNodes(GraphData data) {
-    if (!_localMode || _localRoot == null) return data.nodes;
-    final root = _localRoot!;
-    final visited = <String>{root};
-    var frontier = <String>{root};
-
-    for (var depth = 0; depth < _localDepth; depth++) {
-      final next = <String>{};
-      for (final nid in frontier) {
-        for (final neighbor in (_adj[nid] ?? <String>[])) {
-          if (visited.add(neighbor)) {
-            next.add(neighbor);
+    List<GraphNode> nodes;
+    if (!_localMode || _localRoot == null) {
+      nodes = data.nodes;
+    } else {
+      final root = _localRoot!;
+      final visited = <String>{root};
+      var frontier = <String>{root};
+      for (var depth = 0; depth < _localDepth; depth++) {
+        final next = <String>{};
+        for (final nid in frontier) {
+          for (final neighbor in (_adj[nid] ?? <String>[])) {
+            if (visited.add(neighbor)) next.add(neighbor);
           }
         }
+        frontier = next;
       }
-      frontier = next;
+      nodes = data.nodes.where((n) => visited.contains(n.id)).toList();
     }
-
-    return data.nodes.where((n) => visited.contains(n.id)).toList();
+    if (!_showConcepts) nodes = nodes.where((n) => !n.isConcept).toList();
+    return nodes;
   }
 
   // --------------------------------------------------------------------------
@@ -573,6 +580,14 @@ class _GraphScreenState extends State<GraphScreen>
           if (node.isCard) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => ReaderScreen(cardId: node.id)),
+            );
+          } else if (node.isConcept) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ConceptDetailScreen(
+                  entry: ConceptEntry(id: node.id, name: node.label),
+                ),
+              ),
             );
           }
         },
@@ -727,6 +742,44 @@ class _GraphScreenState extends State<GraphScreen>
             onSelect: (id) => setState(() {
               _activeCluster = id == _activeCluster ? null : id;
             }),
+          ),
+        // Concept toggle — hidden by default to avoid hairball graphs.
+        if (!_localMode && data.nodes.any((n) => n.isConcept))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Row(
+              children: [
+                FilterChip(
+                  avatar: Icon(
+                    Icons.lightbulb_rounded,
+                    size: 16,
+                    color: _showConcepts
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : const Color(0xFF5E4DA8),
+                  ),
+                  label: Text(
+                    'Concepts',
+                    style: Brand.label(
+                      size: 12,
+                      color: _showConcepts
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  selected: _showConcepts,
+                  selectedColor: const Color(0xFF5E4DA8),
+                  onSelected: (v) {
+                    setState(() {
+                      _showConcepts = v;
+                      _temperature = 60;
+                      if (!_ticker.isActive) _ticker.start();
+                    });
+                    _recomputeStar();
+                  },
+                  showCheckmark: false,
+                ),
+              ],
+            ),
           ),
         Expanded(
           child: LayoutBuilder(
@@ -914,25 +967,31 @@ class _NodePreviewSheet extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isCard
                         ? scheme.primaryContainer
-                        : node.isFolder
+                        : node.isConcept
                             ? scheme.secondaryContainer
-                            : scheme.tertiaryContainer,
+                            : node.isFolder
+                                ? scheme.secondaryContainer
+                                : scheme.tertiaryContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     isCard
                         ? node.contentType.toUpperCase()
-                        : node.isFolder
-                            ? 'FOLDER · ${node.contentType.toUpperCase()}'
-                            : 'CATALOG · ${node.contentType.toUpperCase()}',
+                        : node.isConcept
+                            ? 'CONCEPT'
+                            : node.isFolder
+                                ? 'FOLDER · ${node.contentType.toUpperCase()}'
+                                : 'CATALOG · ${node.contentType.toUpperCase()}',
                     style: Brand.label(
                       size: 11,
                       weight: FontWeight.w700,
                       color: isCard
                           ? scheme.onPrimaryContainer
-                          : node.isFolder
+                          : node.isConcept
                               ? scheme.onSecondaryContainer
-                              : scheme.onTertiaryContainer,
+                              : node.isFolder
+                                  ? scheme.onSecondaryContainer
+                                  : scheme.onTertiaryContainer,
                     ),
                   ),
                 ),
@@ -970,7 +1029,9 @@ class _NodePreviewSheet extends StatelessWidget {
                     avatar: Icon(
                       n.isCard
                           ? Icons.article_rounded
-                          : Icons.category_rounded,
+                          : n.isConcept
+                              ? Icons.lightbulb_rounded
+                              : Icons.category_rounded,
                       size: 16,
                     ),
                     label: Text(
@@ -996,7 +1057,7 @@ class _NodePreviewSheet extends StatelessWidget {
             ],
             Row(
               children: [
-                if (isCard)
+                if (isCard || node.isConcept)
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: onOpen,
@@ -1004,7 +1065,7 @@ class _NodePreviewSheet extends StatelessWidget {
                       label: const Text('Open'),
                     ),
                   ),
-                if (isCard) const SizedBox(width: 8),
+                if (isCard || node.isConcept) const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: onFocusLocal,
@@ -1232,6 +1293,9 @@ class _GraphPainter extends CustomPainter {
   }
 
   Color _nodeColor(GraphNode node) {
+    if (node.isConcept) {
+      return const Color(0xFF5E4DA8); // purple — distinct from cards/catalog/folders
+    }
     if (node.isFolder) {
       if (node.contentType != 'custom') {
         try {
@@ -1349,7 +1413,17 @@ class _GraphPainter extends CustomPainter {
             s, r + 6, Paint()..color = accent.withValues(alpha: 0.25));
       }
 
-      if (node.isFolder) {
+      if (node.isConcept) {
+        final diamond = _diamondPath(s, r * 1.3);
+        canvas.drawPath(diamond,
+            Paint()..color = accent.withValues(alpha: faded ? 0.2 : 1.0));
+        canvas.drawPath(
+            diamond,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5
+              ..color = scheme.surface.withValues(alpha: faded ? 0.3 : 0.9));
+      } else if (node.isFolder) {
         final hex = _hexPath(s, r * 1.2);
         canvas.drawPath(hex, Paint()..color = accent.withValues(alpha: faded ? 0.2 : 1.0));
         canvas.drawPath(hex, Paint()
@@ -1423,6 +1497,27 @@ class _GraphPainter extends CustomPainter {
         );
       }
 
+      // Concept icon badge.
+      if (node.isConcept && zoom > 0.8 && !faded) {
+        final iconSize = (r * 0.9).clamp(8.0, 16.0);
+        final iconPainter = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(Icons.lightbulb_rounded.codePoint),
+            style: TextStyle(
+              fontFamily: Icons.lightbulb_rounded.fontFamily,
+              package: Icons.lightbulb_rounded.fontPackage,
+              fontSize: iconSize,
+              color: scheme.surface.withValues(alpha: 0.9),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        iconPainter.paint(
+          canvas,
+          Offset(s.dx - iconPainter.width / 2, s.dy - iconPainter.height / 2),
+        );
+      }
+
       // Catalog icon badge.
       if (node.isCatalog && zoom > 0.8 && !faded) {
         final iconSize = (r * 0.8).clamp(10.0, 18.0);
@@ -1446,6 +1541,15 @@ class _GraphPainter extends CustomPainter {
         );
       }
     }
+  }
+
+  Path _diamondPath(Offset center, double r) {
+    return Path()
+      ..moveTo(center.dx, center.dy - r)
+      ..lineTo(center.dx + r, center.dy)
+      ..lineTo(center.dx, center.dy + r)
+      ..lineTo(center.dx - r, center.dy)
+      ..close();
   }
 
   Path _hexPath(Offset center, double r) {
