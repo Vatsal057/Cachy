@@ -40,10 +40,10 @@ class _PhysicsConfig {
   double linkDistance;
 
   _PhysicsConfig({
-    this.repelForce = 2.2,
+    this.repelForce = 1.6,
     this.linkForce = 1.3,
-    this.centerForce = 0.05,
-    this.linkDistance = 75,
+    this.centerForce = 0.025,
+    this.linkDistance = 110,
   });
 }
 
@@ -78,7 +78,7 @@ class _GraphScreenState extends State<GraphScreen>
   final Map<String, Offset> _starPos = {};
   final Map<String, Offset> _starRel = {};
   final Map<String, String> _hubFor = {};
-  static const double _starRadius = 80.0;
+  static const double _starRadius = 125.0;
   // Loose strength so the spring-back feels natural, not snappy.
   static const double _starRestoreStrength = 0.04;
   double _temperature = 0;
@@ -336,7 +336,7 @@ class _GraphScreenState extends State<GraphScreen>
           d = delta.distance;
         }
         final sameFamily = family[ids[i]] == family[ids[j]];
-        final mult = sameFamily ? 1.0 : 15.0;
+        final mult = sameFamily ? 3.5 : 15.0;
         final force = (repelK * mult) / (d * d);
         final push = delta / d * force;
         disp[ids[i]] = disp[ids[i]]! + push;
@@ -389,7 +389,7 @@ class _GraphScreenState extends State<GraphScreen>
       final curr = _pos[id];
       if (hubPos == null || curr == null) continue;
       final target = hubPos + rel;
-      disp[id] = disp[id]! + (target - curr) * 0.08;
+      disp[id] = disp[id]! + (target - curr) * 0.22;
     }
 
     // --- Force 5: Segregated Circle Containment Wall ---
@@ -402,15 +402,15 @@ class _GraphScreenState extends State<GraphScreen>
       if (dist < 0.01) continue;
       if ((_adj[id]?.isEmpty ?? true)) {
         // Orbit rim halo for empty nodes.
-        if (dist > 260.0) {
-          disp[id] = disp[id]! - (p / dist) * (dist - 260.0) * 0.25;
-        } else if (dist < 220.0) {
-          disp[id] = disp[id]! + (p / dist) * (220.0 - dist) * 0.15;
+        if (dist > 280.0) {
+          disp[id] = disp[id]! - (p / dist) * (dist - 280.0) * 0.25;
+        } else if (dist < 240.0) {
+          disp[id] = disp[id]! + (p / dist) * (240.0 - dist) * 0.15;
         }
       } else {
         // Interior containment for connected nodes.
-        if (dist > 130.0) {
-          disp[id] = disp[id]! - (p / dist) * (dist - 130.0) * 0.25;
+        if (dist > 190.0) {
+          disp[id] = disp[id]! - (p / dist) * (dist - 190.0) * 0.25;
         }
       }
     }
@@ -798,6 +798,7 @@ class _GraphScreenState extends State<GraphScreen>
                       data: data,
                       visibleIds: visibleIds,
                       positions: _pos,
+                      hubMap: _hubFor,
                       pan: _pan,
                       zoom: _zoom,
                       selected: _selected,
@@ -1262,6 +1263,7 @@ class _GraphPainter extends CustomPainter {
     required this.data,
     required this.visibleIds,
     required this.positions,
+    required this.hubMap,
     required this.pan,
     required this.zoom,
     required this.selected,
@@ -1273,6 +1275,7 @@ class _GraphPainter extends CustomPainter {
   final GraphData data;
   final Set<String> visibleIds;
   final Map<String, Offset> positions;
+  final Map<String, String> hubMap;
   final Offset pan;
   final double zoom;
   final String? selected;
@@ -1472,8 +1475,22 @@ class _GraphPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
           maxLines: maxLines,
           ellipsis: '…',
-        )..layout(maxWidth: 110);
-        tp.paint(canvas, Offset(s.dx - tp.width / 2, s.dy + r + 3));
+        )..layout(maxWidth: 105);
+        Offset labelPos;
+        final hId = hubMap[node.id];
+        final hPos = hId != null ? positions[hId] : null;
+        final cPos = positions[node.id];
+        if (hPos != null && cPos != null && hId != node.id) {
+          final d = cPos - hPos;
+          final ang = math.atan2(d.dy, d.dx);
+          final out = r + 4.0;
+          final cx = s.dx + math.cos(ang) * (out + tp.width / 2);
+          final cy = s.dy + math.sin(ang) * (out + tp.height / 2);
+          labelPos = Offset(cx - tp.width / 2, cy - tp.height / 2);
+        } else {
+          labelPos = Offset(s.dx - tp.width / 2, s.dy + r + 3);
+        }
+        tp.paint(canvas, labelPos);
       }
 
       // Folder icon badge.
