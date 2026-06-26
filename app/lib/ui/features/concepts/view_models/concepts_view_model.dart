@@ -11,9 +11,23 @@ enum ConceptsStatus { idle, loading, ready, error, empty }
 
 class ConceptsViewModel extends ChangeNotifier {
   ConceptsViewModel({required CardRepository repository})
-      : _repository = repository;
+      : _repository = repository {
+    _repository.addListener(_onRepoChange);
+  }
 
   final CardRepository _repository;
+
+  void _onRepoChange() {
+    if (_status != ConceptsStatus.loading) {
+      load(showSpinner: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _repository.removeListener(_onRepoChange);
+    super.dispose();
+  }
 
   ConceptsStatus _status = ConceptsStatus.idle;
   ConceptsStatus get status => _status;

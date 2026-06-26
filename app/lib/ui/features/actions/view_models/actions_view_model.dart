@@ -23,9 +23,23 @@ class ActionGroup {
 
 class ActionsViewModel extends ChangeNotifier {
   ActionsViewModel({required CardRepository repository})
-      : _repository = repository;
+      : _repository = repository {
+    _repository.addListener(_onRepoChange);
+  }
 
   final CardRepository _repository;
+
+  void _onRepoChange() {
+    if (_status != ActionsStatus.loading) {
+      load(showSpinner: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _repository.removeListener(_onRepoChange);
+    super.dispose();
+  }
 
   ActionsStatus _status = ActionsStatus.idle;
   ActionsStatus get status => _status;

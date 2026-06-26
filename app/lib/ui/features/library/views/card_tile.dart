@@ -10,10 +10,11 @@ import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/card.dart' as model;
 import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
+import '../../../core/theme.dart';
 import '../../../core/widgets/card_face.dart';
 import '../../../core/widgets/state_badge.dart';
 
-class CardTile extends StatelessWidget {
+class CardTile extends StatefulWidget {
   const CardTile({
     super.key,
     required this.card,
@@ -37,78 +38,113 @@ class CardTile extends StatelessWidget {
   final String confirmAction;
 
   @override
+  State<CardTile> createState() => _CardTileState();
+}
+
+class _CardTileState extends State<CardTile> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = ContentAccent.of(card.base.contentType);
-    final title = card.base.oneLiner.isNotEmpty
-        ? card.base.oneLiner
-        : (card.isProcessing ? 'Working on it…' : 'Untitled');
+    final accent = ContentAccent.of(widget.card.base.contentType);
+    final title = widget.card.base.oneLiner.isNotEmpty
+        ? widget.card.base.oneLiner
+        : (widget.card.isProcessing ? 'Working on it…' : 'Untitled');
 
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: () => _confirmDelete(context),
-      behavior: HitTestBehavior.opaque,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Hero(
-              tag: 'card-face-${card.cardId}',
-              child: CardFace(card: card, api: api),
-            ),
-            // Bottom scrim so text stays legible over any face.
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black54],
-                  stops: [0.45, 1.0],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 12,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      PhosphorIcon(accent.icon, size: 13, color: Colors.white70),
-                      const SizedBox(width: 5),
-                      Text(
-                        card.base.contentType.label.toUpperCase(),
-                        style: Brand.label(size: 9, color: Colors.white70, weight: FontWeight.w700),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onLongPress: () => _confirmDelete(context),
+        onSecondaryTap: () => _confirmDelete(context),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedScale(
+          scale: _hovered ? 1.025 : 1.0,
+          duration: Motion.fast,
+          curve: Motion.spring,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: _hovered
+                  ? [
+                      BoxShadow(
+                        color: accent.color.withValues(alpha: 0.28),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
                       ),
-                    ],
+                    ]
+                  : null,
+              border: _hovered
+                  ? Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.2)
+                  : null,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Hero(
+                    tag: 'card-face-${widget.card.cardId}',
+                    child: CardFace(card: widget.card, api: widget.api),
                   ),
-                  const SizedBox(height: 5),
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      height: 1.15,
+                  // Bottom scrim so text stays legible over any face.
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black54],
+                        stops: [0.45, 1.0],
+                      ),
                     ),
                   ),
-                  if (card.isReady) _MetaPills(card: card),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            PhosphorIcon(accent.icon, size: 13, color: Colors.white70),
+                            const SizedBox(width: 5),
+                            Text(
+                              widget.card.base.contentType.label.toUpperCase(),
+                              style: Brand.label(size: 9, color: Colors.white70, weight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            height: 1.15,
+                          ),
+                        ),
+                        if (widget.card.isReady) _MetaPills(card: widget.card),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: StateBadge(
+                      state: widget.card.state,
+                      reason: widget.card.failureReason,
+                    ),
+                  ),
                 ],
               ),
             ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: StateBadge(
-                state: card.state,
-                reason: card.failureReason,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -118,8 +154,8 @@ class CardTile extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(confirmTitle),
-        content: Text(confirmBody),
+        title: Text(widget.confirmTitle),
+        content: Text(widget.confirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -127,12 +163,12 @@ class CardTile extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(confirmAction),
+            child: Text(widget.confirmAction),
           ),
         ],
       ),
     );
-    if (ok == true) onDelete();
+    if (ok == true) widget.onDelete();
   }
 }
 

@@ -50,6 +50,7 @@ class _LibraryView extends StatelessWidget {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           titleSpacing: Insets.page,
           title: const CachyWordmark(size: 24),
@@ -191,7 +192,7 @@ class _CardsTab extends StatelessWidget {
   Widget _grid(
       BuildContext context, List<model.Card> cards, LibraryViewModel vm, dynamic api) {
     final width = MediaQuery.of(context).size.width;
-    final cols = (width / 200).floor().clamp(2, 5);
+    final cols = (width / 200).floor().clamp(2, 8);
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
       physics: const AlwaysScrollableScrollPhysics(),

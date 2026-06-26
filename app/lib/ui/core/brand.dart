@@ -31,12 +31,12 @@ class Brand {
   static const glassBlurSigmaDark = 20.0;
 
   static Color glassFill(Brightness b) => b == Brightness.dark
-      ? const Color(0xFF1C1C1F).withValues(alpha: 0.82)
-      : Colors.white.withValues(alpha: 0.72);
+      ? const Color(0xFF1C1C1F).withValues(alpha: 0.62)
+      : Colors.white.withValues(alpha: 0.65);
 
   static Color glassBorder(Brightness b) => b == Brightness.dark
-      ? Colors.white.withValues(alpha: 0.10)
-      : Colors.white.withValues(alpha: 0.55);
+      ? Colors.white.withValues(alpha: 0.18)
+      : Colors.white.withValues(alpha: 0.60);
 
   // ── Derived helpers ───────────────────────────────────────────────────── //
   static Color accentFor(Brightness b) =>
@@ -200,7 +200,8 @@ class CachyWordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = Theme.of(context).brightness;
-    final wordColor = onDark ? Brand.cream : Brand.ink;
+    final isDark = onDark || b == Brightness.dark;
+    final wordColor = isDark ? Brand.cream : Brand.ink;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

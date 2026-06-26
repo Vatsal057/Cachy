@@ -14,9 +14,17 @@ enum LibraryStatus { idle, loading, ready, error, empty }
 
 class LibraryViewModel extends ChangeNotifier {
   LibraryViewModel({required CardRepository repository})
-      : _repository = repository;
+      : _repository = repository {
+    _repository.addListener(_onRepoChange);
+  }
 
   final CardRepository _repository;
+
+  void _onRepoChange() {
+    if (_status != LibraryStatus.loading) {
+      load(showSpinner: false);
+    }
+  }
 
   LibraryStatus _status = LibraryStatus.idle;
   LibraryStatus get status => _status;
@@ -31,14 +39,18 @@ class LibraryViewModel extends ChangeNotifier {
   String? _tagFilter;
   String? get tagFilter => _tagFilter;
 
-  /// Distinct auto-tags across the loaded library, sorted for a stable chip row.
+  /// Tags that appear on 2+ cards, sorted by frequency. Single-occurrence tags
+  /// are too specific to be useful as filters.
   List<String> get availableTags {
-    final set = <String>{};
+    final counts = <String, int>{};
     for (final c in _cards) {
-      set.addAll(c.base.tags);
+      for (final t in c.base.tags) {
+        counts[t] = (counts[t] ?? 0) + 1;
+      }
     }
-    final tags = set.toList()..sort();
-    return tags;
+    final sorted = counts.entries.where((e) => e.value > 1).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.map((e) => e.key).toList();
   }
 
   void setTagFilter(String? tag) {
@@ -110,6 +122,7 @@ class LibraryViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _repository.removeListener(_onRepoChange);
     _debounce?.cancel();
     super.dispose();
   }

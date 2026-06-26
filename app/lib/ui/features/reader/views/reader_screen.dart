@@ -686,7 +686,7 @@ class _FollowedActionTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             PhosphorIcon(
-              item.done ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.checkSquare,
+              item.done ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.square,
               size: 22,
               color: item.done ? accent.color : theme.colorScheme.onSurfaceVariant,
             ),

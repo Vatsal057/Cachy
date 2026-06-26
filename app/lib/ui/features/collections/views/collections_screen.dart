@@ -36,6 +36,7 @@ class _CollectionsView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         titleSpacing: Insets.page,
         title: Text(
@@ -47,11 +48,14 @@ class _CollectionsView extends StatelessWidget {
             letterSpacing: 1.4,
           ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: () => _showNewFolderDialog(context, vm),
-        tooltip: 'New folder',
-        child: const PhosphorIcon(PhosphorIconsRegular.folderPlus),
+        actions: [
+          IconButton(
+            onPressed: () => _showNewFolderDialog(context, vm),
+            tooltip: 'New folder',
+            icon: const PhosphorIcon(PhosphorIconsRegular.folderPlus),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _body(context, vm),
     );
@@ -105,7 +109,7 @@ class _CollectionsView extends StatelessWidget {
   Widget _grid(BuildContext context, CollectionsViewModel vm) {
     final api = context.read<CardRepository>().api;
     final width = MediaQuery.of(context).size.width;
-    final cols = (width / 180).floor().clamp(2, 4);
+    final cols = (width / 180).floor().clamp(2, 7);
 
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),

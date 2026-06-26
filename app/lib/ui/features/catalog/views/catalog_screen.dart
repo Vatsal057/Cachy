@@ -36,6 +36,7 @@ class _CatalogView extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = context.watch<CatalogViewModel>();
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Catalog'),
         bottom: vm.availableTypes.isEmpty

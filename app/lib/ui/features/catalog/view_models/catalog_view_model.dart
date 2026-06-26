@@ -18,9 +18,23 @@ class CatalogSection {
 
 class CatalogViewModel extends ChangeNotifier {
   CatalogViewModel({required CardRepository repository})
-      : _repository = repository;
+      : _repository = repository {
+    _repository.addListener(_onRepoChange);
+  }
 
   final CardRepository _repository;
+
+  void _onRepoChange() {
+    if (_status != CatalogStatus.loading) {
+      load(showSpinner: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _repository.removeListener(_onRepoChange);
+    super.dispose();
+  }
 
   CatalogStatus _status = CatalogStatus.idle;
   CatalogStatus get status => _status;
