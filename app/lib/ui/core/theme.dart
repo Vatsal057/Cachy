@@ -65,7 +65,7 @@ class AppTheme {
     return base.copyWith(
       scaffoldBackgroundColor: ground,
       appBarTheme: AppBarTheme(
-        backgroundColor: ground,
+        backgroundColor: Colors.transparent,
         foregroundColor: onGround,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

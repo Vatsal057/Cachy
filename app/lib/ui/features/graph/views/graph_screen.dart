@@ -744,8 +744,8 @@ class _GraphScreenState extends State<GraphScreen>
               _activeCluster = id == _activeCluster ? null : id;
             }),
           ),
-        // Concept toggle — hidden by default to avoid hairball graphs.
-        if (!_localMode && data.nodes.any((n) => n.isConcept))
+        // Concept toggle — always visible in library view so user can toggle concepts.
+        if (!_localMode)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Row(

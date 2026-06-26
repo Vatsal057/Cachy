@@ -4,6 +4,7 @@
 library;
 
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -105,7 +106,7 @@ class _CachyAppState extends State<CachyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<CardRepository>.value(value: widget.repository),
+        ChangeNotifierProvider<CardRepository>.value(value: widget.repository),
         ChangeNotifierProvider<AppController>.value(value: widget.appController),
       ],
       child: Consumer<AppController>(
@@ -113,6 +114,7 @@ class _CachyAppState extends State<CachyApp> {
           title: 'Cachy',
           debugShowCheckedModeBanner: false,
           navigatorKey: _navigatorKey,
+          scrollBehavior: const DesktopScrollBehavior(),
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: app.themeMode,
@@ -123,4 +125,17 @@ class _CachyAppState extends State<CachyApp> {
       ),
     );
   }
+}
+
+/// Enables mouse drag, trackpad touch, and scroll wheel navigation on PC/desktop.
+class DesktopScrollBehavior extends MaterialScrollBehavior {
+  const DesktopScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
 }

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     func,
     select,
+    text,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -185,7 +186,7 @@ class ArtifactRow(Base):
     thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_card_ids: Mapped[list] = mapped_column(JSON, default=list)
     # Only saved rows show in the catalog tab; unsaved rows are card references only.
-    saved: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    saved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # On-demand LLM detail ("what is this"), filled via the Fetch info action.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
@@ -274,10 +275,11 @@ async def init_db() -> None:
             conn,
             "artifacts",
             {
-                "saved": "BOOLEAN DEFAULT 1",
+                "saved": "BOOLEAN DEFAULT 0",
                 "description": "TEXT",
             },
         )
+        await conn.execute(text("UPDATE artifacts SET saved = 0 WHERE saved = 1"))
         await _add_missing_columns(
             conn,
             "cards",

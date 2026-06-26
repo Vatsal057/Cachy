@@ -38,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('You')),
       body: ListView(
         padding: const EdgeInsets.all(Insets.page),

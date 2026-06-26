@@ -55,9 +55,23 @@ enum CollectionsStatus { idle, loading, ready, error, empty }
 
 class CollectionsViewModel extends ChangeNotifier {
   CollectionsViewModel({required CardRepository repository})
-      : _repository = repository;
+      : _repository = repository {
+    _repository.addListener(_onRepoChange);
+  }
 
   final CardRepository _repository;
+
+  void _onRepoChange() {
+    if (_status != CollectionsStatus.loading) {
+      load(showSpinner: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _repository.removeListener(_onRepoChange);
+    super.dispose();
+  }
 
   CollectionsStatus _status = CollectionsStatus.idle;
   CollectionsStatus get status => _status;

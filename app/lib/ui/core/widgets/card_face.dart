@@ -5,6 +5,7 @@ library;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../data/services/api_client.dart';
 import '../../../domain/models/card.dart' as model;
@@ -46,24 +47,60 @@ class _AccentFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            accent.color.withValues(alpha: dim ? 0.18 : 0.30),
-            accent.color.withValues(alpha: dim ? 0.08 : 0.14),
-          ],
+    final op = dim ? 0.55 : 1.0;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Gradient wash — top-left rich, bottom-right fades out
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.color.withValues(alpha: 0.35 * op),
+                accent.color.withValues(alpha: 0.10 * op),
+              ],
+              stops: const [0.0, 1.0],
+            ),
+          ),
         ),
-      ),
-      child: Center(
-        child: Icon(
-          accent.icon,
-          size: 34,
-          color: accent.color.withValues(alpha: 0.85),
+
+        // Oversized background icon — bottom-right, rotated, very faint
+        // Creates graphic depth without adding any assets
+        Positioned(
+          right: -22,
+          bottom: -22,
+          child: Transform.rotate(
+            angle: -0.18, // ~10 degrees CCW
+            child: PhosphorIcon(
+              accent.icon,
+              size: 120,
+              color: accent.color.withValues(alpha: 0.09 * op),
+            ),
+          ),
         ),
-      ),
+
+        // Secondary small icon — top-left corner, adds rhythm
+        Positioned(
+          left: 10,
+          top: 10,
+          child: PhosphorIcon(
+            accent.icon,
+            size: 18,
+            color: accent.color.withValues(alpha: 0.16 * op),
+          ),
+        ),
+
+        // Main centred icon
+        Center(
+          child: PhosphorIcon(
+            accent.icon,
+            size: 34,
+            color: accent.color.withValues(alpha: 0.88 * op),
+          ),
+        ),
+      ],
     );
   }
 }

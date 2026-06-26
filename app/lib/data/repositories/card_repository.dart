@@ -4,6 +4,7 @@
 library;
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
@@ -15,7 +16,7 @@ import '../../domain/models/pipeline_event.dart';
 import '../services/api_client.dart';
 import '../services/local_store.dart';
 
-class CardRepository {
+class CardRepository extends ChangeNotifier {
   CardRepository({required ApiClient api, required LocalStore store})
       : _api = api,
         _store = store;
@@ -31,23 +32,28 @@ class CardRepository {
     try {
       final result = await _api.createCard(url);
       await flushPendingShares();
+      notifyListeners();
       return result;
     } catch (_) {
       await _store.enqueueShare(url);
+      notifyListeners();
       rethrow;
     }
   }
 
   /// Best-effort retry of shares captured while offline.
   Future<void> flushPendingShares() async {
+    bool flushed = false;
     for (final url in _store.pendingShares()) {
       try {
         await _api.createCard(url);
         await _store.removeShare(url);
+        flushed = true;
       } catch (_) {
         break; // still offline; keep the rest queued
       }
     }
+    if (flushed) notifyListeners();
   }
 
   /// Library listing. Falls back to the local cache when the network is down so
@@ -95,6 +101,7 @@ class CardRepository {
   Future<Card> patchBlocks(String cardId, List<Map<String, dynamic>> blocks) async {
     final card = await _api.patchCardBlocks(cardId, blocks);
     await _store.cacheCard(cardId, _rawOf(card));
+    notifyListeners();
     return card;
   }
 
@@ -103,12 +110,14 @@ class CardRepository {
       String cardId, Map<String, dynamic> actionItems) async {
     final card = await _api.patchCardActionItems(cardId, actionItems);
     await _store.cacheCard(cardId, _rawOf(card));
+    notifyListeners();
     return card;
   }
 
   Future<void> delete(String cardId) async {
     await _api.deleteCard(cardId);
     await _store.removeCard(cardId);
+    notifyListeners();
   }
 
   Future<List<Card>> search(String query) => _api.search(query);
@@ -123,16 +132,24 @@ class CardRepository {
   Future<List<CatalogEntry>> catalog({ArtifactType? type}) =>
       _api.listCatalog(type: type);
 
-  Future<void> deleteCatalogEntry(String artifactId) =>
-      _api.deleteCatalogEntry(artifactId);
+  Future<void> deleteCatalogEntry(String artifactId) async {
+    await _api.deleteCatalogEntry(artifactId);
+    notifyListeners();
+  }
 
   /// Save a referenced artifact into the catalog tab (long-press to save).
-  Future<CatalogEntry> saveCatalogEntry(String artifactId) =>
-      _api.saveCatalogEntry(artifactId);
+  Future<CatalogEntry> saveCatalogEntry(String artifactId) async {
+    final res = await _api.saveCatalogEntry(artifactId);
+    notifyListeners();
+    return res;
+  }
 
   /// Generate the on-demand LLM detail for a catalog item (Fetch info button).
-  Future<CatalogEntry> fetchCatalogInfo(String artifactId) =>
-      _api.fetchCatalogInfo(artifactId);
+  Future<CatalogEntry> fetchCatalogInfo(String artifactId) async {
+    final res = await _api.fetchCatalogInfo(artifactId);
+    notifyListeners();
+    return res;
+  }
 
   /// Artifacts a single card references (docs/12) — reader "References" strip.
   Future<List<CatalogEntry>> cardArtifacts(String cardId) =>
@@ -142,14 +159,22 @@ class CardRepository {
 
   Future<List<CollectionEntry>> listCollections() => _api.listCollections();
 
-  Future<CollectionEntry> renameCollection(String id, String name) =>
-      _api.renameCollection(id, name);
+  Future<CollectionEntry> renameCollection(String id, String name) async {
+    final res = await _api.renameCollection(id, name);
+    notifyListeners();
+    return res;
+  }
 
-  Future<CollectionEntry> createCollection(String name) =>
-      _api.createCollection(name);
+  Future<CollectionEntry> createCollection(String name) async {
+    final res = await _api.createCollection(name);
+    notifyListeners();
+    return res;
+  }
 
-  Future<void> moveCardToCollection(String cardId, String? collectionId) =>
-      _api.moveCardToCollection(cardId, collectionId);
+  Future<void> moveCardToCollection(String cardId, String? collectionId) async {
+    await _api.moveCardToCollection(cardId, collectionId);
+    notifyListeners();
+  }
 
   Future<List<Card>> listByCollection(String collectionId, {int limit = 100}) =>
       _api.listCards(collectionId: collectionId, limit: limit);
@@ -178,10 +203,16 @@ class CardRepository {
       _api.getConcept(conceptId);
 
   /// Generate + persist an on-demand definition for a concept.
-  Future<ConceptEntry> defineConcept(String conceptId) =>
-      _api.defineConcept(conceptId);
+  Future<ConceptEntry> defineConcept(String conceptId) async {
+    final res = await _api.defineConcept(conceptId);
+    notifyListeners();
+    return res;
+  }
 
-  Future<void> deleteConcept(String conceptId) => _api.deleteConcept(conceptId);
+  Future<void> deleteConcept(String conceptId) async {
+    await _api.deleteConcept(conceptId);
+    notifyListeners();
+  }
 
 
   /// Reconstruct the raw JSON for caching. Uses preserved `rawBlocks` so block
