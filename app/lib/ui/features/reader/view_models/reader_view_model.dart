@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart';
+import '../../../../domain/models/concept.dart';
 import '../../../../domain/models/pipeline_event.dart';
 
 class ReaderViewModel extends ChangeNotifier {
@@ -33,6 +34,9 @@ class ReaderViewModel extends ChangeNotifier {
   List<CatalogEntry> _artifacts = const [];
   List<CatalogEntry> get artifacts => _artifacts;
 
+  List<ConceptEntry> _concepts = const [];
+  List<ConceptEntry> get concepts => _concepts;
+
   StreamSubscription<PipelineEvent>? _sub;
   bool _disposed = false;
 
@@ -45,6 +49,7 @@ class ReaderViewModel extends ChangeNotifier {
     }
     await _fetch();
     await _loadArtifacts();
+    await _loadConcepts();
     if (_card?.isProcessing ?? false) {
       _subscribe();
     }
@@ -59,6 +64,13 @@ class ReaderViewModel extends ChangeNotifier {
     } catch (_) {
       // best-effort; inline links + strip simply stay absent.
     }
+  }
+
+  Future<void> _loadConcepts() async {
+    try {
+      _concepts = await _repository.cardConcepts(cardId);
+      _safeNotify();
+    } catch (_) {/* best-effort */}
   }
 
   Future<void> _fetch() async {

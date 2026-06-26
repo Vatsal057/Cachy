@@ -37,6 +37,7 @@ class GraphNode {
   bool get isCard => nodeType == 'card';
   bool get isCatalog => nodeType == 'catalog';
   bool get isFolder => nodeType == 'folder';
+  bool get isConcept => nodeType == 'concept';
 
   factory GraphNode.fromJson(Map<String, dynamic> json) => GraphNode(
         id: (json['id'] as String?) ?? '',

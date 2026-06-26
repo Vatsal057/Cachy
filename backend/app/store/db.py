@@ -28,6 +28,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.config import get_settings
 from app.store import media as media_store
 from app.models.artifact import ArtifactType, CatalogEntry
+from app.models.concept import ConceptEntry
 from app.models.card import (
     ActionItems,
     Base as CardBase,
@@ -207,6 +208,32 @@ class ArtifactRow(Base):
         )
 
 
+class ConceptRow(Base):
+    """A deduplicated concept node: one evergreen idea, many source cards.
+    Dedupe key is name_norm (no type axis). Mirrors ArtifactRow."""
+
+    __tablename__ = "concepts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    name_norm: Mapped[str] = mapped_column(String, index=True)
+    source_card_ids: Mapped[list] = mapped_column(JSON, default=list)
+    definition: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    def to_entry(self) -> ConceptEntry:
+        return ConceptEntry(
+            id=self.id,
+            name=self.name,
+            source_card_ids=list(self.source_card_ids or []),
+            definition=self.definition,
+            created_at=(self.created_at or _utcnow()).isoformat(),
+        )
+
+
 class JobRow(Base):
     __tablename__ = "jobs"
 
@@ -266,6 +293,13 @@ async def init_db() -> None:
             {
                 "system_type": "TEXT",
                 "owner_id": "TEXT",
+            },
+        )
+        await _add_missing_columns(
+            conn,
+            "concepts",
+            {
+                "definition": "TEXT",
             },
         )
 
@@ -485,4 +519,51 @@ async def move_card_to_collection(
         return None
     row.collection_id = collection_id
     await db_session.commit()
+    return row
+
+
+# --------------------------------------------------------------------------- #
+# Concepts
+# --------------------------------------------------------------------------- #
+
+def _norm_name(name: str) -> str:
+    return " ".join(name.lower().split())
+
+
+async def upsert_concept(
+    db: AsyncSession,
+    *,
+    card_id: str,
+    name: str,
+) -> ConceptRow:
+    """Insert a concept or merge into the existing one (dedupe by name_norm).
+    Appends card_id to source_card_ids."""
+    norm = _norm_name(name)
+    res = await db.execute(
+        select(ConceptRow).where(ConceptRow.name_norm == norm)
+    )
+    row = res.scalar_one_or_none()
+    if row is None:
+        row = ConceptRow(
+            name=name,
+            name_norm=norm,
+            source_card_ids=[card_id],
+        )
+        db.add(row)
+    else:
+        if card_id not in (row.source_card_ids or []):
+            row.source_card_ids = [*(row.source_card_ids or []), card_id]
+    await db.commit()
+    return row
+
+
+async def set_concept_definition(
+    db: AsyncSession, concept_id: str, definition: str
+) -> ConceptRow | None:
+    """Persist the on-demand LLM definition for a concept."""
+    row = await db.get(ConceptRow, concept_id)
+    if row is None:
+        return None
+    row.definition = definition
+    await db.commit()
     return row

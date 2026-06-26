@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
+import '../../domain/models/concept.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -241,6 +242,33 @@ class ApiClient {
     final resp =
         await _client.get(_uri('/catalog', {'card_id': cardId, 'limit': limit}));
     return _decodeList(resp).map(CatalogEntry.fromJson).toList();
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Concepts — evergreen ideas aggregated across cards
+  // ------------------------------------------------------------------------- //
+
+  Future<List<ConceptEntry>> listConcepts({String? cardId, int limit = 200}) async {
+    final resp = await _client.get(_uri('/concepts', {
+      'card_id': ?cardId,
+      'limit': limit,
+    }));
+    return _decodeList(resp).map(ConceptEntry.fromJson).toList();
+  }
+
+  Future<ConceptDetail> getConcept(String conceptId) async {
+    final resp = await _client.get(_uri('/concepts/$conceptId'));
+    return ConceptDetail.fromJson(_decodeMap(resp));
+  }
+
+  Future<ConceptEntry> defineConcept(String conceptId) async {
+    final resp = await _client.post(_uri('/concepts/$conceptId/define'));
+    return ConceptEntry.fromJson(_decodeMap(resp));
+  }
+
+  Future<void> deleteConcept(String conceptId) async {
+    final resp = await _client.delete(_uri('/concepts/$conceptId'));
+    if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
   }
 
   // ------------------------------------------------------------------------- //

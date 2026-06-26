@@ -14,13 +14,19 @@ import '../../reader/views/reader_screen.dart';
 import '../view_models/library_chat_view_model.dart';
 
 class LibraryChatScreen extends StatelessWidget {
-  const LibraryChatScreen({super.key});
+  const LibraryChatScreen({super.key, this.seedQuery});
+
+  /// If provided, auto-sends this message when the screen opens.
+  final String? seedQuery;
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (ctx) =>
-          LibraryChatViewModel(repository: ctx.read<CardRepository>()),
+      create: (ctx) {
+        final vm = LibraryChatViewModel(repository: ctx.read<CardRepository>());
+        if (seedQuery != null) vm.send(seedQuery!);
+        return vm;
+      },
       child: const _LibraryChatView(),
     );
   }

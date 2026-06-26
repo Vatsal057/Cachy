@@ -8,6 +8,7 @@ import 'dart:convert';
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
+import '../../domain/models/concept.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -162,6 +163,25 @@ class CardRepository {
   /// Cross-card grounded Q&A (docs/09). Network-only; history held client-side.
   Future<LibraryChatResult> libraryChat(List<Map<String, String>> messages) =>
       _api.libraryChat(messages);
+
+  // ---- Concepts ------------------------------------------------------------ //
+
+  /// All deduplicated concepts in the library.
+  Future<List<ConceptEntry>> concepts() => _api.listConcepts();
+
+  /// Concepts extracted from a single card (reader strip).
+  Future<List<ConceptEntry>> cardConcepts(String cardId) =>
+      _api.listConcepts(cardId: cardId);
+
+  /// Concept detail including server-computed related concepts.
+  Future<ConceptDetail> conceptDetail(String conceptId) =>
+      _api.getConcept(conceptId);
+
+  /// Generate + persist an on-demand definition for a concept.
+  Future<ConceptEntry> defineConcept(String conceptId) =>
+      _api.defineConcept(conceptId);
+
+  Future<void> deleteConcept(String conceptId) => _api.deleteConcept(conceptId);
 
 
   /// Reconstruct the raw JSON for caching. Uses preserved `rawBlocks` so block

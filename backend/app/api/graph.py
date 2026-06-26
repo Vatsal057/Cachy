@@ -54,8 +54,8 @@ _LP_MAX_ITERS = 30
 class GraphNode(BaseModel):
     id: str
     label: str
-    node_type: Literal["card", "catalog", "folder"]
-    content_type: str  # e.g. "recipe", "book", "product", "custom"
+    node_type: Literal["card", "catalog", "folder", "concept"]
+    content_type: str  # e.g. "recipe", "book", "product", "custom", "concept"
     thumbnail: str | None = None
     tags: list[str] = []
     degree: int = 0
@@ -66,7 +66,7 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     weight: float
-    kind: Literal["semantic", "reference", "tag", "membership"]
+    kind: Literal["semantic", "reference", "tag", "membership", "concept_ref"]
 
 
 class GraphCluster(BaseModel):
@@ -129,7 +129,10 @@ async def _data_fingerprint() -> str:
         col_count = (
             await session.execute(select(func.count(db.CollectionRow.id)))
         ).scalar() or 0
-    raw = f"{card_agg[0]}:{card_agg[1]}:{art_agg[0]}:{art_agg[1]}:{col_count}"
+        concept_count = (
+            await session.execute(select(func.count(db.ConceptRow.id)))
+        ).scalar() or 0
+    raw = f"{card_agg[0]}:{card_agg[1]}:{art_agg[0]}:{art_agg[1]}:{col_count}:{concept_count}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -227,6 +230,7 @@ def _cluster_labels(
         "product": "Products",
         "place": "Places",
         "app": "Apps",
+        "concept": "Concepts",
     }
 
     out: list[GraphCluster] = []
@@ -278,6 +282,9 @@ async def get_graph(
         collection_rows = (
             await session.execute(select(db.CollectionRow))
         ).scalars().all()
+        concept_rows = (
+            await session.execute(select(db.ConceptRow))
+        ).scalars().all()
 
     # ---- Build nodes ------------------------------------------------------- #
 
@@ -318,6 +325,19 @@ async def get_graph(
                 label=col.name,
                 node_type="folder",
                 content_type=col.system_type or "custom",
+            )
+        )
+
+    concept_ids: set[str] = set()
+    for c in concept_rows:
+        concept_ids.add(c.id)
+        nodes.append(
+            GraphNode(
+                id=c.id,
+                label=c.name,
+                node_type="concept",
+                content_type="concept",
+                tags=[],
             )
         )
 
@@ -387,6 +407,16 @@ async def get_graph(
             )
             adj[r.collection_id].append((r.id, 0.8))
             adj[r.id].append((r.collection_id, 0.8))
+
+    # 4) Concept-card reference edges (concept → each source card).
+    for c in concept_rows:
+        for cid in (c.source_card_ids or []):
+            if cid in card_ids:
+                edges.append(
+                    GraphEdge(source=c.id, target=cid, weight=0.9, kind="concept_ref")
+                )
+                adj[c.id].append((cid, 0.9))
+                adj[cid].append((c.id, 0.9))
 
     # ---- Degree ------------------------------------------------------------ #
 
