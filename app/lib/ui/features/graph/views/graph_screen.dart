@@ -38,10 +38,10 @@ class _PhysicsConfig {
   double linkDistance;
 
   _PhysicsConfig({
-    this.repelForce = 1.2,
-    this.linkForce = 1.1,
-    this.centerForce = 0.22,
-    this.linkDistance = 95,
+    this.repelForce = 2.2,
+    this.linkForce = 1.3,
+    this.centerForce = 0.02,
+    this.linkDistance = 90,
   });
 }
 
@@ -139,7 +139,7 @@ class _GraphScreenState extends State<GraphScreen>
 
     for (var i = 0; i < n; i++) {
       final a = (i / math.max(1, n)) * 2 * math.pi;
-      final r = 60 + rng.nextDouble() * 160;
+      final r = 35 + rng.nextDouble() * 90;
       _pos[data.nodes[i].id] =
           Offset(math.cos(a) * r, math.sin(a) * r) +
           Offset(rng.nextDouble() * 8 - 4, rng.nextDouble() * 8 - 4);
@@ -187,8 +187,28 @@ class _GraphScreenState extends State<GraphScreen>
     final k = _physics.linkDistance;
     final disp = <String, Offset>{for (final id in ids) id: Offset.zero};
 
+    // Group visible nodes into connected components (families)
+    final family = <String, int>{};
+    var nextFamily = 0;
+    for (final id in ids) {
+      if (family.containsKey(id)) continue;
+      nextFamily++;
+      final queue = [id];
+      family[id] = nextFamily;
+      var head = 0;
+      while (head < queue.length) {
+        final curr = queue[head++];
+        for (final nbr in (_adj[curr] ?? <String>[])) {
+          if (visibleIds.contains(nbr) && !family.containsKey(nbr)) {
+            family[nbr] = nextFamily;
+            queue.add(nbr);
+          }
+        }
+      }
+    }
+
     // --- Force 1: Repulsion (Coulomb's law) ---
-    // Every node pushes every other node away.
+    // Every node pushes every other node away. Separate families repel 8x harder.
     final repelK = k * k * _physics.repelForce;
     for (var i = 0; i < n; i++) {
       for (var j = i + 1; j < n; j++) {
@@ -201,7 +221,9 @@ class _GraphScreenState extends State<GraphScreen>
           delta = const Offset(0.5, 0.3);
           d = delta.distance;
         }
-        final force = repelK / d;
+        final sameFamily = family[ids[i]] == family[ids[j]];
+        final mult = sameFamily ? 1.0 : 8.0;
+        final force = (repelK * mult) / (d * d);
         final push = delta / d * force;
         disp[ids[i]] = disp[ids[i]]! + push;
         disp[ids[j]] = disp[ids[j]]! - push;
@@ -223,8 +245,14 @@ class _GraphScreenState extends State<GraphScreen>
       // Spring: pulls when distance > k, pushes when < k.
       final force = (d - k) / d * _physics.linkForce * (0.4 + e.weight);
       final pull = delta / d * force;
-      disp[e.source] = disp[e.source]! - pull;
-      disp[e.target] = disp[e.target]! + pull;
+      final degA = (_adj[e.source]?.length ?? 1).toDouble();
+      final degB = (_adj[e.target]?.length ?? 1).toDouble();
+      final totalDeg = degA + degB;
+      final biasA = degB / totalDeg; // hub anchor stability
+      final biasB = degA / totalDeg; // leaf node pull
+
+      disp[e.source] = disp[e.source]! - pull * (biasA * 2);
+      disp[e.target] = disp[e.target]! + pull * (biasB * 2);
     }
 
     // --- Force 3: Center gravity ---
@@ -300,9 +328,15 @@ class _GraphScreenState extends State<GraphScreen>
     if (_draggedNode != null && d.pointerCount == 1) {
       final center = Offset(size.width / 2, size.height / 2);
       final world = (d.localFocalPoint - center - _pan) / _zoom;
+      final oldPos = _pos[_draggedNode!];
+      if (oldPos != null) {
+        final delta = world - oldPos;
+        _dragFamily(_draggedNode!, delta);
+      }
       _pos[_draggedNode!] = world;
-      // Keep reheating while dragging.
-      _temperature = math.max(_temperature, 4.0);
+      // High heat while dragging so the constellation tracks smoothly.
+      _temperature = math.max(_temperature, 35.0);
+      if (!_ticker.isActive) _ticker.start();
       setState(() {});
       return;
     }
@@ -316,11 +350,32 @@ class _GraphScreenState extends State<GraphScreen>
 
   void _onScaleEnd(ScaleEndDetails d) {
     if (_draggedNode != null) {
-      // Reheat so stretched Hooke's spring snaps back elastically.
       _temperature = math.max(_temperature, 25.0);
       if (!_ticker.isActive) _ticker.start();
     }
     _draggedNode = null;
+  }
+
+  void _dragFamily(String rootId, Offset delta) {
+    final visited = <String>{rootId};
+    var frontier = <String>{rootId};
+    var depth = 1;
+    while (frontier.isNotEmpty && depth <= 3) {
+      final next = <String>{};
+      final factor = math.pow(0.85, depth).toDouble();
+      for (final id in frontier) {
+        for (final neighbor in (_adj[id] ?? <String>[])) {
+          if (visited.add(neighbor)) {
+            next.add(neighbor);
+            if (_pos[neighbor] != null) {
+              _pos[neighbor] = _pos[neighbor]! + delta * factor;
+            }
+          }
+        }
+      }
+      frontier = next;
+      depth++;
+    }
   }
 
   void _onTapUp(TapUpDetails d, Size size) {
@@ -529,23 +584,25 @@ class _GraphScreenState extends State<GraphScreen>
             builder: (context, constraints) {
               final size =
                   Size(constraints.maxWidth, constraints.maxHeight);
-              return GestureDetector(
-                onScaleStart: (d) => _onScaleStart(d, size),
-                onScaleUpdate: (d) => _onScaleUpdate(d, size),
-                onScaleEnd: _onScaleEnd,
-                onTapUp: (d) => _onTapUp(d, size),
-                child: CustomPaint(
-                  size: size,
-                  painter: _GraphPainter(
-                    data: data,
-                    visibleIds: visibleIds,
-                    positions: _pos,
-                    pan: _pan,
-                    zoom: _zoom,
-                    selected: _selected,
-                    adjacency: _adj,
-                    activeCluster: _activeCluster,
-                    theme: Theme.of(context),
+              return ClipRect(
+                child: GestureDetector(
+                  onScaleStart: (d) => _onScaleStart(d, size),
+                  onScaleUpdate: (d) => _onScaleUpdate(d, size),
+                  onScaleEnd: _onScaleEnd,
+                  onTapUp: (d) => _onTapUp(d, size),
+                  child: CustomPaint(
+                    size: size,
+                    painter: _GraphPainter(
+                      data: data,
+                      visibleIds: visibleIds,
+                      positions: _pos,
+                      pan: _pan,
+                      zoom: _zoom,
+                      selected: _selected,
+                      adjacency: _adj,
+                      activeCluster: _activeCluster,
+                      theme: Theme.of(context),
+                    ),
                   ),
                 ),
               );
