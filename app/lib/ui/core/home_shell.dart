@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
 import '../features/catalog/views/catalog_screen.dart';
-import '../features/library/views/library_chat_screen.dart';
+import '../features/collections/views/collections_screen.dart';
 import '../features/library/views/library_screen.dart';
 import '../features/profile/views/profile_screen.dart';
 import 'brand.dart';
@@ -35,9 +35,9 @@ class _HomeShellState extends State<HomeShell> {
         index: _index,
         children: const [
           LibraryScreen(),
-          ActionsScreen(),
           CatalogScreen(),
-          LibraryChatScreen(),
+          CollectionsScreen(),
+          ActionsScreen(),
           ProfileScreen(),
         ],
       ),
@@ -56,30 +56,30 @@ class _HomeShellState extends State<HomeShell> {
           child: Row(
             children: [
               _NavItem(
-                icon: Icons.collections_bookmark_outlined,
-                activeIcon: Icons.collections_bookmark_rounded,
-                label: 'LIBRARY',
+                icon: Icons.home_outlined,
+                activeIcon: Icons.home_rounded,
+                label: 'HOME',
                 selected: _index == 0,
                 onTap: () => _select(0),
+              ),
+              _NavItem(
+                icon: Icons.category_outlined,
+                activeIcon: Icons.category_rounded,
+                label: 'LIBRARY',
+                selected: _index == 1,
+                onTap: () => _select(1),
+              ),
+              _NavItem(
+                icon: Icons.folder_outlined,
+                activeIcon: Icons.folder_rounded,
+                label: 'COLLECTIONS',
+                selected: _index == 2,
+                onTap: () => _select(2),
               ),
               _NavItem(
                 icon: Icons.checklist_rounded,
                 activeIcon: Icons.checklist_rounded,
                 label: 'TO-DO',
-                selected: _index == 1,
-                onTap: () => _select(1),
-              ),
-              _NavItem(
-                icon: Icons.category_outlined,
-                activeIcon: Icons.category_rounded,
-                label: 'CATALOG',
-                selected: _index == 2,
-                onTap: () => _select(2),
-              ),
-              _NavItem(
-                icon: Icons.forum_outlined,
-                activeIcon: Icons.forum_rounded,
-                label: 'CHAT',
                 selected: _index == 3,
                 onTap: () => _select(3),
               ),

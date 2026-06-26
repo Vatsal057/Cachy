@@ -21,6 +21,20 @@ class PipelineProgress extends StatelessWidget {
   final PipelineStage current;
   final String detail;
 
+  static double calculateProgress(PipelineStage stage) {
+    final total = PipelineStage.track.length;
+    final i = PipelineStage.track.indexOf(stage);
+    final idx = i >= 0
+        ? i
+        : (stage == PipelineStage.done
+            ? total
+            : (stage == PipelineStage.snapshot ? -1 : 0));
+    return idx < 0
+        ? 0.04
+        : ((idx.clamp(0, total) + (idx < total ? 0.5 : 0.0)) / total)
+            .clamp(0.0, 1.0);
+  }
+
   int get _currentIndex {
     final i = PipelineStage.track.indexOf(current);
     if (i >= 0) return i;
@@ -36,10 +50,7 @@ class PipelineProgress extends StatelessWidget {
     final scheme = theme.colorScheme;
     final idx = _currentIndex;
     final total = PipelineStage.track.length;
-    // Fraction complete: finished steps + a half-credit for the active one.
-    final progress = idx < 0
-        ? 0.04
-        : ((idx.clamp(0, total) + (idx < total ? 0.5 : 0.0)) / total).clamp(0.0, 1.0);
+    final progress = calculateProgress(current);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -55,17 +66,26 @@ class PipelineProgress extends StatelessWidget {
         const SizedBox(height: 4),
         ClipRRect(
           borderRadius: BorderRadius.circular(2),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 4,
-            backgroundColor: scheme.surfaceContainerHighest,
-            valueColor: AlwaysStoppedAnimation(scheme.primary),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.0, end: progress),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOutCubic,
+            builder: (context, val, _) => LinearProgressIndicator(
+              value: val,
+              minHeight: 4,
+              backgroundColor: scheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation(scheme.primary),
+            ),
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-          '${(progress * 100).round()}% complete',
-          style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.0, end: progress),
+          duration: const Duration(milliseconds: 500),
+          builder: (context, val, _) => Text(
+            '${(val * 100).round()}% complete',
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
         ),
       ],
     );
@@ -125,7 +145,9 @@ class _StageRow extends StatelessWidget {
                     label,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: active ? FontWeight.w800 : FontWeight.w500,
-                      color: lit ? scheme.onSurface : scheme.onSurfaceVariant,
+                      color: active
+                          ? scheme.primary
+                          : (done ? scheme.onSurface : scheme.onSurfaceVariant),
                     ),
                   ),
                   // Active step shows the live SSE detail; other steps show the
@@ -166,14 +188,25 @@ class _StageRow extends StatelessWidget {
       return Container(
         width: 28,
         height: 28,
-        decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          shape: BoxShape.circle,
+          border: Border.all(color: scheme.primary, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.primary.withValues(alpha: 0.35),
+              blurRadius: 16,
+            ),
+          ],
+        ),
         alignment: Alignment.center,
         child: SizedBox(
-          width: 13,
-          height: 13,
+          width: 14,
+          height: 14,
           child: CircularProgressIndicator(
             strokeWidth: 2.2,
-            valueColor: AlwaysStoppedAnimation(scheme.onPrimary),
+            valueColor: AlwaysStoppedAnimation(scheme.primary),
+            strokeCap: StrokeCap.round,
           ),
         ),
       );

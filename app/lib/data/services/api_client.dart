@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
+import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -100,12 +101,14 @@ class ApiClient {
   Future<List<Card>> listCards({
     CardState? state,
     String? contentType,
+    String? collectionId,
     int limit = 50,
     int offset = 0,
   }) async {
     final resp = await _client.get(_uri('/cards', {
       'state': ?state?.wire,
       'content_type': ?contentType,
+      'collection_id': ?collectionId,
       'limit': limit,
       'offset': offset,
     }));
@@ -159,6 +162,42 @@ class ApiClient {
       body: jsonEncode({'messages': messages}),
     );
     return (_decodeMap(resp)['reply'] as String?) ?? '';
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Collections
+  // ------------------------------------------------------------------------- //
+
+  Future<List<CollectionEntry>> listCollections() async {
+    final resp = await _client.get(_uri('/collections'));
+    return _decodeList(resp).map(CollectionEntry.fromJson).toList();
+  }
+
+  Future<CollectionEntry> renameCollection(String id, String name) async {
+    final resp = await _client.patch(
+      _uri('/collections/$id'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'name': name}),
+    );
+    return CollectionEntry.fromJson(_decodeMap(resp));
+  }
+
+  Future<CollectionEntry> createCollection(String name) async {
+    final resp = await _client.post(
+      _uri('/collections'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'name': name}),
+    );
+    return CollectionEntry.fromJson(_decodeMap(resp));
+  }
+
+  Future<void> moveCardToCollection(String cardId, String? collectionId) async {
+    final resp = await _client.post(
+      _uri('/collections/cards/$cardId/move'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'collection_id': collectionId}),
+    );
+    if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
   }
 
   // ------------------------------------------------------------------------- //

@@ -54,8 +54,8 @@ _LP_MAX_ITERS = 30
 class GraphNode(BaseModel):
     id: str
     label: str
-    node_type: Literal["card", "catalog"]
-    content_type: str  # e.g. "recipe", "book", "product"
+    node_type: Literal["card", "catalog", "folder"]
+    content_type: str  # e.g. "recipe", "book", "product", "custom"
     thumbnail: str | None = None
     tags: list[str] = []
     degree: int = 0
@@ -66,7 +66,7 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     weight: float
-    kind: Literal["semantic", "reference", "tag"]
+    kind: Literal["semantic", "reference", "tag", "membership"]
 
 
 class GraphCluster(BaseModel):
@@ -126,7 +126,10 @@ async def _data_fingerprint() -> str:
                 )
             )
         ).one()
-    raw = f"{card_agg[0]}:{card_agg[1]}:{art_agg[0]}:{art_agg[1]}"
+        col_count = (
+            await session.execute(select(func.count(db.CollectionRow.id)))
+        ).scalar() or 0
+    raw = f"{card_agg[0]}:{card_agg[1]}:{art_agg[0]}:{art_agg[1]}:{col_count}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -272,6 +275,9 @@ async def get_graph(
                 select(db.ArtifactRow).where(db.ArtifactRow.saved.is_(True))
             )
         ).scalars().all()
+        collection_rows = (
+            await session.execute(select(db.CollectionRow))
+        ).scalars().all()
 
     # ---- Build nodes ------------------------------------------------------- #
 
@@ -300,6 +306,18 @@ async def get_graph(
                 content_type=a.type or "other",
                 thumbnail=a.thumbnail,
                 tags=[],
+            )
+        )
+
+    folder_ids: set[str] = set()
+    for col in collection_rows:
+        folder_ids.add(col.id)
+        nodes.append(
+            GraphNode(
+                id=col.id,
+                label=col.name,
+                node_type="folder",
+                content_type=col.system_type or "custom",
             )
         )
 
@@ -360,6 +378,15 @@ async def get_graph(
                 )
                 adj[a.id].append((card_id, 1.0))
                 adj[card_id].append((a.id, 1.0))
+
+    # 3) Folder membership edges — folder node → each card belonging to it.
+    for r in card_rows:
+        if r.collection_id and r.collection_id in folder_ids:
+            edges.append(
+                GraphEdge(source=r.collection_id, target=r.id, weight=0.8, kind="membership")
+            )
+            adj[r.collection_id].append((r.id, 0.8))
+            adj[r.id].append((r.collection_id, 0.8))
 
     # ---- Degree ------------------------------------------------------------ #
 

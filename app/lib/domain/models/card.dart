@@ -248,6 +248,7 @@ class Card {
     this.media = const Media(),
     this.meta = const Meta(),
     this.rawBlocks = const [],
+    this.collectionId,
   });
 
   final String schemaVersion;
@@ -262,6 +263,7 @@ class Card {
   final Insight? insight; // deep-analysis layer (docs/14); null for simple cards
   final Media media;
   final Meta meta;
+  final String? collectionId;
 
   /// The original block JSON, preserved so PATCH (checked-item persistence) can
   /// round-trip unmodified fields without lossy re-serialization of the union.
@@ -301,6 +303,7 @@ class Card {
       media: Media.fromJson((json['media'] as Map<String, dynamic>?) ?? const {}),
       meta: Meta.fromJson((json['meta'] as Map<String, dynamic>?) ?? const {}),
       rawBlocks: rawBlocks,
+      collectionId: json['collection_id'] as String?,
     );
   }
 
@@ -324,5 +327,6 @@ class Card {
         media: media,
         meta: meta,
         rawBlocks: rawBlocks ?? this.rawBlocks,
+        collectionId: collectionId,
       );
 }

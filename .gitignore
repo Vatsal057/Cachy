@@ -34,3 +34,9 @@ dist/
 .env.*.local
 
 # Temp
+demo/
+
+# Python / Agent
+
+context.md 
+i-want-you-to-spicy-dusk.md

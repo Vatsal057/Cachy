@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.4"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14)
+SCHEMA_VERSION = "1.5"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections
 
 
 # --------------------------------------------------------------------------- #
@@ -294,3 +294,5 @@ class Card(BaseModel):
     insight: Optional[Insight] = None
     media: Media = Field(default_factory=Media)
     meta: Meta = Field(default_factory=Meta)
+    # Collection this card belongs to (auto-assigned by pipeline, user-overridable).
+    collection_id: Optional[str] = None

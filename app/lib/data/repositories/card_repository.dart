@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import '../../domain/models/artifact.dart';
 import '../../domain/models/card.dart';
+import '../../domain/models/collection.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -136,6 +137,24 @@ class CardRepository {
   Future<List<CatalogEntry>> cardArtifacts(String cardId) =>
       _api.cardArtifacts(cardId);
 
+  // ---- Collections --------------------------------------------------------- //
+
+  Future<List<CollectionEntry>> listCollections() => _api.listCollections();
+
+  Future<CollectionEntry> renameCollection(String id, String name) =>
+      _api.renameCollection(id, name);
+
+  Future<CollectionEntry> createCollection(String name) =>
+      _api.createCollection(name);
+
+  Future<void> moveCardToCollection(String cardId, String? collectionId) =>
+      _api.moveCardToCollection(cardId, collectionId);
+
+  Future<List<Card>> listByCollection(String collectionId, {int limit = 100}) =>
+      _api.listCards(collectionId: collectionId, limit: limit);
+
+  // -------------------------------------------------------------------------- //
+
   /// The knowledge graph: cards as nodes, similarity as edges. Network-only.
   Future<GraphData> graph({double threshold = 0.55, int topK = 4}) =>
       _api.graph(threshold: threshold, topK: topK);
@@ -174,6 +193,7 @@ class CardRepository {
         },
         'action_items': card.actionItems.toJson(),
         'blocks': card.rawBlocks,
+        'collection_id': card.collectionId,
         'media': {
           'thumbnail': card.media.thumbnail,
           'keyframes': card.media.keyframes,

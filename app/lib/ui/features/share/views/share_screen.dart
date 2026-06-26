@@ -13,7 +13,6 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/pipeline_event.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
-import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../../core/widgets/processing_glyph.dart';
 import '../../reader/views/reader_screen.dart';
@@ -41,6 +40,8 @@ class _ShareView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<ShareViewModel>();
+    final theme = Theme.of(context);
+    final isProcessing = vm.status == ShareStatus.idle || vm.status == ShareStatus.processing;
 
     // Auto-advance into the reader the moment dedup resolves to an existing card.
     if (vm.status == ShareStatus.ready &&
@@ -49,6 +50,30 @@ class _ShareView extends StatelessWidget {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) _openReader(context, vm.cardId!);
       });
+    }
+
+    if (isProcessing) {
+      return Scaffold(
+        backgroundColor: theme.colorScheme.surface,
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(0, -0.4),
+              radius: 1.3,
+              colors: [
+                theme.colorScheme.primary.withValues(alpha: 0.15),
+                Colors.transparent,
+              ],
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: _content(context, vm),
+            ),
+          ),
+        ),
+      );
     }
 
     return Scaffold(
@@ -79,7 +104,9 @@ class _ShareView extends StatelessWidget {
             children: [
               const ProcessingGlyph(size: 132),
               const SizedBox(height: 20),
-              const Text('Sending to Cachy…'),
+              Text('Sending to Cachy…', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text('INGESTING VIDEO STREAM', style: Brand.label(size: 11, color: theme.colorScheme.onSurfaceVariant)),
             ],
           ),
         );
@@ -107,13 +134,11 @@ class _ShareView extends StatelessWidget {
         );
 
       case ShareStatus.failed:
-        return ErrorState(
-          title: "Couldn't capture this reel",
-          icon: Icons.error_outline_rounded,
-          message: vm.failureReason ??
-              'The source may be private, removed, or unsupported.',
-          retryLabel: 'Back',
-          onRetry: () => Navigator.pop(context),
+        return _FailedView(
+          url: sharedUrl,
+          reason: vm.failureReason,
+          onRetry: () => context.read<ShareViewModel>().submit(sharedUrl),
+          onCancel: () => Navigator.pop(context),
         );
 
       case ShareStatus.ready:
@@ -123,22 +148,89 @@ class _ShareView extends StatelessWidget {
 
       case ShareStatus.idle:
       case ShareStatus.processing:
+        final progress = PipelineProgress.calculateProgress(vm.stage);
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Center(child: ProcessingGlyph(size: 132)),
-            const SizedBox(height: 24),
-            Text('Building your card', style: theme.textTheme.headlineSmall),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 180,
+              height: 180,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 180,
+                    height: 180,
+                    child: CircularProgressIndicator(
+                      value: 1.0,
+                      strokeWidth: 6,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    height: 180,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0.0, end: progress),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, val, _) => CircularProgressIndicator(
+                        value: val,
+                        strokeWidth: 6,
+                        valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+                        strokeCap: StrokeCap.round,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: theme.colorScheme.primary,
+                          boxShadow: [
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.45),
+                              blurRadius: 32,
+                            ),
+                          ],
+                        ),
+                        child: Icon(Icons.auto_awesome_rounded, color: theme.colorScheme.onPrimary, size: 28),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+            Text(
+              'Building your card',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
             Text(
-              'You can leave — it keeps working in the background.',
+              'This usually takes under 30 seconds',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 32),
-            PipelineProgress(current: vm.stage, detail: vm.detail),
-            const Spacer(),
-            if (vm.cardId != null)
+            const SizedBox(height: 36),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: PipelineProgress(current: vm.stage, detail: vm.detail),
+              ),
+            ),
+            if (vm.cardId != null) ...[
               OutlinedButton(
                 onPressed: () => _openReader(context, vm.cardId!),
                 style: OutlinedButton.styleFrom(
@@ -148,6 +240,20 @@ class _ShareView extends StatelessWidget {
                 ),
                 child: const Text('Open while it builds'),
               ),
+              const SizedBox(height: 12),
+            ],
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Cancel',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
           ],
         );
     }
@@ -216,6 +322,167 @@ class _ReadyViewState extends State<_ReadyView> {
             ),
             child: const Text('Open card'),
           ).animate().fadeIn(delay: 220.ms).moveY(begin: 8, end: 0),
+        ],
+      ),
+    );
+  }
+}
+
+/// Capture failure — never a dead end. A calm ringed warning, a named error with
+/// a plain-language explanation, and two ways forward: retry the same URL or back
+/// out. Adapted from the prototype's failure screen into the editorial world.
+class _FailedView extends StatelessWidget {
+  const _FailedView({
+    required this.url,
+    required this.reason,
+    required this.onRetry,
+    required this.onCancel,
+  });
+
+  final String url;
+  final String? reason;
+  final VoidCallback onRetry;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Spacer(flex: 2),
+        const Center(child: _WarningGlyph(size: 132)),
+        const SizedBox(height: 26),
+        Text(
+          'Something went wrong',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          "We couldn't process this reel",
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 28),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: scheme.errorContainer,
+            borderRadius: BorderRadius.circular(Insets.radius),
+            border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.error_outline_rounded, size: 18, color: scheme.error),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Unsupported content',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.error,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The video may be private, unavailable in your region, or '
+                "the link format isn't supported.",
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant, height: 1.5),
+              ),
+              if (reason != null && reason!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: scheme.error.withValues(alpha: 0.25)),
+                  ),
+                  child: Text(
+                    reason!,
+                    style: Brand.label(
+                      size: 11,
+                      color: scheme.error,
+                      weight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const Spacer(flex: 3),
+        FilledButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded, size: 20),
+          label: const Text('Try again'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton(
+          onPressed: onCancel,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(52),
+          ),
+          child: const Text('Cancel'),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+/// A static, calm warning mark: a ringed error badge. The still counterpart to
+/// [ProcessingGlyph] — same concentric-ring language, no animation.
+class _WarningGlyph extends StatelessWidget {
+  const _WarningGlyph({this.size = 132});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final badge = size * 0.46;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: scheme.error.withValues(alpha: 0.10), width: 1.4),
+            ),
+          ),
+          Container(
+            width: size * 0.74,
+            height: size * 0.74,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: scheme.error.withValues(alpha: 0.18), width: 1.4),
+            ),
+          ),
+          Container(
+            width: badge,
+            height: badge,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scheme.error.withValues(alpha: 0.12),
+              border: Border.all(color: scheme.error.withValues(alpha: 0.5), width: 1.6),
+            ),
+            child: Icon(Icons.warning_amber_rounded, size: badge * 0.5, color: scheme.error),
+          ),
         ],
       ),
     );
