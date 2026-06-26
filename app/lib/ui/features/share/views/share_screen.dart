@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
@@ -116,7 +117,7 @@ class _ShareView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off_rounded, size: 48),
+              const PhosphorIcon(PhosphorIconsRegular.cloudSlash, size: 48),
               const SizedBox(height: 14),
               Text('Saved offline', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
@@ -203,7 +204,7 @@ class _ShareView extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: Icon(Icons.auto_awesome_rounded, color: theme.colorScheme.onPrimary, size: 28),
+                        child: PhosphorIcon(PhosphorIconsRegular.sparkle, color: theme.colorScheme.onPrimary, size: 28),
                       ),
                     ),
                   ),
@@ -298,7 +299,7 @@ class _ReadyViewState extends State<_ReadyView> {
               shape: BoxShape.circle,
               boxShadow: Brand.softShadow(opacity: 0.2, blur: 26, y: 8),
             ),
-            child: Icon(Icons.check_rounded, size: 46, color: scheme.onPrimary),
+            child: PhosphorIcon(PhosphorIconsRegular.check, size: 46, color: scheme.onPrimary),
           )
               .animate()
               .scale(
@@ -379,7 +380,7 @@ class _FailedView extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.error_outline_rounded, size: 18, color: scheme.error),
+                  PhosphorIcon(PhosphorIconsRegular.warning, size: 18, color: scheme.error),
                   const SizedBox(width: 8),
                   Text(
                     'Unsupported content',
@@ -424,7 +425,7 @@ class _FailedView extends StatelessWidget {
         const Spacer(flex: 3),
         FilledButton.icon(
           onPressed: onRetry,
-          icon: const Icon(Icons.refresh_rounded, size: 20),
+          icon: const PhosphorIcon(PhosphorIconsRegular.arrowClockwise, size: 20),
           label: const Text('Try again'),
         ),
         const SizedBox(height: 10),
@@ -481,7 +482,7 @@ class _WarningGlyph extends StatelessWidget {
               color: scheme.error.withValues(alpha: 0.12),
               border: Border.all(color: scheme.error.withValues(alpha: 0.5), width: 1.6),
             ),
-            child: Icon(Icons.warning_amber_rounded, size: badge * 0.5, color: scheme.error),
+            child: PhosphorIcon(PhosphorIconsRegular.warning, size: badge * 0.5, color: scheme.error),
           ),
         ],
       ),
@@ -504,7 +505,7 @@ class _UrlChip extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.link_rounded, size: 18, color: scheme.onSurfaceVariant),
+          PhosphorIcon(PhosphorIconsRegular.link, size: 18, color: scheme.onSurfaceVariant),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

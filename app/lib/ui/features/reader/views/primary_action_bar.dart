@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../domain/models/card.dart';
 import '../services/card_actions.dart';
@@ -50,7 +51,7 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
             if (hasPrimary)
               OutlinedButton.icon(
                 onPressed: _openChat,
-                icon: const Icon(Icons.chat_bubble_outline_rounded),
+                icon: const PhosphorIcon(PhosphorIconsRegular.chatCircle),
                 label: const Text('Ask'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(0, 52),
@@ -62,7 +63,7 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
               Expanded(
                 child: FilledButton.icon(
                   onPressed: _openChat,
-                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  icon: const PhosphorIcon(PhosphorIconsRegular.chatCircle),
                   label: const Text('Ask this card'),
                 ),
               ),
@@ -80,7 +81,7 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
             const SizedBox(width: 6),
             IconButton.filledTonal(
               onPressed: _busy ? null : () => _openMore(primaryType),
-              icon: const Icon(Icons.more_horiz_rounded),
+              icon: const PhosphorIcon(PhosphorIconsRegular.dotsThree),
               tooltip: 'More actions',
               style: IconButton.styleFrom(minimumSize: const Size(52, 52)),
             ),
@@ -100,8 +101,6 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
   }
 
   Future<void> _openMore(CardActionType? primaryType) async {
-    // The "more" sheet lists every available action except the one already
-    // shown as the primary button.
     final specs = _actions
         .available(card)
         .where((s) => s.type != primaryType)
@@ -114,7 +113,7 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
           children: [
             for (final s in specs)
               ListTile(
-                leading: Icon(s.icon),
+                leading: PhosphorIcon(s.icon),
                 title: Text(s.label),
                 onTap: () => Navigator.pop(ctx, s.type),
               ),
@@ -133,7 +132,7 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
     setState(() => _busy = false);
 
     final message = switch (result) {
-      ActionResult.done => null, // the OS sheet/app is the feedback
+      ActionResult.done => null,
       ActionResult.copied => 'Copied to clipboard',
       ActionResult.empty => 'Nothing in this card for that',
       ActionResult.failed => "Couldn't complete that action",
@@ -144,27 +143,27 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
     }
   }
 
-  IconData _iconFor(CardActionType type) {
+  PhosphorIconData _iconFor(CardActionType type) {
     switch (type) {
       case CardActionType.share:
-        return Icons.ios_share_rounded;
+        return PhosphorIconsRegular.export;
       case CardActionType.shoppingList:
-        return Icons.add_shopping_cart_rounded;
+        return PhosphorIconsRegular.shoppingCart;
       case CardActionType.openMaps:
-        return Icons.map_rounded;
+        return PhosphorIconsRegular.mapPin;
       case CardActionType.addToCalendar:
-        return Icons.event_available_rounded;
+        return PhosphorIconsRegular.calendarCheck;
       case CardActionType.copy:
-        return Icons.copy_rounded;
+        return PhosphorIconsRegular.copy;
       case CardActionType.openOriginal:
-        return Icons.play_circle_outline_rounded;
+        return PhosphorIconsRegular.playCircle;
       case CardActionType.openLinks:
-        return Icons.link_rounded;
+        return PhosphorIconsRegular.link;
     }
   }
 }
 
-/// The dominant action — flat rust, the loudest control in the reader.
+/// The dominant action — flat sage, the loudest control in the reader.
 class _PrimaryActionButton extends StatelessWidget {
   const _PrimaryActionButton({
     required this.busy,
@@ -173,7 +172,7 @@ class _PrimaryActionButton extends StatelessWidget {
     required this.onTap,
   });
   final bool busy;
-  final IconData icon;
+  final PhosphorIconData icon;
   final String label;
   final VoidCallback? onTap;
 
@@ -189,7 +188,7 @@ class _PrimaryActionButton extends StatelessWidget {
               child: CircularProgressIndicator(
                   strokeWidth: 2, valueColor: AlwaysStoppedAnimation(scheme.onPrimary)),
             )
-          : Icon(icon, size: 20),
+          : PhosphorIcon(icon, size: 20),
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }

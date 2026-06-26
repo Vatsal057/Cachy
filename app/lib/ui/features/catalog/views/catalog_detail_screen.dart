@@ -6,6 +6,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -201,7 +202,7 @@ class _CatalogDetailScreenState extends State<CatalogDetailScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.auto_awesome_rounded, size: 18),
+                : const PhosphorIcon(PhosphorIconsRegular.sparkle, size: 18),
             label: Text(
               _loading
                   ? 'Generating…'
@@ -213,7 +214,7 @@ class _CatalogDetailScreenState extends State<CatalogDetailScreen> {
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: _searchWeb,
-            icon: const Icon(Icons.open_in_new_rounded, size: 18),
+            icon: const PhosphorIcon(PhosphorIconsRegular.arrowUpRight, size: 18),
             label: const Text('Search the web'),
           ),
 
@@ -285,7 +286,7 @@ class _AppearsRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
-                Icon(Icons.description_outlined, size: 18, color: scheme.primary),
+                PhosphorIcon(PhosphorIconsRegular.article, size: 18, color: scheme.primary),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(title,
@@ -293,7 +294,7 @@ class _AppearsRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium),
                 ),
-                Icon(Icons.chevron_right_rounded,
+                PhosphorIcon(PhosphorIconsRegular.caretRight,
                     size: 18, color: scheme.onSurfaceVariant),
               ],
             ),
@@ -347,16 +348,16 @@ class _Cover extends StatelessWidget {
   const _Cover({required this.entry});
   final CatalogEntry entry;
 
-  static const _icons = {
-    ArtifactType.book: Icons.menu_book_rounded,
-    ArtifactType.movie: Icons.movie_rounded,
-    ArtifactType.tvShow: Icons.tv_rounded,
-    ArtifactType.podcast: Icons.podcasts_rounded,
-    ArtifactType.music: Icons.music_note_rounded,
-    ArtifactType.product: Icons.shopping_bag_rounded,
-    ArtifactType.place: Icons.place_rounded,
-    ArtifactType.app: Icons.apps_rounded,
-    ArtifactType.other: Icons.category_rounded,
+  static const _icons = <ArtifactType, PhosphorIconData>{
+    ArtifactType.book: PhosphorIconsRegular.bookOpen,
+    ArtifactType.movie: PhosphorIconsRegular.filmSlate,
+    ArtifactType.tvShow: PhosphorIconsRegular.television,
+    ArtifactType.podcast: PhosphorIconsRegular.microphone,
+    ArtifactType.music: PhosphorIconsRegular.musicNote,
+    ArtifactType.product: PhosphorIconsRegular.shoppingBag,
+    ArtifactType.place: PhosphorIconsRegular.mapPin,
+    ArtifactType.app: PhosphorIconsRegular.appWindow,
+    ArtifactType.other: PhosphorIconsRegular.shapes,
   };
 
   @override
@@ -365,7 +366,7 @@ class _Cover extends StatelessWidget {
     final placeholder = ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
-        child: Icon(_icons[entry.type] ?? Icons.category_rounded,
+        child: PhosphorIcon(_icons[entry.type] ?? PhosphorIconsRegular.shapes,
             size: 30, color: theme.colorScheme.onSurfaceVariant),
       ),
     );

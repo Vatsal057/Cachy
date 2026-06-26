@@ -1,6 +1,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../data/services/api_client.dart';
 import '../../../core/brand.dart';
@@ -27,7 +28,7 @@ class FolderTile extends StatelessWidget {
     final ct = collection.contentType;
     final accent = ct != null
         ? ContentAccent.of(ct)
-        : const ContentAccent(Color(0xFF8A5A3C), Icons.folder_rounded);
+        : const ContentAccent(Color(0xFF8A5A3C), PhosphorIconsFill.folder);
     final preview = collection.previewCard;
 
     return GestureDetector(
@@ -66,8 +67,8 @@ class FolderTile extends StatelessWidget {
                   color: accent.color.withValues(alpha: 0.82),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
-                  collection.isCustom ? Icons.folder_rounded : accent.icon,
+                child: PhosphorIcon(
+                  collection.isCustom ? PhosphorIconsFill.folder : accent.icon,
                   color: Colors.white,
                   size: 16,
                 ),

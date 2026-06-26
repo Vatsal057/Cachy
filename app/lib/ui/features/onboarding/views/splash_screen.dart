@@ -1,10 +1,10 @@
 /// The launch moment: the brand glyph "catches" a falling reel, then the
-/// wordmark draws in. Plays over the brand gradient, ~1.3s, then [onDone] fires.
-/// Tappable to skip. The native splash (flutter_native_splash) covers the gap
-/// before Flutter is up; this continues the same gesture seamlessly.
+/// wordmark draws in. Plays over the calm paper ground, ~1.3 s, then [onDone]
+/// fires. Tappable to skip.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 
@@ -58,7 +58,7 @@ class _SplashScreenState extends State<SplashScreen>
     return GestureDetector(
       onTap: _finish,
       child: Scaffold(
-        backgroundColor: Brand.creamGround,
+        backgroundColor: Brand.paperGround,
         body: Center(
           child: AnimatedBuilder(
             animation: _c,
@@ -68,7 +68,7 @@ class _SplashScreenState extends State<SplashScreen>
                 CachyGlyph(
                   size: 92,
                   color: Brand.ink,
-                  reelColor: Brand.rust,
+                  reelColor: Brand.sage,
                   reelDrop: _drop.value,
                 ),
                 const SizedBox(height: 20),
@@ -83,17 +83,15 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
                 const SizedBox(height: 28),
-                // Floating capability chips drift up as the wordmark settles.
                 _FloatingChip(
-                  icon: Icons.video_library_rounded,
+                  icon: PhosphorIconsRegular.videoCamera,
                   label: 'Short-form videos',
                   t: _wordmark.value,
                 ),
                 const SizedBox(height: 12),
                 _FloatingChip(
-                  icon: Icons.auto_awesome_rounded,
+                  icon: PhosphorIconsRegular.sparkle,
                   label: 'AI-powered recall',
-                  // Slight stagger so the second chip trails the first.
                   t: (_wordmark.value * 1.25 - 0.25).clamp(0.0, 1.0),
                 ),
               ],
@@ -105,10 +103,9 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// A glassy capability pill that fades + drifts up — the splash's floating tags.
 class _FloatingChip extends StatelessWidget {
   const _FloatingChip({required this.icon, required this.label, required this.t});
-  final IconData icon;
+  final PhosphorIconData icon;
   final String label;
   final double t;
 
@@ -121,16 +118,23 @@ class _FloatingChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
-            color: Brand.creamRaised,
+            color: Brand.paperRaised,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: Brand.ink.withValues(alpha: 0.08)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 15, color: Brand.rust),
+              PhosphorIcon(icon, size: 15, color: Brand.sage),
               const SizedBox(width: 8),
-              Text(label, style: Brand.label(size: 12, color: Brand.ink, weight: FontWeight.w600)),
+              Text(
+                label,
+                style: Brand.label(
+                  size: 12,
+                  color: Brand.ink,
+                  weight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -139,15 +143,17 @@ class _FloatingChip extends StatelessWidget {
   }
 }
 
-/// A small loading splash variant reused while the app boots, without animation.
+/// Static variant used while the app boots (no animation).
 class SplashStatic extends StatelessWidget {
   const SplashStatic({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Brand.creamGround,
-      body: Center(child: CachyGlyph(size: 92, color: Brand.ink, reelColor: Brand.rust)),
+    return Scaffold(
+      backgroundColor: Brand.paperGround,
+      body: const Center(
+        child: CachyGlyph(size: 92, color: Brand.ink, reelColor: Brand.sage),
+      ),
     );
   }
 }

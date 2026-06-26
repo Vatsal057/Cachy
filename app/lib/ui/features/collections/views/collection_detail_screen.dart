@@ -1,6 +1,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -66,7 +67,7 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
     final ct = widget.collection.contentType;
     final accent = ct != null
         ? ContentAccent.of(ct)
-        : const ContentAccent(Color(0xFF8A5A3C), Icons.folder_rounded);
+        : const ContentAccent(Color(0xFF8A5A3C), PhosphorIconsFill.folder);
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -75,8 +76,8 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
         leading: const BackButton(),
         title: Row(
           children: [
-            Icon(
-              widget.collection.isCustom ? Icons.folder_rounded : accent.icon,
+            PhosphorIcon(
+              widget.collection.isCustom ? PhosphorIconsFill.folder : accent.icon,
               color: accent.color,
               size: 18,
             ),
@@ -112,7 +113,7 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
     final cards = _cards ?? const [];
     if (cards.isEmpty) {
       return EmptyState(
-        icon: Icons.folder_open_rounded,
+        icon: PhosphorIconsRegular.folderOpen,
         title: 'Nothing here',
         message: 'Cards you save will appear here once processed.',
       );

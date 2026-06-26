@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -152,7 +153,7 @@ class _LibraryChatViewState extends State<_LibraryChatView> {
               children: [
                 for (final s in vm.sources)
                   ActionChip(
-                    avatar: const Icon(Icons.article_outlined, size: 16),
+                    avatar: const PhosphorIcon(PhosphorIconsRegular.article, size: 16),
                     label: Text(
                       s.oneLiner.isEmpty ? 'Card' : s.oneLiner,
                       overflow: TextOverflow.ellipsis,
@@ -195,7 +196,7 @@ class _LibraryChatViewState extends State<_LibraryChatView> {
             const SizedBox(width: 8),
             IconButton.filled(
               onPressed: vm.busy ? null : () => _send(vm),
-              icon: const Icon(Icons.send_rounded),
+              icon: const PhosphorIcon(PhosphorIconsRegular.paperPlaneRight),
             ),
           ],
         ),

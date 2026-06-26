@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -61,14 +62,14 @@ class _CatalogView extends StatelessWidget {
         return const Center(child: CircularProgressIndicator());
       case CatalogStatus.error:
         return _Message(
-          icon: Icons.wifi_off_rounded,
+          icon: PhosphorIconsRegular.wifiX,
           title: "Can't reach the backend",
           subtitle: vm.error ?? '',
           action: FilledButton(onPressed: vm.load, child: const Text('Retry')),
         );
       case CatalogStatus.empty:
         return const _Message(
-          icon: Icons.auto_stories_outlined,
+          icon: PhosphorIconsRegular.books,
           title: 'Nothing saved yet',
           subtitle:
               'Long-press any reference on a card to save it here — books, '
@@ -228,16 +229,16 @@ class _Placeholder extends StatelessWidget {
   const _Placeholder({required this.type});
   final ArtifactType type;
 
-  static const _icons = {
-    ArtifactType.book: Icons.menu_book_rounded,
-    ArtifactType.movie: Icons.movie_rounded,
-    ArtifactType.tvShow: Icons.tv_rounded,
-    ArtifactType.podcast: Icons.podcasts_rounded,
-    ArtifactType.music: Icons.music_note_rounded,
-    ArtifactType.product: Icons.shopping_bag_rounded,
-    ArtifactType.place: Icons.place_rounded,
-    ArtifactType.app: Icons.apps_rounded,
-    ArtifactType.other: Icons.category_rounded,
+  static const _icons = <ArtifactType, PhosphorIconData>{
+    ArtifactType.book: PhosphorIconsRegular.bookOpen,
+    ArtifactType.movie: PhosphorIconsRegular.filmSlate,
+    ArtifactType.tvShow: PhosphorIconsRegular.television,
+    ArtifactType.podcast: PhosphorIconsRegular.microphone,
+    ArtifactType.music: PhosphorIconsRegular.musicNote,
+    ArtifactType.product: PhosphorIconsRegular.shoppingBag,
+    ArtifactType.place: PhosphorIconsRegular.mapPin,
+    ArtifactType.app: PhosphorIconsRegular.appWindow,
+    ArtifactType.other: PhosphorIconsRegular.shapes,
   };
 
   @override
@@ -246,8 +247,8 @@ class _Placeholder extends StatelessWidget {
     return ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
-        child: Icon(
-          _icons[type] ?? Icons.category_rounded,
+        child: PhosphorIcon(
+          _icons[type] ?? PhosphorIconsRegular.shapes,
           size: 32,
           color: theme.colorScheme.onSurfaceVariant,
         ),
@@ -304,7 +305,7 @@ class _Message extends StatelessWidget {
     required this.subtitle,
     this.action,
   });
-  final IconData icon;
+  final PhosphorIconData icon;
   final String title;
   final String subtitle;
   final Widget? action;
@@ -316,7 +317,7 @@ class _Message extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.22),
-        Icon(icon, size: 52, color: theme.colorScheme.outline),
+        PhosphorIcon(icon, size: 52, color: theme.colorScheme.outline),
         const SizedBox(height: 16),
         Text(title,
             textAlign: TextAlign.center, style: theme.textTheme.titleLarge),

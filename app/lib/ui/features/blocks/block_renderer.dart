@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Step;
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../domain/models/artifact.dart';
 import '../../../domain/models/block.dart';
@@ -447,7 +448,7 @@ class _StepStrip extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: done
-                ? Icon(Icons.check_rounded, size: 16, color: scheme.onPrimary)
+                ? PhosphorIcon(PhosphorIconsRegular.check, size: 16, color: scheme.onPrimary)
                 : Text(
                     '${i + 1}',
                     style: TextStyle(
@@ -548,7 +549,7 @@ class _StepMarker extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: done
-          ? Icon(Icons.check_rounded, size: 18, color: scheme.onPrimary)
+          ? PhosphorIcon(PhosphorIconsRegular.check, size: 18, color: scheme.onPrimary)
           : Text(
               '$number',
               style: TextStyle(
@@ -679,13 +680,13 @@ class _CheckBox extends StatelessWidget {
       height: 24,
       decoration: BoxDecoration(
         color: checked ? scheme.primary : null,
-        borderRadius: BorderRadius.circular(6),
+        shape: BoxShape.circle,
         border: checked
             ? null
             : Border.all(color: scheme.outline, width: 2),
       ),
       child: checked
-          ? Icon(Icons.check_rounded, size: 17, color: scheme.onPrimary)
+          ? PhosphorIcon(PhosphorIconsRegular.check, size: 17, color: scheme.onPrimary)
           : null,
     );
     if (!checked) return box;
@@ -714,7 +715,7 @@ class _Callout extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: fg),
+          PhosphorIcon(icon, size: 20, color: fg),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -753,31 +754,31 @@ class _Callout extends StatelessWidget {
     );
   }
 
-  (Color, Color, IconData) _style(String variant, ColorScheme s) {
+  (Color, Color, PhosphorIconData) _style(String variant, ColorScheme s) {
     switch (variant) {
       case 'warning':
         return (
           const Color(0xFFFCEEEA),
           const Color(0xFFC1502E),
-          Icons.warning_amber_rounded
+          PhosphorIconsRegular.warning
         );
       case 'caveat':
         return (
           const Color(0xFFFBF3E0),
           const Color(0xFF9A7711),
-          Icons.error_outline_rounded
+          PhosphorIconsRegular.warning
         );
       case 'source':
         return (
           s.surfaceContainerHigh,
           s.onSurfaceVariant,
-          Icons.link_rounded
+          PhosphorIconsRegular.link
         );
       default: // info
         return (
           s.primaryContainer.withValues(alpha: 0.4),
           s.primary,
-          Icons.info_outline_rounded
+          PhosphorIconsRegular.info
         );
     }
   }
@@ -835,7 +836,7 @@ class _Link extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.link_rounded, size: 18, color: scheme.primary),
+                PhosphorIcon(PhosphorIconsRegular.link, size: 18, color: scheme.primary),
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
@@ -943,7 +944,7 @@ class _MapPlaceholder extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.place_rounded,
+                  PhosphorIcon(PhosphorIconsRegular.mapPin,
                       size: 18, color: theme.colorScheme.primary),
                   const SizedBox(width: 10),
                   Expanded(

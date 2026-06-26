@@ -5,6 +5,7 @@ library;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -55,13 +56,13 @@ class _ActionsView extends StatelessWidget {
         ActionsStatus.loading || ActionsStatus.idle =>
           const Center(child: CircularProgressIndicator()),
         ActionsStatus.error => _Message(
-            icon: Icons.error_outline_rounded,
+            icon: PhosphorIconsRegular.warning,
             text: "Couldn't load your actions",
             onRetry: vm.load,
           ),
         ActionsStatus.empty => const _Message(
-            icon: Icons.checklist_rounded,
-            text: 'No actions yet.\nOpen a card and tap “Follow these actions”.',
+            icon: PhosphorIconsRegular.listChecks,
+            text: 'No actions yet.\nOpen a card and tap "Follow these actions".',
           ),
         ActionsStatus.ready => ListView.builder(
             padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
@@ -200,10 +201,8 @@ class _ActionRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              done
-                  ? Icons.check_box_rounded
-                  : Icons.check_box_outline_blank_rounded,
+            PhosphorIcon(
+              done ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.checkSquare,
               size: 22,
               color: done ? accent.color : theme.colorScheme.onSurfaceVariant,
             ),
@@ -233,7 +232,7 @@ class _Thumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final placeholder = Container(
       color: accent.color.withValues(alpha: 0.14),
-      child: Icon(accent.icon, color: accent.color, size: 22),
+      child: PhosphorIcon(accent.icon, color: accent.color, size: 22),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
@@ -255,7 +254,7 @@ class _Thumb extends StatelessWidget {
 
 class _Message extends StatelessWidget {
   const _Message({required this.icon, required this.text, this.onRetry});
-  final IconData icon;
+  final PhosphorIconData icon;
   final String text;
   final VoidCallback? onRetry;
 
@@ -266,7 +265,7 @@ class _Message extends StatelessWidget {
     return ListView(
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.28),
-        Icon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
+        PhosphorIcon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(height: 12),
         Text(
           text,

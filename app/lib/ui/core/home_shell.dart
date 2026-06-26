@@ -1,11 +1,12 @@
-/// Root navigation shell: five top-level spaces — Library (your cards), To-do
-/// (actions followed off reels), Folders (auto-sorted collections), Chat (ask AI),
-/// You (stats + settings) — with a floating corner Capture button. An IndexedStack
-/// keeps each tab's state alive. Editorial chrome: a flat bar with a hairline
-/// top rule, ink/rust icons, and mono labels.
+/// Root navigation shell: five top-level spaces + floating Capture button.
+/// Nav bar is frosted glass (BackdropFilter) so content scrolls through it.
+/// Phosphor icons: regular weight inactive, fill active.
 library;
 
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
@@ -28,7 +29,6 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       extendBody: true,
       body: IndexedStack(
@@ -42,57 +42,12 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: _CaptureButton(onTap: () => showCaptureSheet(context)),
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          color: scheme.surface,
-          border: Border(top: BorderSide(color: scheme.outlineVariant)),
-        ),
-        child: BottomAppBar(
-          height: 66,
-          color: scheme.surface,
-          elevation: 0,
-          padding: EdgeInsets.zero,
-          child: Row(
-            children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home_rounded,
-                label: 'HOME',
-                selected: _index == 0,
-                onTap: () => _select(0),
-              ),
-              _NavItem(
-                icon: Icons.category_outlined,
-                activeIcon: Icons.category_rounded,
-                label: 'LIBRARY',
-                selected: _index == 1,
-                onTap: () => _select(1),
-              ),
-              _NavItem(
-                icon: Icons.folder_outlined,
-                activeIcon: Icons.folder_rounded,
-                label: 'COLLECTIONS',
-                selected: _index == 2,
-                onTap: () => _select(2),
-              ),
-              _NavItem(
-                icon: Icons.checklist_rounded,
-                activeIcon: Icons.checklist_rounded,
-                label: 'TO-DO',
-                selected: _index == 3,
-                onTap: () => _select(3),
-              ),
-              _NavItem(
-                icon: Icons.person_outline_rounded,
-                activeIcon: Icons.person_rounded,
-                label: 'YOU',
-                selected: _index == 4,
-                onTap: () => _select(4),
-              ),
-            ],
-          ),
-        ),
+      floatingActionButton: _CaptureButton(
+        onTap: () => showCaptureSheet(context),
+      ),
+      bottomNavigationBar: _GlassNav(
+        index: _index,
+        onSelect: _select,
       ),
     );
   }
@@ -102,6 +57,146 @@ class _HomeShellState extends State<HomeShell> {
     setState(() => _index = i);
   }
 }
+
+// ── Glass nav bar ─────────────────────────────────────────────────────────── //
+
+class _GlassNav extends StatelessWidget {
+  const _GlassNav({required this.index, required this.onSelect});
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  static const _items = [
+    _NavDef(
+      icon: PhosphorIconsRegular.house,
+      activeIcon: PhosphorIconsFill.house,
+      label: 'HOME',
+    ),
+    _NavDef(
+      icon: PhosphorIconsRegular.books,
+      activeIcon: PhosphorIconsFill.books,
+      label: 'LIBRARY',
+    ),
+    _NavDef(
+      icon: PhosphorIconsRegular.folder,
+      activeIcon: PhosphorIconsFill.folder,
+      label: 'FOLDERS',
+    ),
+    _NavDef(
+      icon: PhosphorIconsRegular.listChecks,
+      activeIcon: PhosphorIconsFill.listChecks,
+      label: 'TO-DO',
+    ),
+    _NavDef(
+      icon: PhosphorIconsRegular.user,
+      activeIcon: PhosphorIconsFill.user,
+      label: 'YOU',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final b = Theme.of(context).brightness;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Brand.glassFill(b),
+            border: Border(
+              top: BorderSide(
+                color: Brand.glassBorder(b),
+                width: 0.8,
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomPad),
+            child: SizedBox(
+              height: 64,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < _items.length; i++)
+                    Expanded(
+                      child: _NavBtn(
+                        def: _items[i],
+                        selected: index == i,
+                        onTap: () => onSelect(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavDef {
+  const _NavDef({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
+  final PhosphorIconData icon;
+  final PhosphorIconData activeIcon;
+  final String label;
+}
+
+class _NavBtn extends StatelessWidget {
+  const _NavBtn({
+    required this.def,
+    required this.selected,
+    required this.onTap,
+  });
+  final _NavDef def;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color =
+        selected ? scheme.primary : scheme.onSurfaceVariant;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedScale(
+              scale: selected ? 1.10 : 1.0,
+              duration: Motion.fast,
+              curve: Motion.spring,
+              child: PhosphorIcon(
+                selected ? def.activeIcon : def.icon,
+                size: 22,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              def.label,
+              style: Brand.label(
+                size: 9,
+                color: color,
+                weight: selected ? FontWeight.w700 : FontWeight.w500,
+                letterSpacing: 0.7,
+              ),
+            ),
+          ],
+        ),
+    );
+  }
+}
+
+// ── Capture FAB ───────────────────────────────────────────────────────────── //
 
 class _CaptureButton extends StatelessWidget {
   const _CaptureButton({required this.onTap});
@@ -113,63 +208,24 @@ class _CaptureButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 58,
-        height: 58,
+        width: 56,
+        height: 56,
         decoration: BoxDecoration(
           color: scheme.primary,
           shape: BoxShape.circle,
-          border: Border.all(color: scheme.surface, width: 3),
-          boxShadow: Brand.softShadow(opacity: 0.18, blur: 14, y: 5),
-        ),
-        child: Icon(Icons.add_rounded, color: scheme.onPrimary, size: 30),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedScale(
-              scale: selected ? 1.12 : 1.0,
-              duration: Motion.fast,
-              curve: Motion.spring,
-              child: Icon(selected ? activeIcon : icon, color: color, size: 23),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: Brand.label(
-                size: 9,
-                color: color,
-                weight: selected ? FontWeight.w700 : FontWeight.w500,
-                letterSpacing: 0.8,
-              ),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.primary.withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+              spreadRadius: -2,
             ),
           ],
+        ),
+        child: PhosphorIcon(
+          PhosphorIconsRegular.plus,
+          color: scheme.onPrimary,
+          size: 26,
         ),
       ),
     );

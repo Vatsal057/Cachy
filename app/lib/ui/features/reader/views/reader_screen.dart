@@ -1,12 +1,13 @@
 /// The reader (docs/06): opens directly on a card, even mid-processing, and
 /// renders top-down as content arrives — one_liner + tldr first, blocks beneath,
-/// face attaches with extraction. Multi-depth: instant (one_liner) always
-/// visible, skim (tldr/blocks) below. The primary action is the dominant control.
+/// face attaches with extraction. Editorial layout — eyebrow labels, left-border
+/// callouts, category pills, meta strip — inspired by calm magazine structure.
 library;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -75,6 +76,7 @@ class _ReaderView extends StatelessWidget {
 
     final card = vm.card!;
     final accent = ContentAccent.of(card.base.contentType);
+    final readMins = _estimateReadMinutes(card);
 
     return Scaffold(
       body: CustomScrollView(
@@ -85,35 +87,38 @@ class _ReaderView extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: Insets.readingColumn),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      Insets.page, 22, Insets.page, 128),
+                  padding: const EdgeInsets.fromLTRB(Insets.page, 22, Insets.page, 128),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _TypeChip(accent: accent, label: card.base.contentType.label),
-                      const SizedBox(height: 16),
-                      // Instant layer — the headline, in the serif display face.
-                      if (card.base.oneLiner.isNotEmpty)
+                      // Category chips: content type pill + tag pills
+                      _CategoryBar(
+                        accent: accent,
+                        contentLabel: card.base.contentType.label,
+                        tags: card.base.tags,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Main headline — Fraunces display
+                      if (card.base.oneLiner.isNotEmpty) ...[
                         Text(card.base.oneLiner,
                             style: Theme.of(context).textTheme.headlineLarge),
-                      // Skim layer.
-                      if (card.base.tldr.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Text(
-                          card.base.tldr,
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
+                        const SizedBox(height: 12),
                       ],
-                      if (card.base.tags.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        _TagChips(tags: card.base.tags, accent: accent),
-                      ],
-                      const SizedBox(height: 24),
+
+                      // Meta strip: read time badge
+                      _MetaStrip(readMinutes: readMins),
+
+                      const SizedBox(height: 28),
+
                       if (card.isProcessing) _ProcessingPanel(vm: vm),
                       if (card.isFailed) _FailedPanel(card: card),
-                      // Depth layer — the structured blocks.
+
+                      // CORE TAKEAWAY — tldr in left-border card
+                      if (card.base.tldr.isNotEmpty)
+                        _CoreTakeawayCard(text: card.base.tldr, accent: accent),
+
+                      // Structured blocks
                       if (card.blocks.isNotEmpty)
                         BlockList(
                           blocks: card.blocks,
@@ -123,12 +128,12 @@ class _ReaderView extends StatelessWidget {
                           artifacts: vm.artifacts,
                           onOpenArtifact: (e) => openLookup(e),
                         ),
-                      // Action items (docs/13): follow into the Actions hub, tick off.
+
+                      // DO THIS NOW — action items
                       if (card.isReady && card.actionItems.isPresent)
                         _ActionItemsSection(card: card, accent: accent, vm: vm),
-                      // Deep-analysis layer (docs/14): claims, blind spots, rabbit
-                      // holes, topic map, deep-research prompt. Present only on
-                      // idea-rich cards — a simple reel renders nothing here.
+
+                      // Deep-analysis layer
                       if (card.isReady &&
                           card.insight != null &&
                           card.insight!.hasContent)
@@ -137,12 +142,15 @@ class _ReaderView extends StatelessWidget {
                           accent: accent,
                           cardId: card.cardId,
                           cardTitle: card.base.oneLiner,
-                          readMinutes: _estimateReadMinutes(card),
+                          readMinutes: readMins,
                         ),
-                      // Referenced things (books/products/places) as tappable covers.
+
+                      // Referenced catalog items
                       if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
-                      // Concepts this card contributed to — tappable chips.
+
+                      // Concepts this card contributed to
                       if (card.isReady) _ConceptsStrip(entries: vm.concepts),
+
                       if (card.source.creator != null) ...[
                         const SizedBox(height: 8),
                         _SourceLine(card: card),
@@ -159,8 +167,6 @@ class _ReaderView extends StatelessWidget {
     );
   }
 
-  /// Rough read time of the card body (~200 wpm) from its text fields — drives
-  /// the insight stat trio. Counts the tldr plus all block text content.
   int _estimateReadMinutes(model.Card card) {
     var words = card.base.tldr.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
     for (final b in card.rawBlocks) {
@@ -186,6 +192,10 @@ class _ReaderView extends StatelessWidget {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// App bar
+// ────────────────────────────────────────────────────────────────────────────
+
 class _FaceAppBar extends StatelessWidget {
   const _FaceAppBar({
     required this.card,
@@ -206,7 +216,7 @@ class _FaceAppBar extends StatelessWidget {
       leading: Padding(
         padding: const EdgeInsets.all(8),
         child: _CircleButton(
-          icon: Icons.arrow_back_rounded,
+          icon: PhosphorIconsRegular.arrowLeft,
           onTap: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -219,7 +229,6 @@ class _FaceAppBar extends StatelessWidget {
               tag: 'card-face-${card.cardId}',
               child: CardFace(card: card, api: api),
             ),
-            // Scrim so the face melts into the content below + back button reads.
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -241,10 +250,9 @@ class _FaceAppBar extends StatelessWidget {
   }
 }
 
-/// A translucent circular icon button for overlaying on imagery (reader header).
 class _CircleButton extends StatelessWidget {
   const _CircleButton({required this.icon, required this.onTap});
-  final IconData icon;
+  final PhosphorIconData icon;
   final VoidCallback onTap;
 
   @override
@@ -258,36 +266,198 @@ class _CircleButton extends StatelessWidget {
         child: SizedBox(
           width: 40,
           height: 40,
-          child: Icon(icon, color: Colors.white, size: 22),
+          child: PhosphorIcon(icon, color: Colors.white, size: 22),
         ),
       ),
     );
   }
 }
 
-class _TypeChip extends StatelessWidget {
-  const _TypeChip({required this.accent, required this.label});
+// ────────────────────────────────────────────────────────────────────────────
+// Editorial structure widgets
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Category pills: content type (accent-tinted) + tag pills in a wrap.
+class _CategoryBar extends StatelessWidget {
+  const _CategoryBar({
+    required this.accent,
+    required this.contentLabel,
+    required this.tags,
+  });
   final ContentAccent accent;
-  final String label;
+  final String contentLabel;
+  final List<String> tags;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        // Content type — accent-tinted
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: accent.color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: accent.color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(accent.icon, size: 11, color: accent.color),
+              const SizedBox(width: 5),
+              Text(
+                contentLabel.toUpperCase(),
+                style: Brand.label(
+                  size: 10,
+                  color: accent.color,
+                  weight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Tags — neutral pills
+        for (final tag in tags)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Text(
+              tag.toUpperCase(),
+              style: Brand.label(
+                size: 10,
+                color: scheme.onSurfaceVariant,
+                weight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Read time badge below the headline.
+class _MetaStrip extends StatelessWidget {
+  const _MetaStrip({required this.readMinutes});
+  final int readMinutes;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final mins = readMinutes < 1 ? 1 : readMinutes;
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(PhosphorIconsRegular.clock, size: 11,
+                  color: scheme.onSurfaceVariant),
+              const SizedBox(width: 5),
+              Text(
+                '$mins min read',
+                style: Brand.label(size: 11, color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Section eyebrow — 3 px accent bar + small-caps label. Used throughout the
+/// card body to introduce sections like "Core Takeaway", "Action Items", etc.
+class _SectionEyebrow extends StatelessWidget {
+  const _SectionEyebrow({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 3,
+          height: 13,
+          margin: const EdgeInsets.only(right: 8),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        Text(
+          label.toUpperCase(),
+          style: Brand.label(
+            size: 10,
+            color: color,
+            weight: FontWeight.w800,
+            letterSpacing: 1.4,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// CORE TAKEAWAY — the tldr in a left-border editorial card.
+class _CoreTakeawayCard extends StatelessWidget {
+  const _CoreTakeawayCard({required this.text, required this.accent});
+  final String text;
+  final ContentAccent accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(accent.icon, size: 15, color: accent.color),
-          const SizedBox(width: 7),
-          Text(
-            label.toUpperCase(),
-            style: Brand.label(size: 11, color: accent.color, weight: FontWeight.w700),
+          _SectionEyebrow(label: 'Core Takeaway', color: accent.color),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(Insets.radius),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Text(
+              text,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                height: 1.65,
+                color: scheme.onSurface,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Processing / Failed panels
+// ────────────────────────────────────────────────────────────────────────────
 
 class _ProcessingPanel extends StatelessWidget {
   const _ProcessingPanel({required this.vm});
@@ -342,7 +512,7 @@ class _FailedPanel extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline_rounded, color: scheme.error),
+          PhosphorIcon(PhosphorIconsRegular.warning, color: scheme.error),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -356,36 +526,192 @@ class _FailedPanel extends StatelessWidget {
   }
 }
 
-class _TagChips extends StatelessWidget {
-  const _TagChips({required this.tags, required this.accent});
-  final List<String> tags;
+// ────────────────────────────────────────────────────────────────────────────
+// Action items section
+// ────────────────────────────────────────────────────────────────────────────
+
+class _ActionItemsSection extends StatelessWidget {
+  const _ActionItemsSection({
+    required this.card,
+    required this.accent,
+    required this.vm,
+  });
+  final model.Card card;
   final ContentAccent accent;
+  final ReaderViewModel vm;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final tag in tags)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              border: Border.all(color: accent.color.withValues(alpha: 0.5)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              tag.toUpperCase(),
-              style: Brand.label(size: 10, color: accent.color),
-            ),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final actions = card.actionItems;
+    final followed = actions.followed;
+    final count = actions.items.length;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _SectionEyebrow(label: 'Actions', color: accent.color),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accent.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  style: Brand.label(size: 10, color: accent.color, weight: FontWeight.w700),
+                ),
+              ),
+            ],
           ),
-      ],
+          const SizedBox(height: 12),
+
+          if (!followed) ...[
+            // ── Unfollowed preview: left-border card listing all items ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(Insets.radius),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < actions.items.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5),
+                          child: PhosphorIcon(
+                            PhosphorIconsFill.circle,
+                            size: 6,
+                            color: accent.color.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            actions.items[i].text,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              height: 1.5,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => vm.setActionsFollowed(true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent.color,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const PhosphorIcon(PhosphorIconsRegular.listChecks, size: 18),
+                label: const Text('Track in Actions'),
+              ),
+            ),
+          ] else ...[
+            // ── Followed: interactive checklist ──
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Column(
+                children: [
+                  for (final item in actions.items)
+                    _FollowedActionTile(
+                      item: item,
+                      accent: accent,
+                      onToggle: (v) => vm.toggleActionItem(item.id, v),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => vm.setActionsFollowed(false),
+                icon: const PhosphorIcon(PhosphorIconsFill.checkCircle, size: 18),
+                label: const Text('Following — remove from Actions'),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
-/// "Concepts" strip: evergreen ideas this card contributed to, as tappable chips.
-/// Fetched once; renders nothing if there are none or the fetch fails.
+class _FollowedActionTile extends StatelessWidget {
+  const _FollowedActionTile({
+    required this.item,
+    required this.accent,
+    required this.onToggle,
+  });
+  final model.ActionItem item;
+  final ContentAccent accent;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: () => onToggle(!item.done),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            PhosphorIcon(
+              item.done ? PhosphorIconsFill.checkSquare : PhosphorIconsRegular.checkSquare,
+              size: 22,
+              color: item.done ? accent.color : theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                item.text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  decoration: item.done ? TextDecoration.lineThrough : null,
+                  color: item.done ? theme.colorScheme.onSurfaceVariant : null,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Concepts strip
+// ────────────────────────────────────────────────────────────────────────────
+
 class _ConceptsStrip extends StatelessWidget {
   const _ConceptsStrip({required this.entries});
   final List<ConceptEntry> entries;
@@ -396,13 +722,11 @@ class _ConceptsStrip extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.only(top: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Concepts',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
+          _SectionEyebrow(label: 'Concepts', color: scheme.primary),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -424,7 +748,8 @@ class _ConceptsStrip extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.lightbulb_rounded, size: 13, color: scheme.primary),
+                      PhosphorIcon(PhosphorIconsRegular.lightbulb,
+                          size: 13, color: scheme.primary),
                       const SizedBox(width: 5),
                       Text(entry.name,
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -442,9 +767,10 @@ class _ConceptsStrip extends StatelessWidget {
   }
 }
 
-/// "References" strip: the artifacts this card mentions, as tappable covers that
-/// open a store/lookup (docs/09). Fetched once; renders nothing if there are none
-/// or the fetch fails (graceful — never blocks the reader).
+// ────────────────────────────────────────────────────────────────────────────
+// References strip
+// ────────────────────────────────────────────────────────────────────────────
+
 class _ReferencesStrip extends StatelessWidget {
   const _ReferencesStrip({required this.entries});
   final List<CatalogEntry> entries;
@@ -453,14 +779,13 @@ class _ReferencesStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (entries.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.only(top: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('References',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
+          _SectionEyebrow(label: 'References', color: scheme.primary),
           const SizedBox(height: 12),
           SizedBox(
             height: 168,
@@ -486,7 +811,7 @@ class _ReferenceTile extends StatelessWidget {
     try {
       await context.read<CardRepository>().saveCatalogEntry(entry.id);
       messenger.showSnackBar(
-        SnackBar(content: Text('Saved “${entry.title}” to catalog')),
+        SnackBar(content: Text('Saved "${entry.title}" to catalog')),
       );
     } catch (_) {
       messenger.showSnackBar(
@@ -495,16 +820,16 @@ class _ReferenceTile extends StatelessWidget {
     }
   }
 
-  static const _icons = {
-    ArtifactType.book: Icons.menu_book_rounded,
-    ArtifactType.movie: Icons.movie_rounded,
-    ArtifactType.tvShow: Icons.tv_rounded,
-    ArtifactType.podcast: Icons.podcasts_rounded,
-    ArtifactType.music: Icons.music_note_rounded,
-    ArtifactType.product: Icons.shopping_bag_rounded,
-    ArtifactType.place: Icons.place_rounded,
-    ArtifactType.app: Icons.apps_rounded,
-    ArtifactType.other: Icons.category_rounded,
+  static const _icons = <ArtifactType, PhosphorIconData>{
+    ArtifactType.book: PhosphorIconsRegular.bookOpen,
+    ArtifactType.movie: PhosphorIconsRegular.filmSlate,
+    ArtifactType.tvShow: PhosphorIconsRegular.television,
+    ArtifactType.podcast: PhosphorIconsRegular.microphone,
+    ArtifactType.music: PhosphorIconsRegular.musicNote,
+    ArtifactType.product: PhosphorIconsRegular.shoppingBag,
+    ArtifactType.place: PhosphorIconsRegular.mapPin,
+    ArtifactType.app: PhosphorIconsRegular.appWindow,
+    ArtifactType.other: PhosphorIconsRegular.shapes,
   };
 
   @override
@@ -513,8 +838,11 @@ class _ReferenceTile extends StatelessWidget {
     final placeholder = ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
-        child: Icon(_icons[entry.type] ?? Icons.category_rounded,
-            size: 28, color: theme.colorScheme.onSurfaceVariant),
+        child: PhosphorIcon(
+          _icons[entry.type] ?? PhosphorIconsRegular.shapes,
+          size: 28,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
     return GestureDetector(
@@ -556,131 +884,9 @@ class _ReferenceTile extends StatelessWidget {
   }
 }
 
-/// "Do this" section (docs/13): the concrete to-dos the reel hands you. Unfollowed
-/// it's a preview with a Follow button; once followed each item is checkable and
-/// the card appears in the Actions hub.
-class _ActionItemsSection extends StatelessWidget {
-  const _ActionItemsSection({
-    required this.card,
-    required this.accent,
-    required this.vm,
-  });
-  final model.Card card;
-  final ContentAccent accent;
-  final ReaderViewModel vm;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final actions = card.actionItems;
-    final followed = actions.followed;
-    return Container(
-      margin: const EdgeInsets.only(top: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: accent.color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(Insets.radius),
-        border: Border.all(color: accent.color.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.checklist_rounded, size: 18, color: accent.color),
-              const SizedBox(width: 8),
-              Text('Do this',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          for (final item in actions.items)
-            followed
-                ? _FollowedActionTile(
-                    item: item,
-                    accent: accent,
-                    onToggle: (v) => vm.toggleActionItem(item.id, v),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.circle, size: 7, color: accent.color),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(item.text,
-                              style: theme.textTheme.bodyMedium),
-                        ),
-                      ],
-                    ),
-                  ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: followed
-                ? OutlinedButton.icon(
-                    onPressed: () => vm.setActionsFollowed(false),
-                    icon: const Icon(Icons.check_circle_rounded, size: 18),
-                    label: const Text('Following — remove from Actions'),
-                  )
-                : FilledButton.icon(
-                    onPressed: () => vm.setActionsFollowed(true),
-                    icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
-                    label: const Text('Follow these actions'),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FollowedActionTile extends StatelessWidget {
-  const _FollowedActionTile({
-    required this.item,
-    required this.accent,
-    required this.onToggle,
-  });
-  final model.ActionItem item;
-  final ContentAccent accent;
-  final ValueChanged<bool> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () => onToggle(!item.done),
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              item.done
-                  ? Icons.check_box_rounded
-                  : Icons.check_box_outline_blank_rounded,
-              size: 22,
-              color: item.done ? accent.color : theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                item.text,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  decoration: item.done ? TextDecoration.lineThrough : null,
-                  color: item.done ? theme.colorScheme.onSurfaceVariant : null,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// ────────────────────────────────────────────────────────────────────────────
+// Source line
+// ────────────────────────────────────────────────────────────────────────────
 
 class _SourceLine extends StatelessWidget {
   const _SourceLine({required this.card});
@@ -694,14 +900,12 @@ class _SourceLine extends StatelessWidget {
       padding: const EdgeInsets.only(top: 12),
       child: Row(
         children: [
-          Icon(Icons.person_outline_rounded,
-              size: 16, color: theme.colorScheme.onSurfaceVariant),
+          PhosphorIcon(PhosphorIconsRegular.user,
+              size: 14, color: theme.colorScheme.onSurfaceVariant),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              [card.source.creator, platform]
-                  .whereType<String>()
-                  .join(' · '),
+              [card.source.creator, platform].whereType<String>().join(' · '),
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),

@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -48,7 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
           _sectionLabel(theme, 'Library'),
           _Tile(
-            icon: Icons.delete_sweep_rounded,
+            icon: PhosphorIconsRegular.trash,
             title: 'Clear offline cache',
             subtitle: 'Removes locally saved cards. They re-download when opened.',
             onTap: _confirmClear,
@@ -56,13 +57,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
           _sectionLabel(theme, 'About'),
           _Tile(
-            icon: Icons.info_outline_rounded,
+            icon: PhosphorIconsRegular.info,
             title: 'Cachy',
             subtitle: 'Turn the reels you save into things you can actually use. '
                 'Cards live on this device.',
           ),
           const _Tile(
-            icon: Icons.tag_rounded,
+            icon: PhosphorIconsRegular.hash,
             title: 'Version',
             subtitle: '1.0.0',
           ),
@@ -142,7 +143,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (ok == true && mounted) {
-      // Cache clears lazily as cards are re-fetched; surface acknowledgement.
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Offline cache cleared')),
       );
@@ -160,15 +160,15 @@ class _ThemePicker extends StatelessWidget {
       segments: const [
         ButtonSegment(
             value: ThemeMode.system,
-            icon: Icon(Icons.brightness_auto_rounded),
+            icon: PhosphorIcon(PhosphorIconsRegular.monitor),
             label: Text('System')),
         ButtonSegment(
             value: ThemeMode.light,
-            icon: Icon(Icons.light_mode_rounded),
+            icon: PhosphorIcon(PhosphorIconsRegular.sun),
             label: Text('Light')),
         ButtonSegment(
             value: ThemeMode.dark,
-            icon: Icon(Icons.dark_mode_rounded),
+            icon: PhosphorIcon(PhosphorIconsRegular.moon),
             label: Text('Dark')),
       ],
       selected: {app.themeMode},
@@ -186,7 +186,7 @@ class _Tile extends StatelessWidget {
     this.onTap,
   });
 
-  final IconData icon;
+  final PhosphorIconData icon;
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
@@ -202,12 +202,12 @@ class _Tile extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          leading: Icon(icon, color: scheme.primary),
+          leading: PhosphorIcon(icon, color: scheme.primary),
           title: Text(title,
               style: Theme.of(context).textTheme.titleMedium),
           subtitle: Text(subtitle),
           trailing: onTap != null
-              ? const Icon(Icons.chevron_right_rounded)
+              ? const PhosphorIcon(PhosphorIconsRegular.caretRight)
               : null,
         ),
       ),

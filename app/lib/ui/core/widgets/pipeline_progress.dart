@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../domain/models/pipeline_event.dart';
 
@@ -181,7 +182,7 @@ class _StageRow extends StatelessWidget {
         height: 28,
         decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
         alignment: Alignment.center,
-        child: Icon(Icons.check_rounded, size: 17, color: scheme.onPrimary),
+        child: PhosphorIcon(PhosphorIconsRegular.check, size: 17, color: scheme.onPrimary),
       );
     }
     if (active) {

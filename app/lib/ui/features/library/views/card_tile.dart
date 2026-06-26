@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/card.dart' as model;
@@ -77,7 +78,7 @@ class CardTile extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(accent.icon, size: 13, color: Colors.white70),
+                      PhosphorIcon(accent.icon, size: 13, color: Colors.white70),
                       const SizedBox(width: 5),
                       Text(
                         card.base.contentType.label.toUpperCase(),

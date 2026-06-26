@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -162,7 +163,7 @@ class _ChatViewState extends State<_ChatView> {
             const SizedBox(width: 8),
             IconButton.filled(
               onPressed: vm.busy ? null : () => _send(vm),
-              icon: const Icon(Icons.send_rounded),
+              icon: const PhosphorIcon(PhosphorIconsRegular.paperPlaneRight),
             ),
           ],
         ),

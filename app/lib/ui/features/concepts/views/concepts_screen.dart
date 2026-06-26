@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -45,7 +46,7 @@ class _ConceptsView extends StatelessWidget {
         return const Center(child: CircularProgressIndicator());
       case ConceptsStatus.error:
         return _Message(
-          icon: Icons.wifi_off_rounded,
+          icon: PhosphorIconsRegular.wifiX,
           title: "Can't reach the backend",
           subtitle: vm.error ?? '',
           action: FilledButton(
@@ -55,7 +56,7 @@ class _ConceptsView extends StatelessWidget {
         );
       case ConceptsStatus.empty:
         return const _Message(
-          icon: Icons.lightbulb_outline_rounded,
+          icon: PhosphorIconsRegular.lightbulb,
           title: 'No concepts yet',
           subtitle:
               'Concepts are extracted automatically when you capture idea-rich '
@@ -116,7 +117,7 @@ class _ConceptChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lightbulb_rounded, size: 14, color: scheme.primary),
+            PhosphorIcon(PhosphorIconsRegular.lightbulb, size: 14, color: scheme.primary),
             const SizedBox(width: 6),
             Text(
               entry.name,
@@ -178,7 +179,7 @@ class _Message extends StatelessWidget {
     required this.subtitle,
     this.action,
   });
-  final IconData icon;
+  final PhosphorIconData icon;
   final String title;
   final String subtitle;
   final Widget? action;
@@ -190,7 +191,7 @@ class _Message extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.22),
-        Icon(icon, size: 52, color: theme.colorScheme.outline),
+        PhosphorIcon(icon, size: 52, color: theme.colorScheme.outline),
         const SizedBox(height: 16),
         Text(title,
             textAlign: TextAlign.center, style: theme.textTheme.titleLarge),

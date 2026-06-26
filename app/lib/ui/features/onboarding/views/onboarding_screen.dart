@@ -5,6 +5,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
@@ -120,7 +121,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                           if (isLast) ...[
                             const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward_rounded, size: 18),
+                            const PhosphorIcon(PhosphorIconsRegular.arrowRight, size: 18),
                           ],
                         ],
                       ),
@@ -156,7 +157,7 @@ class _LogoBadge extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(Icons.bolt_rounded, color: scheme.onPrimary, size: 20),
+          child: PhosphorIcon(PhosphorIconsRegular.lightning, color: scheme.onPrimary, size: 20),
         ),
         const SizedBox(width: 10),
         Text(
@@ -170,7 +171,7 @@ class _LogoBadge extends StatelessWidget {
 
 class _FloatingPill extends StatelessWidget {
   const _FloatingPill({required this.icon, required this.label});
-  final IconData icon;
+  final PhosphorIconData icon;
   final String label;
 
   @override
@@ -193,7 +194,7 @@ class _FloatingPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: scheme.primary),
+          PhosphorIcon(icon, size: 16, color: scheme.primary),
           const SizedBox(width: 8),
           Text(label, style: Brand.label(size: 11, color: scheme.onSurface)),
         ],
@@ -214,7 +215,7 @@ class _PageHook extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 24),
-          const _FloatingPill(icon: Icons.videocam_rounded, label: 'INSTAGRAM, TIKTOK & YOUTUBE'),
+          const _FloatingPill(icon: PhosphorIconsRegular.videoCamera, label: 'INSTAGRAM, TIKTOK & YOUTUBE'),
           const SizedBox(height: 32),
           RichText(
             textAlign: TextAlign.center,
@@ -244,7 +245,7 @@ class _PageHook extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          const _FloatingPill(icon: Icons.auto_awesome_rounded, label: 'ZERO REWATCHING'),
+          const _FloatingPill(icon: PhosphorIconsRegular.sparkle, label: 'ZERO REWATCHING'),
           const SizedBox(height: 32),
           Text(
             'See a recipe or workout worth saving? Just hit Share to Cachy. Our AI transcribes and organizes the takeaway instantly.',
@@ -280,7 +281,7 @@ class _PageStructure extends StatelessWidget {
               color: scheme.primaryContainer.withValues(alpha: 0.4),
               border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
             ),
-            child: Icon(Icons.view_agenda_rounded, color: scheme.primary, size: 36),
+            child: PhosphorIcon(PhosphorIconsRegular.stack, color: scheme.primary, size: 36),
           ),
           const SizedBox(height: 24),
           RichText(
@@ -318,7 +319,7 @@ class _PageStructure extends StatelessWidget {
             child: Column(
               children: [
                 _FeatureRow(
-                  icon: Icons.list_alt_rounded,
+                  icon: PhosphorIconsRegular.listDashes,
                   title: 'Exact Ingredients & Steps',
                   subtitle: 'Extracted directly from on-screen text + voice',
                 ),
@@ -327,7 +328,7 @@ class _PageStructure extends StatelessWidget {
                   child: Divider(height: 1, color: scheme.outlineVariant),
                 ),
                 _FeatureRow(
-                  icon: Icons.place_rounded,
+                  icon: PhosphorIconsRegular.mapPin,
                   title: 'Places & Coordinates',
                   subtitle: 'Hidden cafes and travel spots mapped out',
                 ),
@@ -336,7 +337,7 @@ class _PageStructure extends StatelessWidget {
                   child: Divider(height: 1, color: scheme.outlineVariant),
                 ),
                 _FeatureRow(
-                  icon: Icons.check_circle_outline_rounded,
+                  icon: PhosphorIconsRegular.checkCircle,
                   title: 'Immediate To-Dos',
                   subtitle: 'Export checklists straight to your routine',
                 ),
@@ -361,7 +362,7 @@ class _PageStructure extends StatelessWidget {
 
 class _FeatureRow extends StatelessWidget {
   const _FeatureRow({required this.icon, required this.title, required this.subtitle});
-  final IconData icon;
+  final PhosphorIconData icon;
   final String title;
   final String subtitle;
 
@@ -377,7 +378,7 @@ class _FeatureRow extends StatelessWidget {
             color: scheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 20, color: scheme.primary),
+          child: PhosphorIcon(icon, size: 20, color: scheme.primary),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -442,7 +443,7 @@ class _PageLibrary extends StatelessWidget {
               color: scheme.primaryContainer.withValues(alpha: 0.4),
               border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
             ),
-            child: Icon(Icons.hub_rounded, color: scheme.primary, size: 36),
+            child: PhosphorIcon(PhosphorIconsRegular.graph, color: scheme.primary, size: 36),
           ),
           const SizedBox(height: 24),
           RichText(
@@ -486,7 +487,7 @@ class _PageLibrary extends StatelessWidget {
                       const Text('My Cachy Vault', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                       Row(
                         children: [
-                          Icon(Icons.bookmark_rounded, size: 14, color: scheme.primary),
+                          PhosphorIcon(PhosphorIconsFill.bookmark, size: 14, color: scheme.primary),
                           const SizedBox(width: 4),
                           Text('18 cards', style: Brand.label(size: 11, color: scheme.primary)),
                         ],
