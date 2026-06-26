@@ -18,7 +18,7 @@ async def client(database):
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "1.3"
+    assert r.json()["schema_version"] == "1.4"
 
 
 async def test_create_returns_id_and_queued(client):

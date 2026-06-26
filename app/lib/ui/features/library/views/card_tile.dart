@@ -95,6 +95,7 @@ class CardTile extends StatelessWidget {
                       height: 1.15,
                     ),
                   ),
+                  if (card.isReady) _MetaPills(card: card),
                 ],
               ),
             ),
@@ -131,5 +132,70 @@ class CardTile extends StatelessWidget {
       ),
     );
     if (ok == true) onDelete();
+  }
+}
+
+/// Compact at-a-glance counts on a tile scrim — how much a card carries before
+/// you open it (actions to do, steps inside, deeper analysis). Renders nothing
+/// when the card has none.
+class _MetaPills extends StatelessWidget {
+  const _MetaPills({required this.card});
+  final model.Card card;
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = card.actionItems.items.length;
+    var steps = 0;
+    for (final b in card.rawBlocks) {
+      final type = b['type'];
+      if (type == 'step_list') steps += (b['steps'] as List?)?.length ?? 0;
+      if (type == 'checklist') steps += (b['items'] as List?)?.length ?? 0;
+    }
+    final hasInsight = card.insight?.hasContent ?? false;
+
+    final pills = <String>[
+      if (actions > 0) '$actions ${actions == 1 ? 'action' : 'actions'}',
+      if (steps > 0) '$steps steps',
+    ];
+    if (pills.isEmpty && !hasInsight) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 7),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final p in pills) _Pill(label: p),
+          if (hasInsight) const _Pill(label: 'Deep', highlight: true),
+        ],
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, this.highlight = false});
+  final String label;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: highlight
+            ? Colors.white.withValues(alpha: 0.92)
+            : Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Brand.label(
+          size: 9.5,
+          color: highlight ? Colors.black87 : Colors.white,
+          weight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }

@@ -12,9 +12,17 @@ import '../../../core/theme.dart';
 import '../view_models/chat_view_model.dart';
 
 class ChatScreen extends StatelessWidget {
-  const ChatScreen({super.key, required this.cardId, required this.title});
+  const ChatScreen({
+    super.key,
+    required this.cardId,
+    required this.title,
+    this.seed,
+  });
   final String cardId;
   final String title;
+
+  /// Optional opening question, auto-sent on entry (rabbit-hole → ask the card).
+  final String? seed;
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +30,7 @@ class ChatScreen extends StatelessWidget {
       create: (ctx) => ChatViewModel(
         repository: ctx.read<CardRepository>(),
         cardId: cardId,
-      ),
+      )..seed(seed),
       child: _ChatView(title: title),
     );
   }

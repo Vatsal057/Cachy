@@ -7,11 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
-import '../../../../domain/models/enums.dart';
 import '../../../core/app_controller.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/stat_strip.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -22,11 +23,14 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<List<model.Card>> _cards;
+  late Future<List<CatalogEntry>> _catalog;
 
   @override
   void initState() {
     super.initState();
-    _cards = context.read<CardRepository>().list();
+    final repo = context.read<CardRepository>();
+    _cards = repo.list();
+    _catalog = repo.catalog().catchError((_) => <CatalogEntry>[]);
   }
 
   @override
@@ -68,44 +72,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _header(ThemeData theme) {
+    final scheme = theme.colorScheme;
     return FutureBuilder<List<model.Card>>(
       future: _cards,
       builder: (context, snap) {
         final cards = snap.data ?? const <model.Card>[];
         final total = cards.length;
-        final todo = cards
-            .where((c) => c.base.contentType == ContentType.recipe ||
-                c.base.contentType == ContentType.workout)
+        final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+        final thisWeek = cards
+            .where((c) => (c.meta.createdAt ?? DateTime(0)).isAfter(weekAgo))
             .length;
-        final scheme = theme.colorScheme;
-        return Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(Insets.radius),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              CachyGlyph(size: 44, color: scheme.onSurface, reelColor: scheme.primary),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Your shelf',
-                        style: Brand.wordmarkStyle(24, color: scheme.onSurface)),
-                    const SizedBox(height: 6),
-                    Text(
-                      '$total ${total == 1 ? 'CARD' : 'CARDS'}'
-                      '${todo > 0 ? '  ·  $todo TO DO' : ''}',
-                      style: Brand.label(size: 11, color: scheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CachyGlyph(size: 44, color: scheme.onSurface, reelColor: scheme.primary),
+                const SizedBox(width: 14),
+                Text('Your shelf',
+                    style: Brand.wordmarkStyle(24, color: scheme.onSurface)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FutureBuilder<List<CatalogEntry>>(
+              future: _catalog,
+              builder: (context, catSnap) {
+                final refs = catSnap.data?.length;
+                return StatStrip(stats: [
+                  Stat(value: '$total', label: 'Cards', emphasize: true),
+                  Stat(value: '$thisWeek', label: 'This week'),
+                  Stat(value: refs == null ? '—' : '$refs', label: 'References'),
+                ]);
+              },
+            ),
+          ],
         );
       },
     );

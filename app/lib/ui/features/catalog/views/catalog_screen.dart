@@ -11,6 +11,7 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/stat_strip.dart';
 import '../view_models/catalog_view_model.dart';
 import 'catalog_detail_screen.dart';
 
@@ -77,10 +78,19 @@ class _CatalogView extends StatelessWidget {
       case CatalogStatus.ready:
         final sections = vm.sections;
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
+          padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
           physics: const AlwaysScrollableScrollPhysics(),
-          itemCount: sections.length,
-          itemBuilder: (ctx, i) => _Section(section: sections[i], vm: vm),
+          itemCount: sections.length + 1,
+          itemBuilder: (ctx, i) {
+            if (i == 0) {
+              return StatStrip(stats: [
+                Stat(value: '${vm.entryCount}', label: 'Entries', emphasize: true),
+                Stat(value: '${vm.typeCount}', label: 'Types'),
+                Stat(value: '${vm.referencedCardCount}', label: 'From cards'),
+              ]);
+            }
+            return _Section(section: sections[i - 1], vm: vm);
+          },
         );
     }
   }

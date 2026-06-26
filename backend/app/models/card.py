@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.3"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13)
+SCHEMA_VERSION = "1.4"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14)
 
 
 # --------------------------------------------------------------------------- #
@@ -217,6 +217,50 @@ class ActionItems(BaseModel):
     items: list[ActionItem] = Field(default_factory=list)
 
 
+# --------------------------------------------------------------------------- #
+# Insight layer (docs/14) — the optional "deep" analysis. Populated by a SECOND,
+# gated LLM pass ONLY for knowledge-rich cards; a simple reel (recipe, a quick
+# tip) carries `insight = None` and renders none of this. Within a deep card each
+# sub-section is independently optional — emit only what the content warrants.
+#
+# Everything here is ACTIONABLE, never a passive list: rabbit-hole threads are
+# tappable doorways into grounded chat, the topic map orients, and the research
+# prompt is paste-ready. (Earlier Claims / What's-Missing sections were removed —
+# read-only analysis with nothing to do.)
+# --------------------------------------------------------------------------- #
+
+class RabbitHole(BaseModel):
+    """Threads to pull on to go deeper. Each becomes a tappable prompt in the UI
+    (opens grounded chat). Each list is independently optional."""
+    questions: list[str] = Field(default_factory=list)
+    adjacent_topics: list[str] = Field(default_factory=list)
+    advanced_concepts: list[str] = Field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (self.questions or self.adjacent_topics or self.advanced_concepts)
+
+
+class TopicMap(BaseModel):
+    """A single-hop concept map: one center idea + a few connected satellites."""
+    center: str
+    nodes: list[str] = Field(default_factory=list)  # satellite labels
+
+
+class Insight(BaseModel):
+    rabbit_hole: RabbitHole = Field(default_factory=RabbitHole)
+    topic_map: Optional[TopicMap] = None
+    # A ready-to-paste deep-research prompt for an external LLM (docs/14).
+    deep_research_prompt: Optional[str] = None
+
+    def has_content(self) -> bool:
+        """True when at least one sub-section is non-empty — the gate the worker
+        and clients use to decide whether to attach/render the layer at all."""
+        return bool(
+            not self.rabbit_hole.is_empty()
+            or self.topic_map or self.deep_research_prompt
+        )
+
+
 class Media(BaseModel):
     thumbnail: Optional[str] = None
     keyframes: list[str] = Field(default_factory=list)
@@ -246,5 +290,7 @@ class Card(BaseModel):
     primary_action: PrimaryAction = Field(default_factory=PrimaryAction)
     action_items: ActionItems = Field(default_factory=ActionItems)
     blocks: list[Block] = Field(default_factory=list)
+    # Deep analysis (docs/14). None for simple cards; only the gated 2nd pass fills it.
+    insight: Optional[Insight] = None
     media: Media = Field(default_factory=Media)
     meta: Meta = Field(default_factory=Meta)

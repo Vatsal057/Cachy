@@ -105,6 +105,18 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               'Paste a link, or share to Cachy from Instagram, TikTok or YouTube.',
               style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
+            const SizedBox(height: 16),
+
+            // Supported-platform affordance — sets expectations at a glance.
+            const Row(
+              children: [
+                _PlatformChip(label: 'Instagram', dot: Color(0xFFE1306C)),
+                SizedBox(width: 8),
+                _PlatformChip(label: 'TikTok', dot: Color(0xFF22C3D6)),
+                SizedBox(width: 8),
+                _PlatformChip(label: 'YouTube', dot: Color(0xFFE0301E)),
+              ],
+            ),
             const SizedBox(height: 20),
 
             // One-tap capture of a URL already on the clipboard.
@@ -138,6 +150,41 @@ class _CaptureSheetState extends State<_CaptureSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A small static chip naming a supported source platform (colored dot + label).
+class _PlatformChip extends StatelessWidget {
+  const _PlatformChip({required this.label, required this.dot});
+  final String label;
+  final Color dot;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 7),
+          Text(label,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }

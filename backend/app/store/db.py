@@ -35,6 +35,7 @@ from app.models.card import (
     CardState,
     ExtractionFlags,
     FailureReason,
+    Insight,
     Media,
     Meta,
     PrimaryAction,
@@ -81,6 +82,8 @@ class CardRow(Base):
     # {followed: bool, items: [{id, text, done}]} — the to-do list (docs/13).
     action_items: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     blocks: Mapped[list] = mapped_column(JSON, default=list)
+    # Deep-analysis layer (docs/14): null for simple cards, filled by the gated pass.
+    insight: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     thumbnail: Mapped[str | None] = mapped_column(String, nullable=True)
     keyframes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     extraction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -118,6 +121,7 @@ class CardRow(Base):
             primary_action=PrimaryAction(**(self.primary_action or {})),
             action_items=ActionItems(**(self.action_items or {})),
             blocks=self.blocks or [],
+            insight=Insight(**self.insight) if self.insight else None,
             media=Media(
                 thumbnail=media_store.to_media_url(self.thumbnail),
                 keyframes=[
@@ -218,7 +222,10 @@ async def init_db() -> None:
         await _add_missing_columns(
             conn,
             "cards",
-            {"action_items": "JSON"},  # docs/13 — added in schema 1.3
+            {
+                "action_items": "JSON",  # docs/13 — added in schema 1.3
+                "insight": "JSON",  # docs/14 — added in schema 1.4
+            },
         )
 
 

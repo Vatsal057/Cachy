@@ -128,16 +128,7 @@ class _Panel extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 132,
-            height: 132,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-              border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
-            ),
-            child: Icon(icon, size: 58, color: theme.colorScheme.primary),
-          ),
+          _RingedIcon(icon: icon),
           const SizedBox(height: 40),
           Text(title, textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
           const SizedBox(height: 14),
@@ -146,6 +137,47 @@ class _Panel extends StatelessWidget {
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyLarge
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A haloed feature icon: a filled tinted core ringed by two concentric outlines
+/// that fade outward — the onboarding's "feature highlight" motif.
+class _RingedIcon extends StatelessWidget {
+  const _RingedIcon({required this.icon});
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    Widget ring(double size, double alpha) => Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: primary.withValues(alpha: alpha)),
+          ),
+        );
+    return SizedBox(
+      width: 168,
+      height: 168,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ring(168, 0.10),
+          ring(140, 0.20),
+          Container(
+            width: 108,
+            height: 108,
+            decoration: BoxDecoration(
+              color: primary.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+              border: Border.all(color: primary.withValues(alpha: 0.35)),
+            ),
+            child: Icon(icon, size: 50, color: primary),
           ),
         ],
       ),

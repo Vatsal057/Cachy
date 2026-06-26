@@ -69,6 +69,7 @@ class StructuredCard:
         primary_action: PrimaryAction,
         artifacts: list[Artifact] | None = None,
         action_items: ActionItems | None = None,
+        depth: str = "shallow",
         degraded: bool = False,
         degraded_reason: str = "",
     ):
@@ -76,6 +77,10 @@ class StructuredCard:
         self.blocks = blocks  # list of plain dicts (validated), ready for JSON column
         self.primary_action = primary_action
         self.artifacts = artifacts or []  # referenced things for the catalog (docs/12)
+        # Gate for the 2nd pass (docs/14): "deep" => run insight analysis;
+        # "shallow" => simple card, no extra LLM call. The model judges; the worker
+        # acts. Never block the card on this — default shallow.
+        self.depth = depth if depth in ("shallow", "deep") else "shallow"
         # Concrete to-dos the video tells the viewer to do (docs/13). Inert
         # (followed=False) at ingestion; the user opts a card into the hub later.
         self.action_items = action_items or ActionItems()
@@ -140,7 +145,8 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
   ],
   "action_items": [          // concrete things the viewer should DO (may be empty)
     str                      // one short imperative task, e.g. "Batch emails into two daily windows"
-  ]
+  ],
+  "depth": "shallow|deep"    // does this content warrant deep analysis? (see below)
 }}
 
 Rules:
@@ -161,6 +167,13 @@ Rules:
   Short imperative phrases, max ~8. These are the takeaways to act on, NOT a
   restatement of every step in a recipe/tutorial. Return an empty list if the
   video is purely informational with nothing to act on.
+- depth: judge whether this content rewards DEEPER analysis (claims to fact-check,
+  unstated assumptions, open questions, a web of related concepts). Answer "deep"
+  ONLY for idea-rich, knowledge-heavy, or argumentative content (e.g. a science
+  explainer, an investing thesis, a psychology breakdown, a contested take).
+  Answer "shallow" for practical/procedural or lightweight content with nothing
+  to interrogate (a recipe, a workout, a product list, a quick how-to, a meme).
+  When unsure, answer "shallow". Most videos are shallow.
 
 {vocab}
 
@@ -175,62 +188,66 @@ Extracted text bundle:
 # LLM call (selectable backend: huggingface | groq)
 # --------------------------------------------------------------------------- #
 
-def _call_llm(bundle: str) -> str | None:
-    """Dispatch to the configured structuring backend. Any failure -> None,
-    which the caller turns into a paragraph fallback."""
+def complete(prompt: str, *, max_tokens: int = 8192, temperature: float = 0.2) -> str | None:
+    """Generic single-prompt completion via the configured backend (HF, with a
+    Groq fallback). Shared by the structuring pass and the gated insight pass
+    (docs/14). Any failure -> None; callers decide how to degrade."""
     settings = get_settings()
     if settings.hf_enabled:
-        out = _call_hf(bundle)
+        out = _call_hf(prompt, max_tokens, temperature)
         if out:
             return out
         # HF's free router 504s on long generations (e.g. big carousels). Rather
-        # than drop straight to a paragraph, fall back to Groq when a key exists.
+        # than drop straight to failure, fall back to Groq when a key exists.
         if settings.groq_api_key.strip():
-            log.info("structuring: HF backend failed; falling back to Groq")
-            return _call_groq(bundle)
+            log.info("llm: HF backend failed; falling back to Groq")
+            return _call_groq(prompt, max_tokens, temperature)
         return None
     if settings.groq_llm_enabled:
-        return _call_groq(bundle)
+        return _call_groq(prompt, max_tokens, temperature)
     return None
 
 
-def _call_hf(bundle: str) -> str | None:
+def _call_llm(bundle: str) -> str | None:
+    """Structuring (pass 1): format the card prompt and complete it."""
+    return complete(_PROMPT.format(vocab=_VOCAB_SPEC, bundle=bundle))
+
+
+def _call_hf(prompt: str, max_tokens: int, temperature: float) -> str | None:
     settings = get_settings()
     try:
         from huggingface_hub import InferenceClient
 
         client = InferenceClient(api_key=settings.hf_api_key)
-        prompt = _PROMPT.format(vocab=_VOCAB_SPEC, bundle=bundle)
         resp = client.chat_completion(
             model=settings.hf_model,  # free Inference Providers, e.g. Qwen2.5-72B-Instruct
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=8192,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
+            temperature=temperature,
+            max_tokens=max_tokens,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
         )
         text = resp.choices[0].message.content if resp.choices else ""
         return (text or "").strip()
     except Exception as e:
-        log.warning("structuring call (huggingface) failed: %s", e)
+        log.warning("llm call (huggingface) failed: %s", e)
         return None
 
 
-def _call_groq(bundle: str) -> str | None:
+def _call_groq(prompt: str, max_tokens: int, temperature: float) -> str | None:
     settings = get_settings()
     try:
         from groq import Groq
 
         client = Groq(api_key=settings.groq_api_key)
-        prompt = _PROMPT.format(vocab=_VOCAB_SPEC, bundle=bundle)
         resp = client.chat.completions.create(
             model=settings.groq_llm_model,  # free tier; default llama-3.3-70b-versatile
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=8192,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
+            temperature=temperature,
+            max_tokens=max_tokens,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
         )
         text = resp.choices[0].message.content if resp.choices else ""
         return (text or "").strip()
     except Exception as e:
-        log.warning("structuring call (groq) failed: %s", e)
+        log.warning("llm call (groq) failed: %s", e)
         return None
 
 
@@ -417,6 +434,7 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
 
     artifacts = _coerce_artifacts(data.get("artifacts") or [])
     action_items = _coerce_action_items(data.get("action_items") or [])
+    depth = data.get("depth") if data.get("depth") in ("shallow", "deep") else "shallow"
 
     blocks = _coerce_blocks(data.get("blocks") or [])
     if not blocks:
@@ -434,7 +452,7 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
 
     return StructuredCard(
         base, blocks, _primary_action_for(base.content_type), artifacts,
-        action_items=action_items,
+        action_items=action_items, depth=depth,
     )
 
 

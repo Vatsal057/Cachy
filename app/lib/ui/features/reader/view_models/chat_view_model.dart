@@ -34,6 +34,13 @@ class ChatViewModel extends ChangeNotifier {
 
   bool get isEmpty => _messages.isEmpty;
 
+  /// Fire an opening question on entry (rabbit-hole tap → grounded chat). Runs
+  /// after the first frame so the screen is already mounted when the reply lands.
+  void seed(String? text) {
+    if (text == null || text.trim().isEmpty) return;
+    Future.microtask(() => send(text));
+  }
+
   Future<void> send(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _busy) return;

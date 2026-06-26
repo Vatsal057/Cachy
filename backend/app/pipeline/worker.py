@@ -25,6 +25,7 @@ from app.pipeline.ingestion.downloader import (
     DownloaderConfig,
     download_content_async,
 )
+from app.pipeline.insight import analyze_async
 from app.pipeline.structuring import structure_async
 from app.services import artifact_images, embeddings, events, llm_chat, notify
 from app.store import db, media
@@ -101,6 +102,16 @@ async def _write_base(session, card_id: str, structured) -> None:
 async def _write_blocks(session, card_id: str, blocks: list[dict]) -> None:
     await session.execute(
         update(db.CardRow).where(db.CardRow.id == card_id).values(blocks=blocks)
+    )
+    await session.commit()
+
+
+async def _write_insight(session, card_id: str, insight) -> None:
+    """Persist the deep-analysis layer (docs/14). `insight` is a validated model."""
+    await session.execute(
+        update(db.CardRow)
+        .where(db.CardRow.id == card_id)
+        .values(insight=insight.model_dump())
     )
     await session.commit()
 
@@ -290,6 +301,37 @@ async def _run_job(session, job: db.JobRow) -> None:
         session, card_id, extraction, download.caption or "", download.resolver,
         creator=download.author,
     )
+
+    # 4b) Deep analysis (docs/14) — GATED. Only idea-rich cards (the structuring
+    # pass judged `depth == "deep"`) get a second LLM call. A simple reel skips
+    # this entirely. Best-effort + isolated: a failure leaves insight=None and
+    # never blocks the card from going READY.
+    if structured.depth == "deep":
+        events.publish(card_id, "analyzing", "processing", "Analyzing in depth")
+        log.info("%s Step 4b deep-analysis: depth=deep -> running insight pass", tag)
+        try:
+            row = await db.get_card_row(session, card_id)
+            body = llm_chat.card_context(row.to_card()) if row else ""
+            insight = await analyze_async(
+                structured.base.one_liner, structured.base.tldr, body,
+                structured.base.tags,
+            )
+            if insight is not None:
+                await _write_insight(session, card_id, insight)
+                rh = insight.rabbit_hole
+                log.info(
+                    "%s Step 4b deep-analysis OK | threads=%d topic_map=%s "
+                    "deep_research=%s", tag,
+                    len(rh.questions) + len(rh.adjacent_topics) + len(rh.advanced_concepts),
+                    "yes" if insight.topic_map else "no",
+                    "yes" if insight.deep_research_prompt else "no",
+                )
+            else:
+                log.info("%s Step 4b deep-analysis: no usable layer produced", tag)
+        except Exception:  # noqa: BLE001 — insight is non-critical to the card
+            log.warning("%s Step 4b deep-analysis failed", tag, exc_info=True)
+    else:
+        log.info("%s Step 4b deep-analysis: depth=shallow, skipping", tag)
 
     # 5) Catalog: aggregate any referenced artifacts + fetch their thumbnails.
     if structured.artifacts:

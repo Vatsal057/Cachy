@@ -33,6 +33,12 @@ class CatalogViewModel extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
+  /// Dashboard counts over the WHOLE catalog (ignore the active filter).
+  int get entryCount => _entries.length;
+  int get typeCount => {for (final e in _entries) e.type}.length;
+  int get referencedCardCount =>
+      {for (final e in _entries) ...e.sourceCardIds}.length;
+
   /// The type filters that actually have entries, in catalog order — so the
   /// filter bar never offers an empty category.
   List<ArtifactType> get availableTypes {

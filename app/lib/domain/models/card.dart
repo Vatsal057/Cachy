@@ -117,6 +117,75 @@ class ActionItems {
       {'followed': followed, 'items': items.map((e) => e.toJson()).toList()};
 }
 
+/// Deep-analysis layer (docs/14). Present only on idea-rich cards; `null` for a
+/// simple reel. Everything here is actionable: rabbit-hole threads tap into chat,
+/// the topic map orients, the research prompt is paste-ready. Each sub-section is
+/// independently optional — the UI renders only the parts that carry content.
+class Insight {
+  const Insight({
+    this.rabbitHole = const RabbitHole(),
+    this.topicMap,
+    this.deepResearchPrompt,
+  });
+
+  final RabbitHole rabbitHole;
+  final TopicMap? topicMap;
+  final String? deepResearchPrompt;
+
+  bool get hasDeepResearch =>
+      deepResearchPrompt != null && deepResearchPrompt!.trim().isNotEmpty;
+  bool get hasContent => !rabbitHole.isEmpty || topicMap != null || hasDeepResearch;
+
+  factory Insight.fromJson(Map<String, dynamic> json) => Insight(
+        rabbitHole: RabbitHole.fromJson(
+          (json['rabbit_hole'] as Map<String, dynamic>?) ?? const {},
+        ),
+        topicMap: json['topic_map'] is Map<String, dynamic>
+            ? TopicMap.fromJson(json['topic_map'] as Map<String, dynamic>)
+            : null,
+        deepResearchPrompt: json['deep_research_prompt'] as String?,
+      );
+}
+
+class RabbitHole {
+  const RabbitHole({
+    this.questions = const [],
+    this.adjacentTopics = const [],
+    this.advancedConcepts = const [],
+  });
+
+  final List<String> questions;
+  final List<String> adjacentTopics;
+  final List<String> advancedConcepts;
+
+  bool get isEmpty =>
+      questions.isEmpty && adjacentTopics.isEmpty && advancedConcepts.isEmpty;
+
+  factory RabbitHole.fromJson(Map<String, dynamic> json) {
+    List<String> l(String k) =>
+        ((json[k] as List?) ?? const []).map((e) => e.toString()).toList();
+    return RabbitHole(
+      questions: l('questions'),
+      adjacentTopics: l('adjacent_topics'),
+      advancedConcepts: l('advanced_concepts'),
+    );
+  }
+}
+
+class TopicMap {
+  const TopicMap({required this.center, this.nodes = const []});
+
+  final String center;
+  final List<String> nodes;
+
+  factory TopicMap.fromJson(Map<String, dynamic> json) => TopicMap(
+        center: (json['center'] as String?) ?? '',
+        nodes: ((json['nodes'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+      );
+}
+
 class Media {
   const Media({this.thumbnail, this.keyframes = const []});
 
@@ -175,6 +244,7 @@ class Card {
     this.primaryAction = const PrimaryAction(),
     this.actionItems = const ActionItems(),
     this.blocks = const [],
+    this.insight,
     this.media = const Media(),
     this.meta = const Meta(),
     this.rawBlocks = const [],
@@ -189,6 +259,7 @@ class Card {
   final PrimaryAction primaryAction;
   final ActionItems actionItems;
   final List<Block> blocks;
+  final Insight? insight; // deep-analysis layer (docs/14); null for simple cards
   final Media media;
   final Meta meta;
 
@@ -224,6 +295,9 @@ class Card {
         (json['action_items'] as Map<String, dynamic>?) ?? const {},
       ),
       blocks: rawBlocks.map(Block.fromJson).toList(),
+      insight: json['insight'] is Map<String, dynamic>
+          ? Insight.fromJson(json['insight'] as Map<String, dynamic>)
+          : null,
       media: Media.fromJson((json['media'] as Map<String, dynamic>?) ?? const {}),
       meta: Meta.fromJson((json['meta'] as Map<String, dynamic>?) ?? const {}),
       rawBlocks: rawBlocks,
@@ -246,6 +320,7 @@ class Card {
         primaryAction: primaryAction,
         actionItems: actionItems ?? this.actionItems,
         blocks: blocks ?? this.blocks,
+        insight: insight,
         media: media,
         meta: meta,
         rawBlocks: rawBlocks ?? this.rawBlocks,

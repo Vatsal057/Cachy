@@ -15,6 +15,7 @@ import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/pipeline_progress.dart';
+import '../../../core/widgets/processing_glyph.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/share_view_model.dart';
 
@@ -76,8 +77,8 @@ class _ShareView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: theme.colorScheme.primary),
-              const SizedBox(height: 16),
+              const ProcessingGlyph(size: 132),
+              const SizedBox(height: 20),
               const Text('Sending to Cachy…'),
             ],
           ),
@@ -125,6 +126,8 @@ class _ShareView extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Center(child: ProcessingGlyph(size: 132)),
+            const SizedBox(height: 24),
             Text('Building your card', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
