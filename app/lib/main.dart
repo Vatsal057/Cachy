@@ -5,6 +5,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
@@ -56,6 +57,7 @@ class _CachyAppState extends State<CachyApp> {
   /// arrive while the app is already running. Degrades silently if the platform
   /// channel is unavailable (e.g. desktop/test).
   void _wireShareIntent() {
+    if (kIsWeb) return;
     try {
       final instance = ReceiveSharingIntent.instance;
       instance.getInitialMedia().then((files) {

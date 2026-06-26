@@ -10,6 +10,7 @@ enum PipelineStage {
   extracting,
   structuring,
   persisting,
+  analyzing,
   done,
   failed,
   unknown;
@@ -26,6 +27,8 @@ enum PipelineStage {
         return PipelineStage.structuring;
       case 'persisting':
         return PipelineStage.persisting;
+      case 'analyzing':
+        return PipelineStage.analyzing;
       case 'done':
         return PipelineStage.done;
       case 'failed':
@@ -48,12 +51,39 @@ enum PipelineStage {
         return 'Structuring';
       case PipelineStage.persisting:
         return 'Finishing';
+      case PipelineStage.analyzing:
+        return 'Analyzing';
       case PipelineStage.done:
         return 'Ready';
       case PipelineStage.failed:
         return 'Failed';
       case PipelineStage.unknown:
         return 'Working';
+    }
+  }
+
+  /// A fixed one-line subtitle describing what each step does — shown beneath the
+  /// label so the pipeline reads as a narrated sequence, not bare keywords.
+  String get description {
+    switch (this) {
+      case PipelineStage.snapshot:
+        return 'Getting ready';
+      case PipelineStage.downloading:
+        return 'Fetching the video source';
+      case PipelineStage.extracting:
+        return 'Transcript + on-screen text';
+      case PipelineStage.structuring:
+        return 'Building your knowledge card';
+      case PipelineStage.persisting:
+        return 'Saving to your library';
+      case PipelineStage.analyzing:
+        return 'Surfacing deeper insight';
+      case PipelineStage.done:
+        return 'Card ready';
+      case PipelineStage.failed:
+        return 'Something went wrong';
+      case PipelineStage.unknown:
+        return '';
     }
   }
 

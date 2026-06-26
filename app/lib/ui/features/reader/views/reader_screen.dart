@@ -20,9 +20,11 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/card_face.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/pipeline_progress.dart';
+import '../../../core/widgets/processing_glyph.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
 import '../view_models/reader_view_model.dart';
+import 'insight_section.dart';
 import 'primary_action_bar.dart';
 
 class ReaderScreen extends StatelessWidget {
@@ -122,6 +124,19 @@ class _ReaderView extends StatelessWidget {
                       // Action items (docs/13): follow into the Actions hub, tick off.
                       if (card.isReady && card.actionItems.isPresent)
                         _ActionItemsSection(card: card, accent: accent, vm: vm),
+                      // Deep-analysis layer (docs/14): claims, blind spots, rabbit
+                      // holes, topic map, deep-research prompt. Present only on
+                      // idea-rich cards — a simple reel renders nothing here.
+                      if (card.isReady &&
+                          card.insight != null &&
+                          card.insight!.hasContent)
+                        InsightSection(
+                          insight: card.insight!,
+                          accent: accent,
+                          cardId: card.cardId,
+                          cardTitle: card.base.oneLiner,
+                          readMinutes: _estimateReadMinutes(card),
+                        ),
                       // Referenced things (books/products/places) as tappable covers.
                       if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
                       if (card.source.creator != null) ...[
@@ -138,6 +153,25 @@ class _ReaderView extends StatelessWidget {
       ),
       bottomSheet: card.isReady ? PrimaryActionBar(card: card) : null,
     );
+  }
+
+  /// Rough read time of the card body (~200 wpm) from its text fields — drives
+  /// the insight stat trio. Counts the tldr plus all block text content.
+  int _estimateReadMinutes(model.Card card) {
+    var words = card.base.tldr.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    for (final b in card.rawBlocks) {
+      void add(Object? v) {
+        if (v is String) words += v.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+      }
+      add(b['text']);
+      for (final it in (b['items'] as List?) ?? const []) {
+        add(it is Map ? it['text'] : it);
+      }
+      for (final st in (b['steps'] as List?) ?? const []) {
+        add(st is Map ? st['text'] : st);
+      }
+    }
+    return (words / 200).ceil();
   }
 
   void _copyUrl(BuildContext context, String url) {
@@ -270,9 +304,13 @@ class _ProcessingPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Building your card',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 16),
+          const Center(child: ProcessingGlyph(size: 116)),
+          const SizedBox(height: 18),
+          Center(
+            child: Text('Building your card',
+                style: Theme.of(context).textTheme.titleMedium),
+          ),
+          const SizedBox(height: 18),
           PipelineProgress(current: stage, detail: vm.lastEvent?.detail ?? ''),
         ],
       ),
@@ -363,7 +401,7 @@ class _ReferencesStrip extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           SizedBox(
-            height: 150,
+            height: 168,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: entries.length,
@@ -440,12 +478,14 @@ class _ReferenceTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 5),
-            Text(
-              entry.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
+            Flexible(
+              child: Text(
+                entry.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
+              ),
             ),
           ],
         ),

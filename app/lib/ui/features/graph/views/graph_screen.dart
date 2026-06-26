@@ -40,7 +40,7 @@ class _PhysicsConfig {
   _PhysicsConfig({
     this.repelForce = 2.2,
     this.linkForce = 1.3,
-    this.centerForce = 0.02,
+    this.centerForce = 0.005,
     this.linkDistance = 90,
   });
 }
@@ -71,13 +71,18 @@ class _GraphScreenState extends State<GraphScreen>
   final Map<String, Offset> _vel = {};
   final Map<String, List<String>> _adj = {};
   final Map<String, double> _edgeWeights = {};
+
+  // Star layout anchors — the ideal position each node should occupy.
+  final Map<String, Offset> _starPos = {};
+  static const double _starRadius = 110.0;
+  // Loose strength so the spring-back feels natural, not snappy.
+  static const double _starRestoreStrength = 0.04;
   double _temperature = 0;
 
   // View transform.
   Offset _pan = Offset.zero;
-  double _zoom = 1.0;
-  Offset _panStart = Offset.zero;
-  double _baseZoom = 1.0;
+  double _zoom = 0.72;
+  double _baseZoom = 0.72;
   String? _selected;
   String? _draggedNode;
 
@@ -125,7 +130,7 @@ class _GraphScreenState extends State<GraphScreen>
   }
 
   // --------------------------------------------------------------------------
-  // Layout seeding — random ring + jitter, then start the physics ticker
+  // Layout seeding — places nodes directly into star positions
   // --------------------------------------------------------------------------
 
   void _seedLayout(GraphData data) {
@@ -133,20 +138,13 @@ class _GraphScreenState extends State<GraphScreen>
     _vel.clear();
     _adj.clear();
     _edgeWeights.clear();
+    _starPos.clear();
 
-    final rng = math.Random(7);
-    final n = data.nodes.length;
-
-    for (var i = 0; i < n; i++) {
-      final a = (i / math.max(1, n)) * 2 * math.pi;
-      final r = 35 + rng.nextDouble() * 90;
-      _pos[data.nodes[i].id] =
-          Offset(math.cos(a) * r, math.sin(a) * r) +
-          Offset(rng.nextDouble() * 8 - 4, rng.nextDouble() * 8 - 4);
-      _vel[data.nodes[i].id] = Offset.zero;
-      _adj[data.nodes[i].id] = [];
+    // Initialise adjacency lists and zero velocities.
+    for (final node in data.nodes) {
+      _adj[node.id] = [];
+      _vel[node.id] = Offset.zero;
     }
-
     for (final e in data.edges) {
       _adj[e.source]?.add(e.target);
       _adj[e.target]?.add(e.source);
@@ -156,8 +154,107 @@ class _GraphScreenState extends State<GraphScreen>
       _edgeWeights[key] = e.weight;
     }
 
-    _temperature = 90;
-    if (!_ticker.isActive && n > 0) _ticker.start();
+    // Compute star positions and seed nodes directly into them so the graph
+    // opens already in star form — no physics convergence needed.
+    _starPos.addAll(_computeStarLayout(data, data.nodes));
+    for (final node in data.nodes) {
+      _pos[node.id] = _starPos[node.id] ?? Offset.zero;
+    }
+
+    _temperature = 45;
+    if (!_ticker.isActive && data.nodes.isNotEmpty) _ticker.start();
+  }
+
+  // --------------------------------------------------------------------------
+  // Star layout computation
+  // --------------------------------------------------------------------------
+
+  /// Returns the ideal star position for each node in [visible].
+  ///
+  /// Each connected cluster gets one **hub** (highest-degree node) placed on a
+  /// coarse ring, with all other cluster members as **spokes** radiating
+  /// outward at equal angular intervals.
+  ///
+  /// Cluster-hub separation = `_starRadius * 2.4` so adjacent clusters' spoke
+  /// disks never spatially overlap, preventing cross-cluster edge crossings.
+  Map<String, Offset> _computeStarLayout(
+      GraphData data, List<GraphNode> visible) {
+    final result = <String, Offset>{};
+
+    // Group nodes by cluster ID.
+    final clusterMap = <int, List<GraphNode>>{};
+    for (final node in visible) {
+      clusterMap.putIfAbsent(node.clusterId, () => []).add(node);
+    }
+
+    // Isolated nodes (-1) live on an outer ring, handled separately.
+    final isolated = clusterMap.remove(-1) ?? <GraphNode>[];
+    final clusterIds = clusterMap.keys.toList()..sort();
+    final numClusters = clusterIds.length;
+
+    // Minimum separation between adjacent cluster hubs so that no spoke from
+    // cluster A can reach any spoke of cluster B.
+    const clusterSep = _starRadius * 2.4;
+    // Chord formula: for n equally spaced points on a ring, the chord between
+    // adjacent points = 2 * R * sin(π / n). Solve for R given chord = clusterSep.
+    final hubRingRadius = numClusters <= 1
+        ? 0.0
+        : clusterSep / (2 * math.sin(math.pi / numClusters));
+
+    for (var ci = 0; ci < numClusters; ci++) {
+      final cid = clusterIds[ci];
+      final nodes = List<GraphNode>.from(clusterMap[cid]!);
+
+      // Highest-degree node becomes the star's hub.
+      nodes.sort((a, b) => b.degree.compareTo(a.degree));
+      final hub = nodes.first;
+
+      final hubAngle =
+          (ci / math.max(1, numClusters)) * 2 * math.pi - math.pi / 2;
+      final hubPos = numClusters <= 1
+          ? Offset.zero
+          : Offset(
+              math.cos(hubAngle) * hubRingRadius,
+              math.sin(hubAngle) * hubRingRadius,
+            );
+      result[hub.id] = hubPos;
+
+      // Place spoke nodes at equal angular intervals around the hub.
+      final spokes = nodes.skip(1).toList();
+      for (var si = 0; si < spokes.length; si++) {
+        final spokeAngle =
+            (si / math.max(1, spokes.length)) * 2 * math.pi - math.pi / 2;
+        result[spokes[si].id] = hubPos +
+            Offset(
+              math.cos(spokeAngle) * _starRadius,
+              math.sin(spokeAngle) * _starRadius,
+            );
+      }
+    }
+
+    // Isolated nodes on a ring well beyond all star clusters.
+    final outerRadius = hubRingRadius + _starRadius * 1.6;
+    for (var ii = 0; ii < isolated.length; ii++) {
+      final angle =
+          (ii / math.max(1, isolated.length)) * 2 * math.pi - math.pi / 2;
+      result[isolated[ii].id] = Offset(
+        math.cos(angle) * outerRadius,
+        math.sin(angle) * outerRadius,
+      );
+    }
+
+    return result;
+  }
+
+  /// Recomputes star target positions for the currently visible node set and
+  /// updates [_starPos].  Call whenever local-mode or depth changes.
+  void _recomputeStar() {
+    final data = _data;
+    if (data == null) return;
+    final visible = _visibleNodes(data);
+    _starPos
+      ..clear()
+      ..addAll(_computeStarLayout(data, visible));
   }
 
   // --------------------------------------------------------------------------
@@ -263,6 +360,18 @@ class _GraphScreenState extends State<GraphScreen>
       disp[id] = disp[id]! - p * _physics.centerForce;
     }
 
+    // --- Force 4: Star restoring spring ---
+    // Pulls every non-dragged node gently back to its ideal star position.
+    // Strength 0.04 = loose and natural; large enough to correct drift over
+    // a few seconds, small enough not to fight the user's drag.
+    for (final id in ids) {
+      if (id == _draggedNode) continue;
+      final target = _starPos[id];
+      final current = _pos[id];
+      if (target == null || current == null) continue;
+      disp[id] = disp[id]! + (target - current) * _starRestoreStrength;
+    }
+
     // --- Apply forces with temperature clamping + velocity damping ---
     const damping = 0.80; // less drag = bouncier spring oscillation
     for (final node in visible) {
@@ -313,7 +422,6 @@ class _GraphScreenState extends State<GraphScreen>
 
   void _onScaleStart(ScaleStartDetails d, Size size) {
     _baseZoom = _zoom;
-    _panStart = _pan;
     final hit = _hitTest(d.localFocalPoint, size);
     if (hit != null && d.pointerCount == 1) {
       _draggedNode = hit;
@@ -350,7 +458,9 @@ class _GraphScreenState extends State<GraphScreen>
 
   void _onScaleEnd(ScaleEndDetails d) {
     if (_draggedNode != null) {
-      _temperature = math.max(_temperature, 25.0);
+      // Reheat enough for the restoring force to animate the snap-back
+      // visibly, but not so hot that distant nodes thrash.
+      _temperature = math.max(_temperature, 45.0);
       if (!_ticker.isActive) _ticker.start();
     }
     _draggedNode = null;
@@ -438,10 +548,10 @@ class _GraphScreenState extends State<GraphScreen>
           setState(() {
             _localMode = true;
             _localRoot = node.id;
-            // Reheat so visible subset re-settles.
             _temperature = 60;
             if (!_ticker.isActive) _ticker.start();
           });
+          _recomputeStar();
         },
       ),
     );
@@ -475,6 +585,8 @@ class _GraphScreenState extends State<GraphScreen>
             _temperature = 60;
             if (!_ticker.isActive) _ticker.start();
           });
+          _recomputeStar();
+          // Update the bottom sheet's own state.
           (ctx as Element).markNeedsBuild();
         },
         onLocalDepthChanged: (v) {
@@ -483,6 +595,7 @@ class _GraphScreenState extends State<GraphScreen>
             _temperature = 60;
             if (!_ticker.isActive) _ticker.start();
           });
+          _recomputeStar();
           (ctx as Element).markNeedsBuild();
         },
       ),
@@ -563,12 +676,15 @@ class _GraphScreenState extends State<GraphScreen>
                     ?.label ??
                 'Unknown',
             depth: _localDepth,
-            onExit: () => setState(() {
-              _localMode = false;
-              _localRoot = null;
-              _temperature = 60;
-              if (!_ticker.isActive) _ticker.start();
-            }),
+            onExit: () {
+              setState(() {
+                _localMode = false;
+                _localRoot = null;
+                _temperature = 60;
+                if (!_ticker.isActive) _ticker.start();
+              });
+              _recomputeStar();
+            },
           ),
         // Cluster filter chips.
         if (!_localMode && data.clusters.isNotEmpty)
