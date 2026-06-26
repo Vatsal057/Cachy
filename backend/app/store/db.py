@@ -373,7 +373,7 @@ async def upsert_artifact(
             year=year,
             thumbnail=thumbnail,
             source_card_ids=[card_id],
-            saved=True,
+            saved=False,
         )
         db.add(row)
     else:

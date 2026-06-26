@@ -1,5 +1,5 @@
 /// Root navigation shell: five top-level spaces — Library (your cards), To-do
-/// (actions followed off reels), Catalog (referenced artifacts), Chat (ask AI),
+/// (actions followed off reels), Folders (auto-sorted collections), Chat (ask AI),
 /// You (stats + settings) — with a floating corner Capture button. An IndexedStack
 /// keeps each tab's state alive. Editorial chrome: a flat bar with a hairline
 /// top rule, ink/rust icons, and mono labels.
