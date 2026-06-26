@@ -7,11 +7,11 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/card.dart' as model;
-import '../../../../domain/models/enums.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -59,19 +59,19 @@ class _LibraryView extends StatelessWidget {
                 padding: EdgeInsets.only(right: 4),
                 child: Tooltip(
                   message: 'Offline — showing saved cards',
-                  child: Icon(Icons.cloud_off_rounded, size: 20),
+                  child: PhosphorIcon(PhosphorIconsRegular.cloudSlash, size: 20),
                 ),
               ),
             IconButton(
               tooltip: 'Chat',
-              icon: const Icon(Icons.forum_outlined),
+              icon: const PhosphorIcon(PhosphorIconsRegular.chats),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const LibraryChatScreen()),
               ),
             ),
             IconButton(
               tooltip: 'Search',
-              icon: const Icon(Icons.search_rounded),
+              icon: const PhosphorIcon(PhosphorIconsRegular.magnifyingGlass),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SearchScreen()),
               ),
@@ -161,7 +161,7 @@ class _CardsTab extends StatelessWidget {
               child: visible.isEmpty
                   ? _scrollable(
                       EmptyState(
-                        icon: Icons.filter_alt_off_rounded,
+                        icon: PhosphorIconsRegular.funnelX,
                         title: 'Nothing here',
                         message: vm.tagFilter != null
                             ? 'No cards tagged "${vm.tagFilter}".'

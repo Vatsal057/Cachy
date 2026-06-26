@@ -8,6 +8,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../domain/models/card.dart';
 import '../../../core/brand.dart';
@@ -70,7 +71,7 @@ class InsightSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SectionHeader(icon: Icons.psychology_alt_rounded, label: 'Going deeper', accent: accent),
+          _SectionHeader(icon: PhosphorIconsRegular.brain, label: 'Going deeper', accent: accent),
           const SizedBox(height: 12),
           StatStrip(stats: _trio()),
           const SizedBox(height: 14),
@@ -116,7 +117,7 @@ class _DiveDeeperButtonState extends State<_DiveDeeperButton> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
-                  Icon(Icons.travel_explore_rounded, size: 20, color: widget.accent.color),
+                  PhosphorIcon(PhosphorIconsRegular.compass, size: 20, color: widget.accent.color),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -128,7 +129,7 @@ class _DiveDeeperButtonState extends State<_DiveDeeperButton> {
                     turns: _expanded ? 0.5 : 0.0,
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeInOut,
-                    child: Icon(Icons.expand_more_rounded, color: scheme.onSurfaceVariant),
+                    child: PhosphorIcon(PhosphorIconsRegular.caretDown, color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -155,7 +156,7 @@ class _DiveDeeperButtonState extends State<_DiveDeeperButton> {
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.icon, required this.label, required this.accent});
-  final IconData icon;
+  final PhosphorIconData icon;
   final String label;
   final ContentAccent accent;
 
@@ -163,7 +164,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: accent.color),
+        PhosphorIcon(icon, size: 16, color: accent.color),
         const SizedBox(width: 7),
         Text(label.toUpperCase(),
             style: Brand.label(size: 11, color: accent.color, weight: FontWeight.w700)),
@@ -177,7 +178,7 @@ class _SectionHeader extends StatelessWidget {
 class _Panel extends StatelessWidget {
   const _Panel({required this.title, required this.icon, required this.child});
   final String title;
-  final IconData icon;
+  final PhosphorIconData icon;
   final Widget child;
 
   @override
@@ -196,7 +197,7 @@ class _Panel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+              PhosphorIcon(icon, size: 18, color: scheme.onSurfaceVariant),
               const SizedBox(width: 8),
               Text(title,
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
@@ -235,7 +236,7 @@ class _RabbitHoleCard extends StatelessWidget {
 
     return _Panel(
       title: 'Rabbit hole',
-      icon: Icons.travel_explore_rounded,
+      icon: PhosphorIconsRegular.compass,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -315,7 +316,7 @@ class _RabbitHoleGroup extends StatelessWidget {
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
-                      child: Icon(Icons.chat_bubble_outline_rounded,
+                      child: PhosphorIcon(PhosphorIconsRegular.chatCircle,
                           size: 15, color: accent.color),
                     ),
                     const SizedBox(width: 8),
@@ -323,7 +324,7 @@ class _RabbitHoleGroup extends StatelessWidget {
                       child: Text(item,
                           style: theme.textTheme.bodyMedium?.copyWith(height: 1.3)),
                     ),
-                    Icon(Icons.arrow_outward_rounded,
+                    PhosphorIcon(PhosphorIconsRegular.arrowUpRight,
                         size: 14, color: theme.colorScheme.onSurfaceVariant),
                   ],
                 ),
@@ -347,7 +348,7 @@ class _TopicMapCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return _Panel(
       title: 'Topic map',
-      icon: Icons.hub_outlined,
+      icon: PhosphorIconsRegular.graph,
       child: SizedBox(
         height: 260,
         width: double.infinity,
@@ -402,7 +403,6 @@ class _TopicMapPainter extends CustomPainter {
       positions.add(Offset(c.dx + radius * math.cos(angle), c.dy + radius * math.sin(angle)));
     }
 
-    // Dashed spokes from the hub — subtle connective tissue, not hard lines.
     final dashPaint = Paint()
       ..color = line
       ..strokeWidth = 1.2
@@ -412,13 +412,11 @@ class _TopicMapPainter extends CustomPainter {
       final len = dir.distance;
       if (len < 1) continue;
       final unit = dir / len;
-      // Start/stop short of each disk so the dash meets the rims cleanly.
       final start = c + unit * (centerR + 2);
       final stop = c + unit * (len - nodeR - 2);
       _dashedLine(canvas, start, stop, dashPaint, 4, 4);
     }
 
-    // Satellite nodes: a faint accent halo, a filled disk, a hairline rim.
     final rimPaint = Paint()
       ..color = line
       ..strokeWidth = 1.2
@@ -430,11 +428,9 @@ class _TopicMapPainter extends CustomPainter {
       _label(canvas, nodes[i], positions[i], nodeR * 2 - 8, nodeText, 9);
     }
 
-    // Center hub: a soft outer glow, then the filled accent disk.
     canvas.drawCircle(c, centerR + 10, Paint()..color = accent.withValues(alpha: 0.12));
     canvas.drawCircle(c, centerR, Paint()..color = accent);
 
-    // Hub label + a "{n} subtopics" subtitle, stacked.
     final mainTp = _layout(center, centerR * 2 - 10, centerText, 12, bold: true);
     final subTp = _layout('${nodes.length} subtopics', centerR * 2 - 10, centerSubText, 9);
     final totalH = mainTp.height + 2 + subTp.height;
@@ -506,7 +502,7 @@ class _DeepResearchButton extends StatelessWidget {
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => DeepResearchScreen(prompt: prompt, accent: accent)),
         ),
-        icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+        icon: const PhosphorIcon(PhosphorIconsRegular.sparkle, size: 18),
         label: const Text('Deep research prompt'),
       ),
     );
@@ -543,7 +539,7 @@ class DeepResearchScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.auto_awesome_rounded, size: 16, color: accent.color),
+                  PhosphorIcon(PhosphorIconsRegular.sparkle, size: 16, color: accent.color),
                   const SizedBox(width: 7),
                   Text('DEEP RESEARCH PROMPT',
                       style: Brand.label(size: 11, color: accent.color, weight: FontWeight.w700)),
@@ -585,14 +581,14 @@ class DeepResearchScreen extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 onPressed: () => _copy(context),
-                icon: const Icon(Icons.copy_rounded, size: 18),
+                icon: const PhosphorIcon(PhosphorIconsRegular.copy, size: 18),
                 label: const Text('Copy prompt'),
               ),
             ),
             const SizedBox(width: 12),
             IconButton.filledTonal(
               onPressed: () => _copy(context),
-              icon: const Icon(Icons.ios_share_rounded),
+              icon: const PhosphorIcon(PhosphorIconsRegular.export),
             ),
           ],
         ),

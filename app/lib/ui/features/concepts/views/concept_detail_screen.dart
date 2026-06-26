@@ -1,9 +1,9 @@
-/// Concept detail: name, definition (on-demand), "Appears in" backlinks,
-/// related concepts, and an "Explore" button that seeds library chat.
-/// Mirrors CatalogDetailScreen.
+/// Concept detail: name, summary (on-demand), "Appears in" backlinks,
+/// related concepts, and an "Explore in chat" bottom CTA.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -37,7 +37,6 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
 
   Future<void> _loadDetail() async {
     final repo = context.read<CardRepository>();
-    // Fetch server-computed related and full entry.
     try {
       final detail = await repo.conceptDetail(_entry.id);
       final ids = detail.entry.sourceCardIds;
@@ -63,14 +62,15 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
           _related = detail.related;
         });
       }
-    } catch (_) {/* detail is best-effort */}
+    } catch (_) {/* best-effort */}
   }
 
   Future<void> _define() async {
     setState(() => _loading = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final updated = await context.read<CardRepository>().defineConcept(_entry.id);
+      final updated =
+          await context.read<CardRepository>().defineConcept(_entry.id);
       if (mounted) setState(() => _entry = updated);
     } catch (_) {
       messenger.showSnackBar(
@@ -95,149 +95,271 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
     final scheme = theme.colorScheme;
     final hasDefinition =
         _entry.definition != null && _entry.definition!.trim().isNotEmpty;
-    final sources = _entry.sourceCardIds.length;
+    final count = _entry.sourceCardIds.length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Concept')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(Insets.page, 16, Insets.page, 40),
-        children: [
-          // Header.
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: scheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(Icons.lightbulb_rounded,
-                    size: 32, color: scheme.primary),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(_entry.name, style: theme.textTheme.headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-                    if (sources > 0) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Referenced in $sources card${sources == 1 ? '' : 's'}',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        actions: [
+          IconButton(
+            icon: const PhosphorIcon(PhosphorIconsRegular.chats, size: 22),
+            tooltip: 'Explore in chat',
+            onPressed: _explore,
           ),
-          const SizedBox(height: 28),
-
-          // Definition section.
-          _label(theme, 'Definition'),
-          const SizedBox(height: 10),
-          if (hasDefinition)
-            Text(
-              _entry.definition!.trim(),
-              style: theme.textTheme.bodyLarge?.copyWith(height: 1.45),
-            )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
+          const SizedBox(width: 8),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 12),
+          child: FilledButton.icon(
+            onPressed: _explore,
+            icon: const PhosphorIcon(PhosphorIconsRegular.chats, size: 18),
+            label: const Text('Explore in chat'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(99)),
+            ),
+          ),
+        ),
+      ),
+      body: ListView(
+        padding:
+            const EdgeInsets.fromLTRB(Insets.page, 4, Insets.page, 32),
+        children: [
+          // "Concept" pill
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(Insets.radius),
-                border: Border.all(
-                    color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                'No definition yet. Tap "Define" to generate a concise overview.',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                'CONCEPT',
+                style: Brand.label(
+                  size: 10,
+                  color: scheme.onPrimaryContainer,
+                  weight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
               ),
             ),
-          const SizedBox(height: 20),
+          ),
+          const SizedBox(height: 14),
 
-          // Action buttons.
-          FilledButton.icon(
-            onPressed: _loading ? null : _define,
-            icon: _loading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.auto_awesome_rounded, size: 18),
-            label: Text(
-              _loading
-                  ? 'Generating…'
-                  : hasDefinition
-                      ? 'Regenerate'
-                      : 'Define',
-            ),
+          // Name headline
+          Text(
+            _entry.name,
+            style: theme.textTheme.headlineMedium
+                ?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
           ),
           const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: _explore,
-            icon: const Icon(Icons.forum_outlined, size: 18),
-            label: const Text('Explore'),
+
+          // Meta: "in X cards"
+          if (count > 0)
+            Row(
+              children: [
+                Text(
+                  'Last updated',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$count ${count == 1 ? 'entry' : 'entries'}',
+                    style: Brand.label(
+                      size: 11,
+                      color: scheme.onPrimaryContainer,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          const SizedBox(height: 24),
+
+          // Summary / definition card
+          _SummaryCard(
+            entry: _entry,
+            loading: _loading,
+            hasDefinition: hasDefinition,
+            onDefine: _define,
           ),
 
-          // Appears in.
+          // Appears in
           if (_appearsIn.isNotEmpty) ...[
-            const SizedBox(height: 28),
-            _label(theme, 'Appears in'),
-            const SizedBox(height: 8),
+            const SizedBox(height: 32),
+            _SectionHeader(label: 'Appears in'),
+            const SizedBox(height: 12),
             for (final c in _appearsIn)
               _AppearsRow(
                 title: c.title,
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => ReaderScreen(cardId: c.id)),
+                  MaterialPageRoute(
+                      builder: (_) => ReaderScreen(cardId: c.id)),
                 ),
               ),
           ],
 
-          // Related concepts.
+          // Related concepts
           if (_related.isNotEmpty) ...[
-            const SizedBox(height: 28),
-            _label(theme, 'Related'),
+            const SizedBox(height: 32),
+            _SectionHeader(label: 'Related Concepts'),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final e in _related)
-                  _RelatedChip(
-                    entry: e,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => ConceptDetailScreen(entry: e)),
-                    ),
-                  ),
-              ],
+            _RelatedGrid(
+              related: _related,
+              onTap: (e) => Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => ConceptDetailScreen(entry: e)),
+              ),
             ),
           ],
         ],
       ),
     );
   }
-
-  Widget _label(ThemeData theme, String text) => Text(
-        text.toUpperCase(),
-        style: Brand.label(
-          size: 11,
-          color: theme.colorScheme.onSurfaceVariant,
-          weight: FontWeight.w700,
-          letterSpacing: 1.2,
-        ),
-      );
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Section header
+// ────────────────────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Summary card
+// ────────────────────────────────────────────────────────────────────────────
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.entry,
+    required this.loading,
+    required this.hasDefinition,
+    required this.onDefine,
+  });
+  final ConceptEntry entry;
+  final bool loading;
+  final bool hasDefinition;
+  final VoidCallback onDefine;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(Insets.radius + 4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SUMMARY',
+            style: Brand.label(
+              size: 10,
+              color: scheme.primary,
+              weight: FontWeight.w800,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (hasDefinition)
+            Text(
+              entry.definition!.trim(),
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(height: 1.6, color: scheme.onSurface),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No summary yet — tap Define to generate one.',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: scheme.onSurfaceVariant, height: 1.5),
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: loading ? null : onDefine,
+                  icon: loading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const PhosphorIcon(PhosphorIconsRegular.sparkle,
+                          size: 16),
+                  label: Text(loading ? 'Generating…' : 'Define'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          if (hasDefinition) ...[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onDefine,
+                icon: loading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const PhosphorIcon(PhosphorIconsRegular.sparkle,
+                        size: 14),
+                label: Text(loading ? 'Regenerating…' : 'Regenerate',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Appears-in rows
+// ────────────────────────────────────────────────────────────────────────────
 
 class _AppearsRow extends StatelessWidget {
   const _AppearsRow({required this.title, required this.onTap});
@@ -251,25 +373,44 @@ class _AppearsRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             child: Row(
               children: [
-                Icon(Icons.description_outlined, size: 18, color: scheme.primary),
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIconsRegular.article,
+                      size: 17,
+                      color: scheme.primary,
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium),
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w500, height: 1.3),
+                  ),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                PhosphorIcon(PhosphorIconsRegular.caretRight,
+                    size: 16, color: scheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -279,36 +420,91 @@ class _AppearsRow extends StatelessWidget {
   }
 }
 
-class _RelatedChip extends StatelessWidget {
-  const _RelatedChip({required this.entry, required this.onTap});
+// ────────────────────────────────────────────────────────────────────────────
+// Related concepts 2-column grid
+// ────────────────────────────────────────────────────────────────────────────
+
+class _RelatedGrid extends StatelessWidget {
+  const _RelatedGrid({required this.related, required this.onTap});
+  final List<ConceptEntry> related;
+  final ValueChanged<ConceptEntry> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < related.length; i += 2) {
+      rows.add(
+        Row(
+          children: [
+            Expanded(child: _RelatedCard(entry: related[i], onTap: onTap)),
+            const SizedBox(width: 10),
+            i + 1 < related.length
+                ? Expanded(
+                    child: _RelatedCard(
+                        entry: related[i + 1], onTap: onTap))
+                : const Expanded(child: SizedBox()),
+          ],
+        ),
+      );
+      if (i + 2 < related.length) rows.add(const SizedBox(height: 10));
+    }
+    return Column(children: rows);
+  }
+}
+
+class _RelatedCard extends StatelessWidget {
+  const _RelatedCard({required this.entry, required this.onTap});
   final ConceptEntry entry;
-  final VoidCallback onTap;
+  final ValueChanged<ConceptEntry> onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final count = entry.sourceCardIds.length;
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => onTap(entry),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: scheme.outlineVariant),
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(14),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.lightbulb_rounded, size: 12, color: scheme.primary),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 160),
-              child: Text(entry.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Concept',
+                style: Brand.label(
+                  size: 9,
+                  color: scheme.onPrimaryContainer,
+                  weight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
             ),
+            const SizedBox(height: 10),
+            Text(
+              entry.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600, height: 1.25),
+            ),
+            if (count > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                '$count card${count == 1 ? '' : 's'}',
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
           ],
         ),
       ),

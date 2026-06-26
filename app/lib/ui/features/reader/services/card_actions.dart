@@ -6,8 +6,8 @@
 library;
 
 import 'package:add_2_calendar/add_2_calendar.dart';
-import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -34,7 +34,7 @@ class CardActionSpec {
   const CardActionSpec(this.type, this.label, this.icon);
   final CardActionType type;
   final String label;
-  final IconData icon;
+  final PhosphorIconData icon;
 }
 
 class CardActions {
@@ -44,26 +44,26 @@ class CardActions {
   /// then ones unlocked by the blocks this card actually contains.
   List<CardActionSpec> available(Card card) {
     final out = <CardActionSpec>[
-      const CardActionSpec(CardActionType.copy, 'Copy', Icons.copy_rounded),
-      const CardActionSpec(CardActionType.share, 'Share', Icons.ios_share_rounded),
+      const CardActionSpec(CardActionType.copy, 'Copy', PhosphorIconsRegular.copy),
+      const CardActionSpec(CardActionType.share, 'Share', PhosphorIconsRegular.export),
       const CardActionSpec(
-          CardActionType.addToCalendar, 'Add to calendar', Icons.event_rounded),
+          CardActionType.addToCalendar, 'Add to calendar', PhosphorIconsRegular.calendar),
     ];
     if (_hasPlace(card)) {
       out.add(const CardActionSpec(
-          CardActionType.openMaps, 'Open in Maps', Icons.map_rounded));
+          CardActionType.openMaps, 'Open in Maps', PhosphorIconsRegular.mapPin));
     }
     if (_hasListItems(card)) {
       out.add(const CardActionSpec(CardActionType.shoppingList, 'Shopping list',
-          Icons.add_shopping_cart_rounded));
+          PhosphorIconsRegular.shoppingCart));
     }
     if (_hasLinks(card)) {
       out.add(const CardActionSpec(
-          CardActionType.openLinks, 'Open links', Icons.link_rounded));
+          CardActionType.openLinks, 'Open links', PhosphorIconsRegular.link));
     }
     if (card.source.url.isNotEmpty) {
       out.add(const CardActionSpec(CardActionType.openOriginal, 'Open original',
-          Icons.play_circle_outline_rounded));
+          PhosphorIconsRegular.playCircle));
     }
     return out;
   }

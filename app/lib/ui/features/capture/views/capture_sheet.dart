@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
@@ -133,7 +134,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               onSubmitted: _capture,
               decoration: InputDecoration(
                 hintText: 'Paste a reel link…',
-                prefixIcon: const Icon(Icons.link_rounded),
+                prefixIcon: const PhosphorIcon(PhosphorIconsRegular.link),
                 filled: true,
                 fillColor: scheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
@@ -145,7 +146,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () => _capture(_controller.text),
-              icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+              icon: const PhosphorIcon(PhosphorIconsRegular.sparkle, size: 20),
               label: const Text('Capture'),
             ),
           ],
@@ -212,7 +213,7 @@ class _ClipboardChip extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.content_paste_rounded, size: 20, color: scheme.primary),
+              PhosphorIcon(PhosphorIconsRegular.clipboardText, size: 20, color: scheme.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -229,7 +230,7 @@ class _ClipboardChip extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_rounded, size: 18, color: scheme.primary),
+              PhosphorIcon(PhosphorIconsRegular.arrowRight, size: 18, color: scheme.primary),
             ],
           ),
         ),

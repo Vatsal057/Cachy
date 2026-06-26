@@ -16,6 +16,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -664,12 +665,12 @@ class _GraphScreenState extends State<GraphScreen>
         actions: [
           IconButton(
             tooltip: 'Settings',
-            icon: const Icon(Icons.tune_rounded),
+            icon: const PhosphorIcon(PhosphorIconsRegular.sliders),
             onPressed: _showSettings,
           ),
           IconButton(
             tooltip: 'Re-layout',
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const PhosphorIcon(PhosphorIconsRegular.arrowClockwise),
             onPressed: _loading
                 ? null
                 : () {
@@ -703,7 +704,7 @@ class _GraphScreenState extends State<GraphScreen>
     final data = _data;
     if (data == null || data.isEmpty) {
       return const EmptyState(
-        icon: Icons.hub_outlined,
+        icon: PhosphorIconsRegular.graph,
         title: 'Nothing to connect yet',
         message:
             "Save a few cards and we'll link the ones that belong together.",
@@ -750,8 +751,8 @@ class _GraphScreenState extends State<GraphScreen>
             child: Row(
               children: [
                 FilterChip(
-                  avatar: Icon(
-                    Icons.lightbulb_rounded,
+                  avatar: PhosphorIcon(
+                    PhosphorIconsRegular.lightbulb,
                     size: 16,
                     color: _showConcepts
                         ? Theme.of(context).colorScheme.onPrimary
@@ -840,7 +841,7 @@ class _LocalModeBanner extends StatelessWidget {
       color: scheme.primaryContainer.withValues(alpha: 0.3),
       child: Row(
         children: [
-          Icon(Icons.filter_center_focus_rounded,
+          PhosphorIcon(PhosphorIconsRegular.crosshair,
               size: 18, color: scheme.primary),
           const SizedBox(width: 8),
           Expanded(
@@ -1027,12 +1028,12 @@ class _NodePreviewSheet extends StatelessWidget {
                 runSpacing: 6,
                 children: neighbors.take(8).map((n) {
                   return Chip(
-                    avatar: Icon(
+                    avatar: PhosphorIcon(
                       n.isCard
-                          ? Icons.article_rounded
+                          ? PhosphorIconsRegular.article
                           : n.isConcept
-                              ? Icons.lightbulb_rounded
-                              : Icons.category_rounded,
+                              ? PhosphorIconsRegular.lightbulb
+                              : PhosphorIconsRegular.shapes,
                       size: 16,
                     ),
                     label: Text(
@@ -1062,7 +1063,7 @@ class _NodePreviewSheet extends StatelessWidget {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: onOpen,
-                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                      icon: const PhosphorIcon(PhosphorIconsRegular.arrowUpRight, size: 18),
                       label: const Text('Open'),
                     ),
                   ),
@@ -1070,8 +1071,8 @@ class _NodePreviewSheet extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: onFocusLocal,
-                    icon: const Icon(
-                        Icons.filter_center_focus_rounded,
+                    icon: const PhosphorIcon(
+                        PhosphorIconsRegular.crosshair,
                         size: 18),
                     label: const Text('Focus'),
                   ),
@@ -1496,12 +1497,13 @@ class _GraphPainter extends CustomPainter {
       // Folder icon badge.
       if (node.isFolder && zoom > 0.6 && !faded) {
         final iconSize = (r * 0.85).clamp(10.0, 20.0);
+        const folderIcon = PhosphorIconsFill.folder;
         final iconPainter = TextPainter(
           text: TextSpan(
-            text: String.fromCharCode(Icons.folder_rounded.codePoint),
+            text: String.fromCharCode(folderIcon.codePoint),
             style: TextStyle(
-              fontFamily: Icons.folder_rounded.fontFamily,
-              package: Icons.folder_rounded.fontPackage,
+              fontFamily: folderIcon.fontFamily,
+              package: folderIcon.fontPackage,
               fontSize: iconSize,
               color: scheme.surface.withValues(alpha: 0.9),
             ),
@@ -1517,12 +1519,13 @@ class _GraphPainter extends CustomPainter {
       // Concept icon badge.
       if (node.isConcept && zoom > 0.8 && !faded) {
         final iconSize = (r * 0.9).clamp(8.0, 16.0);
+        const lightbulbIcon = PhosphorIconsRegular.lightbulb;
         final iconPainter = TextPainter(
           text: TextSpan(
-            text: String.fromCharCode(Icons.lightbulb_rounded.codePoint),
+            text: String.fromCharCode(lightbulbIcon.codePoint),
             style: TextStyle(
-              fontFamily: Icons.lightbulb_rounded.fontFamily,
-              package: Icons.lightbulb_rounded.fontPackage,
+              fontFamily: lightbulbIcon.fontFamily,
+              package: lightbulbIcon.fontPackage,
               fontSize: iconSize,
               color: scheme.surface.withValues(alpha: 0.9),
             ),
@@ -1602,19 +1605,19 @@ class _GraphPainter extends CustomPainter {
     }
   }
 
-  IconData _catalogIcon(String contentType) {
-    const icons = <String, IconData>{
-      'book': Icons.menu_book_rounded,
-      'movie': Icons.movie_rounded,
-      'tv_show': Icons.tv_rounded,
-      'podcast': Icons.podcasts_rounded,
-      'music': Icons.music_note_rounded,
-      'product': Icons.shopping_bag_rounded,
-      'place': Icons.place_rounded,
-      'app': Icons.apps_rounded,
-      'other': Icons.category_rounded,
+  PhosphorIconData _catalogIcon(String contentType) {
+    const icons = <String, PhosphorIconData>{
+      'book': PhosphorIconsRegular.bookOpen,
+      'movie': PhosphorIconsRegular.filmSlate,
+      'tv_show': PhosphorIconsRegular.television,
+      'podcast': PhosphorIconsRegular.microphone,
+      'music': PhosphorIconsRegular.musicNote,
+      'product': PhosphorIconsRegular.shoppingBag,
+      'place': PhosphorIconsRegular.mapPin,
+      'app': PhosphorIconsRegular.appWindow,
+      'other': PhosphorIconsRegular.shapes,
     };
-    return icons[contentType] ?? Icons.category_rounded;
+    return icons[contentType] ?? PhosphorIconsRegular.shapes;
   }
 
   @override

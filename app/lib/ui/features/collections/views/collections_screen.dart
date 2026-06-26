@@ -1,6 +1,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -50,7 +51,7 @@ class _CollectionsView extends StatelessWidget {
       floatingActionButton: FloatingActionButton.small(
         onPressed: () => _showNewFolderDialog(context, vm),
         tooltip: 'New folder',
-        child: const Icon(Icons.create_new_folder_rounded),
+        child: const PhosphorIcon(PhosphorIconsRegular.folderPlus),
       ),
       body: _body(context, vm),
     );

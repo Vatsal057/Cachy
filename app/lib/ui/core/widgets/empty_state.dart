@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../brand.dart';
 import '../theme.dart';
@@ -22,7 +23,7 @@ class EmptyState extends StatelessWidget {
 
   final String title;
   final String message;
-  final IconData? icon;
+  final PhosphorIconData? icon;
 
   /// Show the brand glyph instead of a Material icon (used on the library's
   /// first-ever empty state for a branded welcome).
@@ -56,7 +57,7 @@ class EmptyState extends StatelessWidget {
                         color: scheme.surfaceContainerHigh,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(icon ?? Icons.inbox_rounded,
+                      child: PhosphorIcon(icon ?? PhosphorIconsRegular.tray,
                           size: 34, color: scheme.onSurfaceVariant),
                     ),
             ),
@@ -74,7 +75,7 @@ class EmptyState extends StatelessWidget {
               const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: onAction,
-                icon: const Icon(Icons.add_rounded, size: 20),
+                icon: const PhosphorIcon(PhosphorIconsRegular.plus, size: 20),
                 label: Text(actionLabel!),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 0),

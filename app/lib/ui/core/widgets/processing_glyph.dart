@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../brand.dart';
 
@@ -12,11 +13,11 @@ class ProcessingGlyph extends StatefulWidget {
   const ProcessingGlyph({
     super.key,
     this.size = 132,
-    this.icon = Icons.auto_awesome_rounded,
+    this.icon = PhosphorIconsRegular.sparkle,
   });
 
   final double size;
-  final IconData icon;
+  final PhosphorIconData icon;
 
   @override
   State<ProcessingGlyph> createState() => _ProcessingGlyphState();
@@ -74,7 +75,7 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
                   borderRadius: BorderRadius.circular(badge * 0.3),
                   boxShadow: Brand.softShadow(opacity: 0.22, blur: 22, y: 6),
                 ),
-                child: Icon(widget.icon, size: badge * 0.5, color: scheme.onPrimary),
+                child: PhosphorIcon(widget.icon, size: badge * 0.5, color: scheme.onPrimary),
               ),
             );
           },

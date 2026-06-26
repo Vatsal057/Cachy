@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
@@ -104,7 +105,7 @@ class _SearchScreenState extends State<SearchScreen> {
         actions: [
           if (_query.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.close_rounded),
+              icon: const PhosphorIcon(PhosphorIconsRegular.x),
               onPressed: () {
                 _controller.clear();
                 _onChanged('');
@@ -120,7 +121,7 @@ class _SearchScreenState extends State<SearchScreen> {
     switch (_status) {
       case _Status.idle:
         return const EmptyState(
-          icon: Icons.search_rounded,
+          icon: PhosphorIconsRegular.magnifyingGlass,
           title: 'Search everything',
           message: 'Find a recipe step, a place, a product — across every card you\'ve saved.',
         );
@@ -133,7 +134,7 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       case _Status.empty:
         return EmptyState(
-          icon: Icons.search_off_rounded,
+          icon: PhosphorIconsRegular.magnifyingGlassMinus,
           title: 'No matches',
           message: 'Nothing matched "$_query". Try a different word, or capture a reel about it.',
           actionLabel: 'Capture a reel',

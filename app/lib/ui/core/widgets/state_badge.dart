@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../domain/models/enums.dart';
 
@@ -34,7 +35,7 @@ class StateBadge extends StatelessWidget {
               ),
             )
           else
-            Icon(icon, size: 13, color: color),
+            PhosphorIcon(icon, size: 13, color: color),
           const SizedBox(width: 6),
           Text(
             label,
@@ -49,21 +50,21 @@ class StateBadge extends StatelessWidget {
     );
   }
 
-  (String, Color, IconData, bool) _spec() {
+  (String, Color, PhosphorIconData, bool) _spec() {
     switch (state) {
       case CardState.queued:
-        return ('Queued', Colors.white70, Icons.schedule_rounded, false);
+        return ('Queued', Colors.white70, PhosphorIconsRegular.clock, false);
       case CardState.processing:
-        return ('Working', Colors.white, Icons.bolt_rounded, true);
+        return ('Working', Colors.white, PhosphorIconsRegular.lightning, true);
       case CardState.failed:
         return (
           reason?.label ?? 'Failed',
           const Color(0xFFFF8A7A),
-          Icons.error_outline_rounded,
+          PhosphorIconsRegular.warning,
           false
         );
       case CardState.ready:
-        return ('Ready', Colors.white, Icons.check_rounded, false);
+        return ('Ready', Colors.white, PhosphorIconsRegular.check, false);
     }
   }
 }
