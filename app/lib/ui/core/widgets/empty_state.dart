@@ -15,6 +15,7 @@ class EmptyState extends StatelessWidget {
     required this.title,
     required this.message,
     this.icon,
+    this.art,
     this.showGlyph = false,
     this.halo = false,
     this.actionLabel,
@@ -24,6 +25,10 @@ class EmptyState extends StatelessWidget {
   final String title;
   final String message;
   final PhosphorIconData? icon;
+
+  /// Optional screen-specific spot illustration, shown beneath the message.
+  /// Each empty screen passes its own so no two feel templated.
+  final Widget? art;
 
   /// Show the brand glyph instead of a Material icon (used on the library's
   /// first-ever empty state for a branded welcome).
@@ -71,6 +76,10 @@ class EmptyState extends StatelessWidget {
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: scheme.onSurfaceVariant, height: 1.5),
             ),
+            if (art != null) ...[
+              const SizedBox(height: 22),
+              art!,
+            ],
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 24),
               FilledButton.icon(

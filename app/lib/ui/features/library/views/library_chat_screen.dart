@@ -12,6 +12,7 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/rich_text.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/library_chat_view_model.dart';
 
@@ -110,12 +111,19 @@ class _LibraryChatViewState extends State<_LibraryChatView> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Text(
-            'Ask anything across your saved cards — "what workouts have I saved?", '
-            '"summarise the budgeting tips"…',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ChatSpot(),
+              const SizedBox(height: 22),
+              Text(
+                'Ask anything across your saved cards — "what workouts have I saved?", '
+                '"summarise the budgeting tips"…',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
           ),
         ),
       );

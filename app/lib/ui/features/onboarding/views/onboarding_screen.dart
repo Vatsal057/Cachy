@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/spot_art.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key, required this.onDone});
@@ -245,7 +246,7 @@ class _PageHook extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          const _FloatingPill(icon: PhosphorIconsRegular.sparkle, label: 'ZERO SCROLLING'),
+          CaptureSpot(color: scheme.primary.withValues(alpha: 0.7)),
           const SizedBox(height: 32),
           Text(
             'Videos, articles, newsletters, Wikipedia — paste any link and Cachy distills the key takeaways into a browsable card.',
@@ -272,17 +273,8 @@ class _PageStructure extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.primaryContainer.withValues(alpha: 0.4),
-              border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
-            ),
-            child: PhosphorIcon(PhosphorIconsRegular.stack, color: scheme.primary, size: 36),
-          ),
+          const SizedBox(height: 16),
+          StructureSpot(color: scheme.primary.withValues(alpha: 0.75), size: const Size(120, 88)),
           const SizedBox(height: 24),
           RichText(
             textAlign: TextAlign.center,
@@ -434,17 +426,8 @@ class _PageLibrary extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.primaryContainer.withValues(alpha: 0.4),
-              border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
-            ),
-            child: PhosphorIcon(PhosphorIconsRegular.graph, color: scheme.primary, size: 36),
-          ),
+          const SizedBox(height: 16),
+          GraphSpot(color: scheme.primary.withValues(alpha: 0.75), size: const Size(124, 92)),
           const SizedBox(height: 24),
           RichText(
             textAlign: TextAlign.center,

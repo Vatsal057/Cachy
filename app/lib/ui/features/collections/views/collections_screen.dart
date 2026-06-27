@@ -10,6 +10,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../view_models/collections_view_model.dart';
 import 'collection_detail_screen.dart';
 import 'folder_tile.dart';
@@ -76,12 +77,11 @@ class _CollectionsView extends StatelessWidget {
       case CollectionsStatus.empty:
         return _scrollable(
           const EmptyState(
-            showGlyph: true,
-            halo: true,
             title: 'No collections yet',
             message:
                 'Save a reel and Cachy will auto-sort it into a folder based '
                 'on what it is — recipes, workouts, tips, and more.',
+            art: CollectionsSpot(),
           ),
         );
       case CollectionsStatus.idle:

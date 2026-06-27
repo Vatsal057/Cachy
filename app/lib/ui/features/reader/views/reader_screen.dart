@@ -24,6 +24,7 @@ import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/card_face.dart';
 import '../../../core/widgets/error_state.dart';
+import '../../../core/widgets/flourish.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
@@ -151,7 +152,7 @@ class _ReaderView extends StatelessWidget {
 
                       // Ornamental divider + highlight hint (once card is ready)
                       if (card.isReady && card.blocks.isNotEmpty) ...[
-                        const _OrnamentalDivider(),
+                        _OrnamentalDivider(color: accent.color),
                         const _HighlightHint(),
                       ],
 
@@ -1060,22 +1061,25 @@ class _SourceLine extends StatelessWidget {
 // Editorial ornament + highlight hint
 // ────────────────────────────────────────────────────────────────────────────
 
+/// The flourish flanked by hairline rules — a section break between the core
+/// takeaway and the card body, accent-tinted per content type.
 class _OrnamentalDivider extends StatelessWidget {
-  const _OrnamentalDivider();
+  const _OrnamentalDivider({required this.color});
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final c = Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final rule = Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Row(
         children: [
-          Expanded(child: Divider(color: c, height: 1)),
+          Expanded(child: Divider(color: rule, height: 1)),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: PhosphorIcon(PhosphorIconsRegular.asterisk, size: 10, color: c),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Flourish(color: color),
           ),
-          Expanded(child: Divider(color: c, height: 1)),
+          Expanded(child: Divider(color: rule, height: 1)),
         ],
       ),
     );

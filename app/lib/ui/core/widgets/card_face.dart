@@ -81,17 +81,6 @@ class _AccentFace extends StatelessWidget {
           ),
         ),
 
-        // Secondary small icon — top-left corner, adds rhythm
-        Positioned(
-          left: 10,
-          top: 10,
-          child: PhosphorIcon(
-            accent.icon,
-            size: 18,
-            color: accent.color.withValues(alpha: 0.16 * op),
-          ),
-        ),
-
         // Main centred icon
         Center(
           child: PhosphorIcon(

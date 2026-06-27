@@ -12,6 +12,7 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../../../core/widgets/stat_strip.dart';
 import '../view_models/catalog_view_model.dart';
 import 'catalog_detail_screen.dart';
@@ -71,6 +72,7 @@ class _CatalogView extends StatelessWidget {
       case CatalogStatus.empty:
         return const _Message(
           icon: PhosphorIconsRegular.books,
+          art: CatalogSpot(),
           title: 'Nothing saved yet',
           subtitle:
               'Long-press any reference on a card to save it here — books, '
@@ -82,7 +84,7 @@ class _CatalogView extends StatelessWidget {
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
           physics: const AlwaysScrollableScrollPhysics(),
-          itemCount: sections.length + 1,
+          itemCount: sections.length + 2,
           itemBuilder: (ctx, i) {
             if (i == 0) {
               return StatStrip(stats: [
@@ -90,6 +92,12 @@ class _CatalogView extends StatelessWidget {
                 Stat(value: '${vm.typeCount}', label: 'Types'),
                 Stat(value: '${vm.referencedCardCount}', label: 'From cards'),
               ]);
+            }
+            if (i == sections.length + 1) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 36),
+                child: Center(child: CatalogSpot()),
+              );
             }
             return _Section(section: sections[i - 1], vm: vm);
           },
@@ -305,11 +313,15 @@ class _Message extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.action,
+    this.art,
   });
   final PhosphorIconData icon;
   final String title;
   final String subtitle;
   final Widget? action;
+
+  /// Optional spot illustration shown in place of the icon.
+  final Widget? art;
 
   @override
   Widget build(BuildContext context) {
@@ -318,7 +330,10 @@ class _Message extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.22),
-        PhosphorIcon(icon, size: 52, color: theme.colorScheme.outline),
+        Center(
+          child: art ??
+              PhosphorIcon(icon, size: 52, color: theme.colorScheme.outline),
+        ),
         const SizedBox(height: 16),
         Text(title,
             textAlign: TextAlign.center, style: theme.textTheme.titleLarge),

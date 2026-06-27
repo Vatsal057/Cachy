@@ -11,6 +11,7 @@ import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../../library/views/card_tile.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/collections_view_model.dart';
@@ -112,10 +113,10 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
   Widget _body(BuildContext context) {
     final cards = _cards ?? const [];
     if (cards.isEmpty) {
-      return EmptyState(
-        icon: PhosphorIconsRegular.folderOpen,
+      return const EmptyState(
         title: 'Nothing here',
         message: 'Cards you save will appear here once processed.',
+        art: CollectionsSpot(),
       );
     }
 

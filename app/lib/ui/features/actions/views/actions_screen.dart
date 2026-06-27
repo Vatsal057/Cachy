@@ -11,6 +11,7 @@ import '../../../../domain/models/card.dart' as model;
 import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/actions_view_model.dart';
 
@@ -147,6 +148,7 @@ class _ActionsViewState extends State<_ActionsView> {
               hasScrollBody: false,
               child: _Message(
                 icon: PhosphorIconsRegular.listChecks,
+                art: ActionsSpot(),
                 text: 'No actions yet.\nOpen a card and tap "Follow these actions".',
               ),
             )
@@ -488,10 +490,13 @@ class _ActionItemCardState extends State<_ActionItemCard> {
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text, this.onRetry});
+  const _Message({required this.icon, required this.text, this.onRetry, this.art});
   final PhosphorIconData icon;
   final String text;
   final VoidCallback? onRetry;
+
+  /// Optional spot illustration shown in place of the icon.
+  final Widget? art;
 
   @override
   Widget build(BuildContext context) {
@@ -501,8 +506,9 @@ class _Message extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          PhosphorIcon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(height: 12),
+          art ??
+              PhosphorIcon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: 16),
           Text(
             text,
             textAlign: TextAlign.center,
