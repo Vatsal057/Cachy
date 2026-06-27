@@ -19,6 +19,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../concepts/views/concepts_screen.dart';
 import '../../graph/views/graph_screen.dart';
@@ -189,6 +190,7 @@ class _CardsTab extends StatelessWidget {
                         message: vm.tagFilter != null
                             ? 'No cards tagged "${vm.tagFilter}".'
                             : 'No cards match this filter.',
+                        art: const LibrarySpot(),
                       ),
                     )
                   : _grid(context, visible, vm, api),

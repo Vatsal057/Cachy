@@ -27,6 +27,7 @@ import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
+import '../../../core/widgets/spot_art.dart';
 import '../../concepts/views/concept_detail_screen.dart';
 import '../../reader/views/reader_screen.dart';
 
@@ -708,6 +709,7 @@ class _GraphScreenState extends State<GraphScreen>
         title: 'Nothing to connect yet',
         message:
             "Save a few cards and we'll link the ones that belong together.",
+        art: GraphSpot(),
       );
     }
 
