@@ -6,8 +6,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/obsidian_export.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
 import '../../../core/app_controller.dart';
@@ -25,6 +27,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<List<model.Card>> _cards;
   late Future<List<CatalogEntry>> _catalog;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -49,6 +52,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const _ThemePicker(),
           const SizedBox(height: 24),
           _sectionLabel(theme, 'Library'),
+          _Tile(
+            icon: PhosphorIconsRegular.export,
+            title: _exporting ? 'Preparing vault…' : 'Export as Obsidian vault',
+            subtitle: 'Saves every card as a markdown note, zipped to open in Obsidian.',
+            onTap: _exporting ? null : _exportVault,
+          ),
           _Tile(
             icon: PhosphorIconsRegular.trash,
             title: 'Clear offline cache',
@@ -125,6 +134,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       );
+
+  Future<void> _exportVault() async {
+    setState(() => _exporting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final cards = await context.read<CardRepository>().listAll();
+      if (cards.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('No cards to export yet')),
+        );
+        return;
+      }
+      final zip = ObsidianExport.buildVault(cards);
+      await Share.shareXFiles(
+        [XFile.fromData(zip, name: 'cachy-vault.zip', mimeType: 'application/zip')],
+        fileNameOverrides: const ['cachy-vault.zip'],
+        subject: 'Cachy Obsidian vault',
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Export failed — try again')),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   Future<void> _confirmClear() async {
     final ok = await showDialog<bool>(

@@ -51,6 +51,8 @@ dependencies:
   share_plus: ^10.1.4
   url_launcher: ^6.3.1
   add_2_calendar: ^3.0.1
+  # Export the library as an Obsidian vault (.zip of markdown files).
+  archive: ^3.6.1
 
   # Brand layer: expressive display/body type and a terse, declarative motion
   # vocabulary (entrances, stagger, shimmer) so animation stays consistent.
