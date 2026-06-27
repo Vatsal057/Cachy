@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 # host substring -> platform label
 _KNOWN: tuple[tuple[str, str], ...] = (
+    ("twitter.com", "twitter"),
+    ("x.com", "twitter"),
     ("instagram.com", "instagram"),
     ("youtube.com", "youtube"),
     ("youtu.be", "youtube"),

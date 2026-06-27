@@ -115,6 +115,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               children: [
                 _PlatformChip(label: 'Instagram', dot: Color(0xFFE1306C)),
                 _PlatformChip(label: 'YouTube', dot: Color(0xFFE0301E)),
+                _PlatformChip(label: 'X / Twitter', dot: Color(0xFF000000)),
                 _PlatformChip(label: 'Wikipedia', dot: Color(0xFF3A85C8)),
                 _PlatformChip(label: 'Substack', dot: Color(0xFFFF6719)),
                 _PlatformChip(label: 'Medium', dot: Color(0xFF1A8917)),

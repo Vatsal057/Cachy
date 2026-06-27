@@ -91,13 +91,17 @@ class _CardTileState extends State<CardTile> {
                     child: CardFace(card: widget.card, api: widget.api),
                   ),
                   // Bottom scrim so text stays legible over any face.
-                  const DecoratedBox(
+                  DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black54],
-                        stops: [0.45, 1.0],
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.45),
+                          Colors.black.withValues(alpha: 0.88),
+                        ],
+                        stops: const [0.35, 0.65, 1.0],
                       ),
                     ),
                   ),

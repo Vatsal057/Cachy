@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # ingestion
     rapidapi_key: str = ""
     cookies_path: str = ""
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
 
     # worker / queue
     max_attempts: int = 3
