@@ -3,7 +3,6 @@
 /// render `text`/`items` if present, else skip. Never crashes on a bad block.
 library;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Step;
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -12,6 +11,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../domain/models/artifact.dart';
 import '../../../domain/models/block.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/rich_text.dart';
 
 /// Callbacks the reader injects so checkable blocks can persist (PATCH).
 typedef ToggleCallback = void Function(String blockId, int index, bool checked);
@@ -60,7 +60,7 @@ class BlockList extends StatelessWidget {
     );
     // Provide the inline-reference resolver to descendant rich-text widgets.
     if (artifacts.isEmpty || onOpenArtifact == null) return column;
-    return _ReferenceScope(
+    return ReferenceScope(
       refs: {
         for (final a in artifacts)
           if (a.title.trim().isNotEmpty) a.title.toLowerCase().trim(): a,
@@ -195,127 +195,6 @@ class _SectionCard extends StatelessWidget {
 }
 
 // --------------------------------------------------------------------------- //
-// Inline rich text (lightweight markdown: **bold**, *italic* / _italic_, `code`)
-// --------------------------------------------------------------------------- //
-
-/// Inline grammar: `[[Reference]]`, then **bold**, *italic* / _italic_, `code`.
-final _richPattern = RegExp(
-  r'\[\[(.+?)\]\]|\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`(.+?)`',
-  dotAll: true,
-);
-
-/// Carries the card's inline-reference resolver down to rich-text widgets, so a
-/// `[[Name]]` marker becomes a tappable link without drilling params everywhere.
-class _ReferenceScope extends InheritedWidget {
-  const _ReferenceScope({
-    required this.refs,
-    required this.onTap,
-    required super.child,
-  });
-
-  final Map<String, CatalogEntry> refs; // normalised title -> entry
-  final void Function(CatalogEntry) onTap;
-
-  CatalogEntry? resolve(String label) => refs[label.toLowerCase().trim()];
-
-  static _ReferenceScope? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<_ReferenceScope>();
-
-  @override
-  bool updateShouldNotify(_ReferenceScope old) => old.refs != refs;
-}
-
-/// Drop-in for `Text` rendering the inline subset above. Stateful so tap
-/// recognizers for `[[Name]]` references are disposed properly.
-class _RichText extends StatefulWidget {
-  const _RichText(this.text, {this.style});
-  final String text;
-  final TextStyle? style;
-
-  @override
-  State<_RichText> createState() => _RichTextState();
-}
-
-class _RichTextState extends State<_RichText> {
-  final _recognizers = <TapGestureRecognizer>[];
-
-  void _clearRecognizers() {
-    for (final r in _recognizers) {
-      r.dispose();
-    }
-    _recognizers.clear();
-  }
-
-  @override
-  void dispose() {
-    _clearRecognizers();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    _clearRecognizers(); // rebuilt fresh each build
-    final base = widget.style ?? DefaultTextStyle.of(context).style;
-    final scope = _ReferenceScope.maybeOf(context);
-    return Text.rich(TextSpan(children: _spans(widget.text, base, scope)));
-  }
-
-  List<InlineSpan> _spans(String text, TextStyle? base, _ReferenceScope? scope) {
-    final spans = <InlineSpan>[];
-    var last = 0;
-    for (final m in _richPattern.allMatches(text)) {
-      if (m.start > last) {
-        spans.add(TextSpan(text: text.substring(last, m.start), style: base));
-      }
-      final ref = m.group(1);
-      if (ref != null) {
-        spans.add(_referenceSpan(ref, base, scope));
-      } else if (m.group(2) != null || m.group(3) != null) {
-        spans.add(TextSpan(
-          text: m.group(2) ?? m.group(3),
-          style: base?.copyWith(fontWeight: FontWeight.w700),
-        ));
-      } else if (m.group(4) != null || m.group(5) != null) {
-        spans.add(TextSpan(
-          text: m.group(4) ?? m.group(5),
-          style: base?.copyWith(fontStyle: FontStyle.italic),
-        ));
-      } else if (m.group(6) != null) {
-        spans.add(TextSpan(
-          text: m.group(6),
-          style: base?.copyWith(
-            fontFamily: 'monospace',
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        ));
-      }
-      last = m.end;
-    }
-    if (last < text.length) {
-      spans.add(TextSpan(text: text.substring(last), style: base));
-    }
-    return spans;
-  }
-
-  /// A `[[Name]]` marker: a tappable link if it resolves to a card artifact,
-  /// otherwise the bare name (brackets stripped) so unknown refs never leak.
-  InlineSpan _referenceSpan(String label, TextStyle? base, _ReferenceScope? scope) {
-    final entry = scope?.resolve(label);
-    if (entry == null) return TextSpan(text: label, style: base);
-    final recognizer = TapGestureRecognizer()..onTap = () => scope!.onTap(entry);
-    _recognizers.add(recognizer);
-    return TextSpan(
-      text: label,
-      style: base?.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.w600,
-      ),
-      recognizer: recognizer,
-    );
-  }
-}
-
-// --------------------------------------------------------------------------- //
 // Per-block widgets
 // --------------------------------------------------------------------------- //
 
@@ -344,7 +223,7 @@ class _Paragraph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      _RichText(block.text, style: Theme.of(context).textTheme.bodyLarge);
+      RichInlineText(block.text, style: Theme.of(context).textTheme.bodyLarge);
 }
 
 class _BulletList extends StatelessWidget {
@@ -375,7 +254,7 @@ class _BulletList extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: _RichText(item, style: theme.textTheme.bodyLarge),
+                  child: RichInlineText(item, style: theme.textTheme.bodyLarge),
                 ),
               ],
             ),
@@ -508,7 +387,7 @@ class _StepRow extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: _RichText(
+                child: RichInlineText(
                   step.text,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     decoration: done ? TextDecoration.lineThrough : null,
@@ -721,7 +600,7 @@ class _Callout extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _RichText(block.text, style: theme.textTheme.bodyMedium),
+                RichInlineText(block.text, style: theme.textTheme.bodyMedium),
                 if (block.confidence != 'unverified' ||
                     block.sourceUrl != null) ...[
                   const SizedBox(height: 6),
@@ -914,7 +793,7 @@ class _Table extends StatelessWidget {
 
   Widget _cell(String text, TextStyle? style, {bool bold = false}) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: _RichText(
+        child: RichInlineText(
           text,
           style: bold ? style?.copyWith(fontWeight: FontWeight.w700) : style,
         ),

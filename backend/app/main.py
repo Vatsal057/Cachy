@@ -28,6 +28,10 @@ _worker_task: asyncio.Task | None = None
 async def lifespan(app: FastAPI):
     global _worker_task
     await db.init_db()
+    async with db.session() as s:
+        reset_count = await db.reset_orphaned_processing_jobs(s)
+        if reset_count > 0:
+            log.info("reset %d orphaned job(s) from processing to queued", reset_count)
     worker.reset_stop()
     _worker_task = asyncio.create_task(worker.run_worker_loop())
     log.info("startup complete; worker running")

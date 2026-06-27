@@ -21,11 +21,21 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+import requests
+
 log = logging.getLogger("ingestion.article")
 
-# A body shorter than this is almost certainly a paywall/login wall or a failed
-# extraction, not a real article — reject so the caller can fall through.
 _MIN_CHARS = 200
+
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
 
 
 @dataclass
@@ -46,11 +56,22 @@ def fetch_article(url: str) -> ArticleResult | None:
         log.warning("trafilatura unavailable; article path disabled: %s", e)
         return None
 
+    # Reddit 403s all scrapers post-2023 — skip early, don't waste the round-trip.
+    if "reddit.com" in url.lower():
+        log.info("reddit url skipped (scraping blocked); url=%s", url)
+        return None
+
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            log.info("article fetch returned nothing for %s", url)
+        resp = requests.get(url, headers=_HEADERS, timeout=20, allow_redirects=True)
+        downloaded = resp.text
+        if not downloaded or len(downloaded) < _MIN_CHARS:
+            log.info("article fetch empty for %s (status=%s)", url, resp.status_code)
             return None
+    except Exception as e:  # noqa: BLE001
+        log.info("article fetch failed for %s: %s", url, e)
+        return None
+
+    try:
         raw = trafilatura.extract(
             downloaded,
             output_format="json",

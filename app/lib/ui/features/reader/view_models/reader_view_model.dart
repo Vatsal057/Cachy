@@ -89,12 +89,11 @@ class ReaderViewModel extends ChangeNotifier {
       (event) async {
         _lastEvent = event;
         _safeNotify();
-        // Re-fetch on persisting/terminal so newly-written base/blocks appear.
-        if (event.stage == PipelineStage.persisting || event.isTerminal) {
-          await _fetch();
-        }
+        // Always re-fetch while processing so progressive block-by-block additions appear live.
+        await _fetch();
         if (event.isTerminal) {
           await _loadArtifacts(); // catalog populated after cards finish
+          await _loadConcepts(); // concepts populated after cards finish
           await _sub?.cancel();
         }
       },

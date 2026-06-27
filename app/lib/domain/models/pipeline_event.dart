@@ -11,6 +11,8 @@ enum PipelineStage {
   structuring,
   persisting,
   analyzing,
+  cataloging,
+  conceptualizing,
   done,
   failed,
   unknown;
@@ -29,6 +31,10 @@ enum PipelineStage {
         return PipelineStage.persisting;
       case 'analyzing':
         return PipelineStage.analyzing;
+      case 'cataloging':
+        return PipelineStage.cataloging;
+      case 'conceptualizing':
+        return PipelineStage.conceptualizing;
       case 'done':
         return PipelineStage.done;
       case 'failed':
@@ -50,9 +56,13 @@ enum PipelineStage {
       case PipelineStage.structuring:
         return 'Structuring';
       case PipelineStage.persisting:
-        return 'Finishing';
+        return 'Saving';
       case PipelineStage.analyzing:
         return 'Analyzing';
+      case PipelineStage.cataloging:
+        return 'Cataloging';
+      case PipelineStage.conceptualizing:
+        return 'Concepts';
       case PipelineStage.done:
         return 'Ready';
       case PipelineStage.failed:
@@ -78,6 +88,10 @@ enum PipelineStage {
         return 'Saving to your library';
       case PipelineStage.analyzing:
         return 'Surfacing deeper insight';
+      case PipelineStage.cataloging:
+        return 'Extracting referenced items';
+      case PipelineStage.conceptualizing:
+        return 'Mapping evergreen concepts';
       case PipelineStage.done:
         return 'Card ready';
       case PipelineStage.failed:
@@ -93,6 +107,9 @@ enum PipelineStage {
     PipelineStage.extracting,
     PipelineStage.structuring,
     PipelineStage.persisting,
+    PipelineStage.analyzing,
+    PipelineStage.cataloging,
+    PipelineStage.conceptualizing,
   ];
 }
 

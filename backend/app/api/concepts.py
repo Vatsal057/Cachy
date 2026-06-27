@@ -33,6 +33,8 @@ async def list_concepts(
         entries = [r.to_entry() for r in rows]
     if card_id is not None:
         entries = [e for e in entries if card_id in e.source_card_ids]
+    else:
+        entries = [e for e in entries if len(e.source_card_ids) > 1]
     return entries[offset : offset + limit]
 
 
@@ -43,13 +45,15 @@ async def get_concept(concept_id: str) -> ConceptDetail:
         if row is None:
             raise HTTPException(status_code=404, detail="concept not found")
         entry = row.to_entry()
-        # Related = concepts that co-occur in any of this concept's source cards.
+        # Related = multi-reel concepts that co-occur in any of this concept's source cards.
         mine = set(entry.source_card_ids)
         all_rows = (await session.execute(select(db.ConceptRow))).scalars().all()
         related = [
             r.to_entry()
             for r in all_rows
-            if r.id != concept_id and bool(set(r.source_card_ids or []) & mine)
+            if r.id != concept_id
+            and len(r.source_card_ids or []) > 1
+            and bool(set(r.source_card_ids or []) & mine)
         ]
     return ConceptDetail(entry=entry, related=related)
 

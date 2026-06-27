@@ -7,6 +7,7 @@ library;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
@@ -22,7 +23,6 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/card_face.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/pipeline_progress.dart';
-import '../../../core/widgets/processing_glyph.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
 import '../../concepts/views/concept_detail_screen.dart';
@@ -91,6 +91,12 @@ class _ReaderView extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Slim pipeline status — visible while building
+                      if (card.isProcessing) ...[
+                        _BuildingStatusStrip(vm: vm),
+                        const SizedBox(height: 4),
+                      ],
+
                       // Category chips: content type pill + tag pills
                       _CategoryBar(
                         accent: accent,
@@ -99,10 +105,13 @@ class _ReaderView extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
 
-                      // Main headline — Fraunces display
+                      // Headline — skeleton while building, fades in on arrival
                       if (card.base.oneLiner.isNotEmpty) ...[
-                        Text(card.base.oneLiner,
-                            style: Theme.of(context).textTheme.headlineLarge),
+                        _fadeIn(Text(card.base.oneLiner,
+                            style: Theme.of(context).textTheme.headlineLarge)),
+                        const SizedBox(height: 12),
+                      ] else if (card.isProcessing) ...[
+                        const _SkeletonHeadline(),
                         const SizedBox(height: 12),
                       ],
 
@@ -111,23 +120,33 @@ class _ReaderView extends StatelessWidget {
 
                       const SizedBox(height: 28),
 
-                      if (card.isProcessing) _ProcessingPanel(vm: vm),
                       if (card.isFailed) _FailedPanel(card: card),
 
-                      // CORE TAKEAWAY — tldr in left-border card
+                      // CORE TAKEAWAY — skeleton while building, fades in on arrival
                       if (card.base.tldr.isNotEmpty)
-                        _CoreTakeawayCard(text: card.base.tldr, accent: accent),
+                        _fadeIn(_CoreTakeawayCard(text: card.base.tldr, accent: accent))
+                      else if (card.isProcessing)
+                        const _SkeletonTldrCard(),
 
-                      // Structured blocks
-                      if (card.blocks.isNotEmpty)
-                        BlockList(
+                      // Structured blocks — skeleton while building, fades in on arrival
+                      if (card.blocks.isNotEmpty) ...[
+                        _fadeIn(BlockList(
                           blocks: card.blocks,
                           onToggleChecklist: vm.toggleChecklistItem,
                           onToggleStep: vm.toggleStep,
                           onOpenUrl: (url) => _copyUrl(context, url),
                           artifacts: vm.artifacts,
                           onOpenArtifact: (e) => openLookup(e),
-                        ),
+                        )),
+                        if (card.isProcessing) ...[
+                          const SizedBox(height: 12),
+                          const _SkeletonBox(height: 70, radius: Insets.radius),
+                        ],
+                      ] else if (card.isProcessing)
+                        const _SkeletonBlocks(),
+
+                      // Skeleton placeholders for insight/refs/concepts (arrive at done)
+                      if (card.isProcessing) const _SkeletonBottomSections(),
 
                       // DO THIS NOW — action items
                       if (card.isReady && card.actionItems.isPresent)
@@ -459,41 +478,89 @@ class _CoreTakeawayCard extends StatelessWidget {
 // Processing / Failed panels
 // ────────────────────────────────────────────────────────────────────────────
 
-class _ProcessingPanel extends StatelessWidget {
-  const _ProcessingPanel({required this.vm});
+class _BuildingStatusStrip extends StatelessWidget {
+  const _BuildingStatusStrip({required this.vm});
   final ReaderViewModel vm;
+
+  PipelineStage get _stage =>
+      vm.lastEvent?.stage ?? _stageFromState(vm.card!.state);
+
+  PipelineStage _stageFromState(CardState state) =>
+      state == CardState.queued ? PipelineStage.snapshot : PipelineStage.structuring;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final stage = vm.lastEvent?.stage ?? _stageFromState(vm.card!.state);
+    final stage = _stage;
+    final progress = PipelineProgress.calculateProgress(stage);
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(18),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(Insets.radius),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Center(child: ProcessingGlyph(size: 116)),
-          const SizedBox(height: 18),
-          Center(
-            child: Text('Building your card',
-                style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              _PulsingDot(color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  stage.description.isNotEmpty ? stage.description : stage.label,
+                  style: Brand.label(size: 12, color: scheme.onSurface, weight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${(progress * 100).round()}%',
+                style: Brand.label(size: 11, color: scheme.onSurfaceVariant),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
-          PipelineProgress(current: stage, detail: vm.lastEvent?.detail ?? ''),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: progress),
+              duration: Motion.medium,
+              curve: Curves.easeOutCubic,
+              builder: (_, val, _) => LinearProgressIndicator(
+                value: val,
+                minHeight: 3,
+                backgroundColor: scheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation(scheme.primary),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  PipelineStage _stageFromState(CardState state) => state == CardState.queued
-      ? PipelineStage.snapshot
-      : PipelineStage.structuring;
+class _PulsingDot extends StatelessWidget {
+  const _PulsingDot({required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    )
+        .animate(onPlay: (c) => c.repeat(reverse: true))
+        .scaleXY(
+          begin: 0.5,
+          end: 1.0,
+          duration: const Duration(milliseconds: 800),
+          curve: Curves.easeInOut,
+        );
+  }
 }
 
 class _FailedPanel extends StatelessWidget {
@@ -732,6 +799,7 @@ class _ConceptsStrip extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: entries.map((entry) {
+              final isMultiReel = entry.sourceCardIds.length > 1;
               return GestureDetector(
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
@@ -741,20 +809,64 @@ class _ConceptsStrip extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
-                    color: scheme.secondaryContainer,
+                    color: isMultiReel
+                        ? scheme.primaryContainer
+                        : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: scheme.outlineVariant),
+                    border: Border.all(
+                      color: isMultiReel
+                          ? scheme.primary.withValues(alpha: 0.8)
+                          : scheme.outlineVariant.withValues(alpha: 0.6),
+                      width: isMultiReel ? 1.5 : 1.0,
+                    ),
+                    boxShadow: isMultiReel
+                        ? [
+                            BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.15),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      PhosphorIcon(PhosphorIconsRegular.lightbulb,
-                          size: 13, color: scheme.primary),
+                      PhosphorIcon(
+                        isMultiReel
+                            ? PhosphorIconsFill.lightbulb
+                            : PhosphorIconsRegular.lightbulb,
+                        size: 13,
+                        color: isMultiReel ? scheme.primary : scheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 5),
-                      Text(entry.name,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSecondaryContainer)),
+                      Text(
+                        entry.name,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: isMultiReel ? FontWeight.w700 : FontWeight.w500,
+                          color: isMultiReel
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (isMultiReel) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: scheme.primary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${entry.sourceCardIds.length}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: scheme.onPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -910,6 +1022,141 @@ class _SourceLine extends StatelessWidget {
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Fade-in helper — wraps a widget so it animates in when first inserted
+// ────────────────────────────────────────────────────────────────────────────
+
+Widget _fadeIn(Widget child) => child
+    .animate()
+    .fadeIn(duration: Motion.medium)
+    .slideY(begin: 0.04, end: 0.0, duration: Motion.medium, curve: Curves.easeOut);
+
+// ────────────────────────────────────────────────────────────────────────────
+// Skeleton widgets — shown while card is building, replaced by real content
+// ────────────────────────────────────────────────────────────────────────────
+
+class _SkeletonBox extends StatelessWidget {
+  const _SkeletonBox({
+    this.width = double.infinity,
+    required this.height,
+    this.radius = 6.0,
+  });
+  final double width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    )
+        .animate(onPlay: (c) => c.repeat())
+        .shimmer(
+          duration: const Duration(milliseconds: 1200),
+          color: scheme.surfaceContainerHighest,
+        );
+  }
+}
+
+class _SkeletonHeadline extends StatelessWidget {
+  const _SkeletonHeadline();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBox(height: 30),
+          SizedBox(height: 10),
+          _SkeletonBox(width: 220, height: 30),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonTldrCard extends StatelessWidget {
+  const _SkeletonTldrCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(Insets.radius),
+          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SkeletonBox(height: 15),
+            SizedBox(height: 9),
+            _SkeletonBox(height: 15),
+            SizedBox(height: 9),
+            _SkeletonBox(height: 15),
+            SizedBox(height: 9),
+            _SkeletonBox(width: 160, height: 15),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonBlocks extends StatelessWidget {
+  const _SkeletonBlocks();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SkeletonBox(height: 70, radius: Insets.radius),
+        SizedBox(height: 12),
+        _SkeletonBox(height: 90, radius: Insets.radius),
+        SizedBox(height: 12),
+        _SkeletonBox(height: 55, radius: Insets.radius),
+      ],
+    );
+  }
+}
+
+class _SkeletonBottomSections extends StatelessWidget {
+  const _SkeletonBottomSections();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBox(width: 100, height: 12, radius: 4),
+          SizedBox(height: 12),
+          _SkeletonBox(height: 110, radius: Insets.radius),
+          SizedBox(height: 28),
+          _SkeletonBox(width: 90, height: 12, radius: 4),
+          SizedBox(height: 12),
+          _SkeletonBox(height: 80, radius: Insets.radius),
         ],
       ),
     );

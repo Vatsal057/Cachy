@@ -215,7 +215,7 @@ class _PageHook extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 24),
-          const _FloatingPill(icon: PhosphorIconsRegular.videoCamera, label: 'INSTAGRAM, TIKTOK & YOUTUBE'),
+          const _FloatingPill(icon: PhosphorIconsRegular.link, label: 'ANY SOURCE · ANY FORMAT'),
           const SizedBox(height: 32),
           RichText(
             textAlign: TextAlign.center,
@@ -228,7 +228,7 @@ class _PageHook extends StatelessWidget {
                 color: scheme.onSurface,
               ),
               children: [
-                const TextSpan(text: 'Reel Gist,\n'),
+                const TextSpan(text: 'Any Link,\n'),
                 TextSpan(
                   text: 'Captured.',
                   style: TextStyle(
@@ -245,10 +245,10 @@ class _PageHook extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          const _FloatingPill(icon: PhosphorIconsRegular.sparkle, label: 'ZERO REWATCHING'),
+          const _FloatingPill(icon: PhosphorIconsRegular.sparkle, label: 'ZERO SCROLLING'),
           const SizedBox(height: 32),
           Text(
-            'See a recipe or workout worth saving? Just hit Share to Cachy. Our AI transcribes and organizes the takeaway instantly.',
+            'Videos, articles, newsletters, Wikipedia — paste any link and Cachy distills the key takeaways into a browsable card.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyLarge?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -295,14 +295,14 @@ class _PageStructure extends StatelessWidget {
                 color: scheme.onSurface,
               ),
               children: [
-                const TextSpan(text: 'Every Video,\n'),
+                const TextSpan(text: 'Every Source,\n'),
                 TextSpan(text: 'Structured.', style: TextStyle(color: scheme.primary)),
               ],
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Messy spoken instructions become clean action cards.',
+            'Videos, articles, threads — any content becomes clean, scannable action cards.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
           ),

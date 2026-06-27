@@ -100,22 +100,25 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            Text('Capture a reel', style: theme.textTheme.headlineSmall),
+            Text('Capture anything', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 6),
             Text(
-              'Paste a link, or share to Cachy from Instagram, TikTok or YouTube.',
+              'Videos, articles, newsletters — paste any link and Cachy builds a knowledge card.',
               style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
 
             // Supported-platform affordance — sets expectations at a glance.
-            const Row(
+            const Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _PlatformChip(label: 'Instagram', dot: Color(0xFFE1306C)),
-                SizedBox(width: 8),
-                _PlatformChip(label: 'TikTok', dot: Color(0xFF22C3D6)),
-                SizedBox(width: 8),
                 _PlatformChip(label: 'YouTube', dot: Color(0xFFE0301E)),
+                _PlatformChip(label: 'Wikipedia', dot: Color(0xFF3A85C8)),
+                _PlatformChip(label: 'Substack', dot: Color(0xFFFF6719)),
+                _PlatformChip(label: 'Medium', dot: Color(0xFF1A8917)),
+                _PlatformChip(label: 'LinkedIn', dot: Color(0xFF0A66C2)),
               ],
             ),
             const SizedBox(height: 20),
@@ -133,7 +136,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               textInputAction: TextInputAction.go,
               onSubmitted: _capture,
               decoration: InputDecoration(
-                hintText: 'Paste a reel link…',
+                hintText: 'Paste any link…',
                 prefixIcon: const PhosphorIcon(PhosphorIconsRegular.link),
                 filled: true,
                 fillColor: scheme.surfaceContainerHigh,

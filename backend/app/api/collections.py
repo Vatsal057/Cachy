@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from app.store import db
@@ -77,8 +77,8 @@ async def rename_collection(
         return _out(row, count)
 
 
-@router.delete("/{collection_id}", status_code=204)
-async def delete_collection(collection_id: str) -> None:
+@router.delete("/{collection_id}", response_class=Response, status_code=204)
+async def delete_collection(collection_id: str) -> Response:
     async with db.session() as session:
         ok = await db.delete_collection(session, collection_id)
         if not ok:
@@ -86,6 +86,7 @@ async def delete_collection(collection_id: str) -> None:
                 status_code=404,
                 detail="collection not found or is a system collection",
             )
+    return Response(status_code=204)
 
 
 @router.post("/cards/{card_id}/move", response_model=dict)

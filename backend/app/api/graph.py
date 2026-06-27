@@ -285,6 +285,7 @@ async def get_graph(
         concept_rows = (
             await session.execute(select(db.ConceptRow))
         ).scalars().all()
+        concept_rows = [c for c in concept_rows if len(c.source_card_ids or []) > 1]
 
     # ---- Build nodes ------------------------------------------------------- #
 

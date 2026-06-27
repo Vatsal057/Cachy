@@ -59,9 +59,8 @@ class _ConceptsView extends StatelessWidget {
           icon: PhosphorIconsRegular.lightbulb,
           title: 'No concepts yet',
           subtitle:
-              'Concepts are extracted automatically when you capture idea-rich '
-              'content — investing theses, psychology breakdowns, science '
-              'explainers, and similar.',
+              'Concepts emerge automatically once recurring themes connect across '
+              'multiple saved reels. Keep capturing idea-rich content!',
         );
       case ConceptsStatus.idle:
       case ConceptsStatus.ready:

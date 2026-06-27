@@ -26,7 +26,8 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
   late ConceptEntry _entry = widget.entry;
   bool _loading = false;
 
-  List<({String id, String title})> _appearsIn = const [];
+  List<({String id, String title, DateTime? date})> _appearsIn = const [];
+  bool _showAllAppears = false;
   List<ConceptEntry> _related = const [];
 
   @override
@@ -48,12 +49,12 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
                   .catchError((_) => null),
             ),
       );
-      final appears = <({String id, String title})>[];
+      final appears = <({String id, String title, DateTime? date})>[];
       for (final c in cards) {
         if (c == null) continue;
         final title =
             c.base.oneLiner.isNotEmpty ? c.base.oneLiner : 'Untitled card';
-        appears.add((id: c.cardId, title: title));
+        appears.add((id: c.cardId, title: title, date: c.meta.createdAt));
       }
       if (mounted) {
         setState(() {
@@ -202,11 +203,20 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
           // Appears in
           if (_appearsIn.isNotEmpty) ...[
             const SizedBox(height: 32),
-            _SectionHeader(label: 'Appears in'),
+            _SectionHeaderWithAction(
+              label: 'Appears in',
+              actionLabel: !_showAllAppears && _appearsIn.length > 4
+                  ? 'See all'
+                  : null,
+              onAction: () => setState(() => _showAllAppears = true),
+            ),
             const SizedBox(height: 12),
-            for (final c in _appearsIn)
+            for (final c in (_showAllAppears
+                ? _appearsIn
+                : _appearsIn.take(4).toList()))
               _AppearsRow(
                 title: c.title,
+                date: c.date,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                       builder: (_) => ReaderScreen(cardId: c.id)),
@@ -243,6 +253,29 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context)
+          .textTheme
+          .titleMedium
+          ?.copyWith(fontWeight: FontWeight.w700),
+    );
+  }
+}
+
+class _SectionHeaderWithAction extends StatelessWidget {
+  const _SectionHeaderWithAction({
+    required this.label,
+    this.actionLabel,
+    this.onAction,
+  });
+  final String label;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Row(
       children: [
         Text(
@@ -252,6 +285,19 @@ class _SectionHeader extends StatelessWidget {
               .titleMedium
               ?.copyWith(fontWeight: FontWeight.w700),
         ),
+        const Spacer(),
+        if (actionLabel != null)
+          GestureDetector(
+            onTap: onAction,
+            child: Text(
+              actionLabel!,
+              style: TextStyle(
+                color: scheme.primary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -362,9 +408,18 @@ class _SummaryCard extends StatelessWidget {
 // ────────────────────────────────────────────────────────────────────────────
 
 class _AppearsRow extends StatelessWidget {
-  const _AppearsRow({required this.title, required this.onTap});
+  const _AppearsRow({required this.title, required this.onTap, this.date});
   final String title;
+  final DateTime? date;
   final VoidCallback onTap;
+
+  String _fmtDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[d.month - 1]} ${d.day}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -408,6 +463,14 @@ class _AppearsRow extends StatelessWidget {
                         ?.copyWith(fontWeight: FontWeight.w500, height: 1.3),
                   ),
                 ),
+                if (date != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    _fmtDate(date!),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 PhosphorIcon(PhosphorIconsRegular.caretRight,
                     size: 16, color: scheme.onSurfaceVariant),
