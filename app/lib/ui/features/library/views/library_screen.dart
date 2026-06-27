@@ -11,7 +11,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/highlight_store.dart';
 import '../../../../domain/models/card.dart' as model;
+import '../../../../domain/models/highlight.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -177,6 +179,7 @@ class _CardsTab extends StatelessWidget {
                 selected: vm.tagFilter,
                 onSelect: vm.setTagFilter,
               ),
+            const _HighlightsSection(),
             Expanded(
               child: visible.isEmpty
                   ? _scrollable(
@@ -221,10 +224,13 @@ class _CardsTab extends StatelessWidget {
         crossAxisSpacing: 14,
         childAspectRatio: 0.72,
       ),
-      itemCount: cards.length,
+      itemCount: cards.length + 1,
       itemBuilder: (ctx, i) {
+        if (i == cards.length) {
+          return _CtaCard(onTap: () => showCaptureSheet(context));
+        }
         final card = cards[i];
-        final tile = CardTile(
+        return CardTile(
           card: card,
           api: api,
           onTap: () => Navigator.of(ctx).push(
@@ -234,8 +240,183 @@ class _CardsTab extends StatelessWidget {
           ),
           onDelete: () => vm.delete(card.cardId),
         );
-        return tile;
       },
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────── //
+// Highlights section — horizontal scroll of saved highlight cards
+// ──────────────────────────────────────────────────────────────────────────── //
+
+class _HighlightsSection extends StatelessWidget {
+  const _HighlightsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final highlights = context.watch<HighlightStore>().highlights;
+    if (highlights.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Insets.page, 14, Insets.page, 10),
+          child: Text(
+            'HIGHLIGHTS',
+            style: Brand.label(
+              size: 10,
+              color: scheme.onSurfaceVariant,
+              weight: FontWeight.w700,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 124,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(Insets.page, 0, Insets.page, 0),
+            itemCount: highlights.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (ctx, i) => _HighlightCard(highlight: highlights[i]),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 0),
+          child: Divider(
+            height: 1,
+            color: scheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HighlightCard extends StatelessWidget {
+  const _HighlightCard({required this.highlight});
+  final Highlight highlight;
+
+  static const _bgColors = [
+    Color(0xFFD9ECCC),
+    Color(0xFFFBEFCC),
+    Color(0xFFCCD8EC),
+    Color(0xFFECCCD4),
+    Color(0xFFDACCEC),
+  ];
+  static const _fgColors = [
+    Color(0xFF2D5A1E),
+    Color(0xFF5A4A10),
+    Color(0xFF1E3A5A),
+    Color(0xFF5A1E2D),
+    Color(0xFF3A1E5A),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final idx = highlight.colorIndex % _bgColors.length;
+    final bg = _bgColors[idx];
+    final fg = _fgColors[idx];
+    final store = context.read<HighlightStore>();
+    final title = highlight.cardTitle.length > 22
+        ? '${highlight.cardTitle.substring(0, 22)}…'
+        : highlight.cardTitle;
+
+    return Dismissible(
+      key: Key(highlight.id),
+      direction: DismissDirection.up,
+      onDismissed: (_) => store.delete(highlight.id),
+      child: Container(
+        width: 158,
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                highlight.text,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: fg,
+                  height: 1.4,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '— $title',
+              style: Brand.label(
+                size: 9,
+                color: fg.withValues(alpha: 0.55),
+                weight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────── //
+// CTA card — last grid tile, prompts the user to capture more
+// ──────────────────────────────────────────────────────────────────────────── //
+
+class _CtaCard extends StatelessWidget {
+  const _CtaCard({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.45),
+            width: 1.5,
+          ),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: PhosphorIcon(
+                PhosphorIconsRegular.plus,
+                size: 20,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Capture\nanother reel',
+              textAlign: TextAlign.center,
+              style: Brand.label(
+                size: 9.5,
+                color: scheme.onSurfaceVariant,
+                weight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

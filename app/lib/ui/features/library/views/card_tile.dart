@@ -117,10 +117,30 @@ class _CardTileState extends State<CardTile> {
                           children: [
                             PhosphorIcon(accent.icon, size: 13, color: Colors.white70),
                             const SizedBox(width: 5),
-                            Text(
-                              widget.card.base.contentType.label.toUpperCase(),
-                              style: Brand.label(size: 9, color: Colors.white70, weight: FontWeight.w700),
+                            Flexible(
+                              child: Text(
+                                widget.card.base.contentType.label.toUpperCase(),
+                                style: Brand.label(size: 9, color: Colors.white70, weight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
+                            if (widget.card.base.tags.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                constraints: const BoxConstraints(maxWidth: 64),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  widget.card.base.tags.first,
+                                  style: Brand.label(size: 7.5, color: Colors.white60, weight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 5),

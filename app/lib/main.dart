@@ -14,6 +14,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import 'data/repositories/card_repository.dart';
 import 'data/services/api_client.dart';
+import 'data/services/highlight_store.dart';
 import 'data/services/local_store.dart';
 import 'ui/core/app_controller.dart';
 import 'ui/core/root_gate.dart';
@@ -24,11 +25,16 @@ Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   final store = await LocalStore.open();
+  final highlightStore = await HighlightStore.open();
   final api = ApiClient();
   final repository = CardRepository(api: api, store: store);
   final appController = AppController(store);
   FlutterNativeSplash.remove();
-  runApp(CachyApp(repository: repository, appController: appController));
+  runApp(CachyApp(
+    repository: repository,
+    appController: appController,
+    highlightStore: highlightStore,
+  ));
 }
 
 class CachyApp extends StatefulWidget {
@@ -36,9 +42,11 @@ class CachyApp extends StatefulWidget {
     super.key,
     required this.repository,
     required this.appController,
+    required this.highlightStore,
   });
   final CardRepository repository;
   final AppController appController;
+  final HighlightStore highlightStore;
 
   @override
   State<CachyApp> createState() => _CachyAppState();
@@ -108,6 +116,7 @@ class _CachyAppState extends State<CachyApp> {
       providers: [
         ChangeNotifierProvider<CardRepository>.value(value: widget.repository),
         ChangeNotifierProvider<AppController>.value(value: widget.appController),
+        ChangeNotifierProvider<HighlightStore>.value(value: widget.highlightStore),
       ],
       child: Consumer<AppController>(
         builder: (context, app, _) => MaterialApp(
