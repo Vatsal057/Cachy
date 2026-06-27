@@ -27,6 +27,7 @@ class BlockList extends StatelessWidget {
     this.artifacts = const [],
     this.onOpenArtifact,
     this.animate = true,
+    this.onHighlight,
   });
 
   final List<Block> blocks;
@@ -40,6 +41,9 @@ class BlockList extends StatelessWidget {
   final void Function(CatalogEntry)? onOpenArtifact;
 
   final bool animate;
+
+  /// Called when the user long-presses a text line to save a highlight.
+  final void Function(String text)? onHighlight;
 
   @override
   Widget build(BuildContext context) {
@@ -138,11 +142,11 @@ class BlockList extends StatelessWidget {
       case HeadingBlock b:
         return _Heading(b);
       case ParagraphBlock b:
-        return _Paragraph(b);
+        return _Paragraph(b, onHighlight: onHighlight);
       case BulletListBlock b:
-        return _BulletList(b);
+        return _BulletList(b, onHighlight: onHighlight);
       case StepListBlock b:
-        return _StepList(block: b, onToggle: onToggleStep);
+        return _StepList(block: b, onToggle: onToggleStep, onHighlight: onHighlight);
       case KeyValueBlock b:
         return _KeyValue(b);
       case ChecklistBlock b:
@@ -218,17 +222,29 @@ class _Heading extends StatelessWidget {
 }
 
 class _Paragraph extends StatelessWidget {
-  const _Paragraph(this.block);
+  const _Paragraph(this.block, {this.onHighlight});
   final ParagraphBlock block;
+  final void Function(String)? onHighlight;
 
   @override
-  Widget build(BuildContext context) =>
-      RichInlineText(block.text, style: Theme.of(context).textTheme.bodyLarge);
+  Widget build(BuildContext context) {
+    final child = RichInlineText(block.text, style: Theme.of(context).textTheme.bodyLarge);
+    if (onHighlight == null) return child;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        onHighlight!(block.text);
+      },
+      child: child,
+    );
+  }
 }
 
 class _BulletList extends StatelessWidget {
-  const _BulletList(this.block);
+  const _BulletList(this.block, {this.onHighlight});
   final BulletListBlock block;
+  final void Function(String)? onHighlight;
 
   @override
   Widget build(BuildContext context) {
@@ -237,26 +253,36 @@ class _BulletList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final item in block.items)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 9, right: 12),
-                  child: Container(
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      shape: BoxShape.circle,
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: null,
+            onLongPress: onHighlight == null
+                ? null
+                : () {
+                    HapticFeedback.mediumImpact();
+                    onHighlight!(item);
+                  },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 9, right: 12),
+                    child: Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: RichInlineText(item, style: theme.textTheme.bodyLarge),
-                ),
-              ],
+                  Expanded(
+                    child: RichInlineText(item, style: theme.textTheme.bodyLarge),
+                  ),
+                ],
+              ),
             ),
           ),
       ],
@@ -265,9 +291,10 @@ class _BulletList extends StatelessWidget {
 }
 
 class _StepList extends StatelessWidget {
-  const _StepList({required this.block, this.onToggle});
+  const _StepList({required this.block, this.onToggle, this.onHighlight});
   final StepListBlock block;
   final ToggleCallback? onToggle;
+  final void Function(String)? onHighlight;
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +307,9 @@ class _StepList extends StatelessWidget {
             step: block.steps[i],
             onToggle: block.steps[i].checkable && onToggle != null
                 ? (checked) => onToggle!(block.id, i, checked)
+                : null,
+            onHighlight: onHighlight != null
+                ? () => onHighlight!(block.steps[i].text)
                 : null,
           ),
         if (block.steps.isEmpty)
@@ -360,10 +390,11 @@ class _Connector extends StatelessWidget {
 }
 
 class _StepRow extends StatelessWidget {
-  const _StepRow({required this.number, required this.step, this.onToggle});
+  const _StepRow({required this.number, required this.step, this.onToggle, this.onHighlight});
   final int number;
   final Step step;
   final ValueChanged<bool>? onToggle;
+  final VoidCallback? onHighlight;
 
   @override
   Widget build(BuildContext context) {
@@ -375,6 +406,12 @@ class _StepRow extends StatelessWidget {
           : () {
               HapticFeedback.selectionClick();
               onToggle!(!done);
+            },
+      onLongPress: onHighlight == null
+          ? null
+          : () {
+              HapticFeedback.mediumImpact();
+              onHighlight!();
             },
       borderRadius: BorderRadius.circular(10),
       child: Padding(

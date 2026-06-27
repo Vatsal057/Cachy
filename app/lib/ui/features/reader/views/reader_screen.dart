@@ -12,10 +12,12 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/highlight_store.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
 import '../../../../domain/models/concept.dart';
 import '../../../../domain/models/enums.dart';
+import '../../../../domain/models/highlight.dart';
 import '../../../../domain/models/pipeline_event.dart';
 import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
@@ -77,6 +79,25 @@ class _ReaderView extends StatelessWidget {
     final card = vm.card!;
     final accent = ContentAccent.of(card.base.contentType);
     final readMins = _estimateReadMinutes(card);
+    final highlightStore = context.read<HighlightStore>();
+
+    void onHighlight(String text) {
+      highlightStore.add(Highlight(
+        id: '${DateTime.now().millisecondsSinceEpoch}',
+        cardId: card.cardId,
+        cardTitle: card.base.oneLiner,
+        text: text,
+        colorIndex: highlightStore.highlights.length % 5,
+        createdAt: DateTime.now(),
+      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saved to highlights'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
 
     return Scaffold(
       body: CustomScrollView(
@@ -128,6 +149,12 @@ class _ReaderView extends StatelessWidget {
                       else if (card.isProcessing)
                         const _SkeletonTldrCard(),
 
+                      // Ornamental divider + highlight hint (once card is ready)
+                      if (card.isReady && card.blocks.isNotEmpty) ...[
+                        const _OrnamentalDivider(),
+                        const _HighlightHint(),
+                      ],
+
                       // Structured blocks — skeleton while building, fades in on arrival
                       if (card.blocks.isNotEmpty) ...[
                         _fadeIn(BlockList(
@@ -137,6 +164,7 @@ class _ReaderView extends StatelessWidget {
                           onOpenUrl: (url) => _copyUrl(context, url),
                           artifacts: vm.artifacts,
                           onOpenArtifact: (e) => openLookup(e),
+                          onHighlight: card.isReady ? onHighlight : null,
                         )),
                         if (card.isProcessing) ...[
                           const SizedBox(height: 12),
@@ -1021,6 +1049,54 @@ class _SourceLine extends StatelessWidget {
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Editorial ornament + highlight hint
+// ────────────────────────────────────────────────────────────────────────────
+
+class _OrnamentalDivider extends StatelessWidget {
+  const _OrnamentalDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: c, height: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: PhosphorIcon(PhosphorIconsRegular.asterisk, size: 10, color: c),
+          ),
+          Expanded(child: Divider(color: c, height: 1)),
+        ],
+      ),
+    );
+  }
+}
+
+class _HighlightHint extends StatelessWidget {
+  const _HighlightHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        children: [
+          PhosphorIcon(PhosphorIconsRegular.pencilSimple, size: 12, color: c),
+          const SizedBox(width: 6),
+          Text(
+            'Hold any line to save a highlight',
+            style: Brand.label(size: 10, color: c, weight: FontWeight.w500),
           ),
         ],
       ),
