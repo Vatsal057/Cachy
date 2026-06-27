@@ -109,3 +109,31 @@ def test_extract_article_branch_skips_media(tmp_path):
     assert result.thumbnail == "https://img/lead.jpg"  # remote, not downloaded
     assert result.keyframes == []
     assert result.had_transcript is False
+
+
+def test_fetch_substack_note(monkeypatch):
+    note_preloads = {
+        "feedData": {
+            "feedItem": {
+                "comment": {
+                    "name": "Thee Book Club",
+                    "body": "Love letters to literature",
+                    "attachments": [
+                        {"type": "image", "imageUrl": "https://img/book.jpg"}
+                    ],
+                    "bio": "Literary publication"
+                }
+            }
+        }
+    }
+    html = f'<script>window._preloads = JSON.parse("{json.dumps(json.dumps(note_preloads))[1:-1]}");</script>'
+    monkeypatch.setattr("requests.get", lambda *a, **k: type("Resp", (), {"text": html, "status_code": 200})())
+    
+    art = article.fetch_article("https://substack.com/@user/note/c-123")
+    assert art is not None
+    assert art.title == "Note by Thee Book Club"
+    assert "Love letters to literature" in art.text
+    assert "[Attached Image: https://img/book.jpg]" in art.text
+    assert art.image_url == "https://img/book.jpg"
+    assert art.site == "substack"
+

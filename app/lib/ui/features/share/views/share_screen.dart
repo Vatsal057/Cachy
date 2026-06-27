@@ -11,7 +11,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
-import '../../../../domain/models/pipeline_event.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/pipeline_progress.dart';
@@ -34,9 +33,16 @@ class ShareScreen extends StatelessWidget {
   }
 }
 
-class _ShareView extends StatelessWidget {
+class _ShareView extends StatefulWidget {
   const _ShareView({required this.sharedUrl});
   final String sharedUrl;
+
+  @override
+  State<_ShareView> createState() => _ShareViewState();
+}
+
+class _ShareViewState extends State<_ShareView> {
+  bool _opened = false;
 
   @override
   Widget build(BuildContext context) {
@@ -44,12 +50,11 @@ class _ShareView extends StatelessWidget {
     final theme = Theme.of(context);
     final isProcessing = vm.status == ShareStatus.idle || vm.status == ShareStatus.processing;
 
-    // Auto-advance into the reader the moment dedup resolves to an existing card.
-    if (vm.status == ShareStatus.ready &&
-        vm.cardId != null &&
-        vm.stage == PipelineStage.snapshot) {
+    // Auto-advance into the reader as soon as the card is ready.
+    if (vm.status == ShareStatus.ready && vm.cardId != null && !_opened) {
+      _opened = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) _openReader(context, vm.cardId!);
+        if (mounted) _openReader(context, vm.cardId!);
       });
     }
 
@@ -85,7 +90,7 @@ class _ShareView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _UrlChip(url: sharedUrl),
+              _UrlChip(url: widget.sharedUrl),
               const SizedBox(height: 24),
               Expanded(child: _content(context, vm)),
             ],
@@ -136,9 +141,9 @@ class _ShareView extends StatelessWidget {
 
       case ShareStatus.failed:
         return _FailedView(
-          url: sharedUrl,
+          url: widget.sharedUrl,
           reason: vm.failureReason,
-          onRetry: () => context.read<ShareViewModel>().submit(sharedUrl),
+          onRetry: () => context.read<ShareViewModel>().submit(widget.sharedUrl),
           onCancel: () => Navigator.pop(context),
         );
 

@@ -79,20 +79,39 @@ class _LibraryView extends StatelessWidget {
             ),
             const SizedBox(width: 4),
           ],
-          bottom: TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            indicatorSize: TabBarIndicatorSize.label,
-            indicatorColor: scheme.primary,
-            labelColor: scheme.onSurface,
-            unselectedLabelColor: scheme.onSurfaceVariant,
-            labelStyle: Brand.label(size: 13, weight: FontWeight.w700),
-            unselectedLabelStyle: Brand.label(size: 13, weight: FontWeight.w500),
-            tabs: const [
-              Tab(text: 'CARDS'),
-              Tab(text: 'CONCEPTS'),
-              Tab(text: 'GRAPH'),
-            ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(52),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(Insets.page, 0, Insets.page, 10),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TabBar(
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1)),
+                    ],
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicatorPadding: const EdgeInsets.all(3),
+                  labelColor: scheme.onSurface,
+                  unselectedLabelColor: scheme.onSurfaceVariant,
+                  labelStyle: Brand.label(size: 12, weight: FontWeight.w700),
+                  unselectedLabelStyle: Brand.label(size: 12, weight: FontWeight.w500),
+                  tabs: const [
+                    Tab(text: 'CARDS'),
+                    Tab(text: 'CONCEPTS'),
+                    Tab(text: 'GRAPH'),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
         body: const TabBarView(
@@ -255,7 +274,7 @@ class _TagBar extends StatelessWidget {
                   weight: selected == tag ? FontWeight.w700 : FontWeight.w500,
                 ),
                 side: BorderSide(color: scheme.outlineVariant),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: const StadiumBorder(),
                 showCheckmark: false,
               ),
             ),

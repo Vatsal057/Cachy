@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+
+import requests
 
 from app.config import get_settings
 from app.pipeline.ingestion.downloader import DownloadResult
@@ -263,34 +266,72 @@ def _aggregate(caption: str, transcript: str, ocr_text: str, source_line: str) -
 
 
 def _aggregate_article(
-    title: str, text: str, author: str | None, source_line: str
+    title: str, text: str, author: str | None, ocr_text: str, source_line: str
 ) -> str:
-    """Text-source bundle (docs/02 article path): no audio/frames, the body is the
-    content. Same labeled shape the structuring prompt already consumes."""
+    """Text-source bundle (docs/02 article path): includes vision descriptions
+    for attached/lead images when present."""
     parts = [
         f"TITLE: {title.strip()}" if title.strip() else "TITLE:",
         f"AUTHOR: {author.strip()}" if author and author.strip() else "AUTHOR:",
         f"ARTICLE TEXT: {text.strip()}" if text.strip() else "ARTICLE TEXT:",
-        f"SOURCE: {source_line}",
     ]
+    if ocr_text.strip():
+        parts.append(f"ATTACHED VISUAL CONTENT / ON-SCREEN TEXT:\n{ocr_text.strip()}")
+    parts.append(f"SOURCE: {source_line}")
     return "\n".join(parts)
 
 
-def _extract_article(download: DownloadResult, source_line: str) -> ExtractionResult:
-    """Article path: skip ffmpeg/Whisper/OCR entirely. The lead image (if any) is
-    a remote URL used directly as the thumbnail — nothing is downloaded."""
+def _extract_article(
+    download: DownloadResult, work_dir: str, source_line: str
+) -> ExtractionResult:
+    """Article path: extract text and run VLM on attached or lead images if present."""
+    os.makedirs(work_dir, exist_ok=True)
+    image_urls: list[str] = []
+    if download.image_url and download.image_url.startswith("http"):
+        image_urls.append(download.image_url)
+    for match in re.finditer(r"\[Attached Image:\s*(https?://[^\]]+)\]", download.text or ""):
+        url = match.group(1).strip()
+        if url not in image_urls:
+            image_urls.append(url)
+
+    frames: list[str] = []
+    for idx, img_url in enumerate(image_urls[:_MAX_FRAMES]):
+        try:
+            resp = requests.get(img_url, timeout=5)
+            if resp.status_code == 200 and resp.content:
+                ext = "jpeg"
+                if ".png" in img_url.lower():
+                    ext = "png"
+                elif ".webp" in img_url.lower():
+                    ext = "webp"
+                frame_path = os.path.join(work_dir, f"article_img_{idx}.{ext}")
+                with open(frame_path, "wb") as f:
+                    f.write(resp.content)
+                frames.append(frame_path)
+        except Exception as e:
+            log.debug("Failed to download article image %s: %s", img_url, e)
+
+    ocr_text = ""
+    had_visual = False
+    if frames:
+        ocr_text = _vision_read(frames)
+        if not ocr_text.strip():
+            ocr_text = _ocr(frames)
+        had_visual = bool(ocr_text.strip())
+
     aggregated = _aggregate_article(
-        download.title, download.text, download.author, source_line
+        download.title, download.text, download.author, ocr_text, source_line
     )
+    thumbnail = download.image_url or (frames[0] if frames else None)
     return ExtractionResult(
         aggregated_text=aggregated,
         transcript=download.text,  # gives base-synth / paragraph-fallback real text
-        ocr_text="",
-        thumbnail=download.image_url,
-        keyframes=[],
+        ocr_text=ocr_text,
+        thumbnail=thumbnail,
+        keyframes=frames,
         had_transcript=False,
-        had_ocr=False,
-        had_visual=False,
+        had_ocr=bool(ocr_text.strip()),
+        had_visual=had_visual,
     )
 
 
@@ -304,7 +345,7 @@ def extract(
     """Run the extraction pipeline against a DownloadResult. `work_dir` is the
     per-card directory where audio/frames live."""
     if download.media_type == "article":
-        return _extract_article(download, source_line)
+        return _extract_article(download, work_dir, source_line)
 
     os.makedirs(work_dir, exist_ok=True)
     settings = get_settings()
