@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import or_, select, update
 
+from app.api.graph import invalidate_graph_cache
 from app.config import get_settings
 from app.models.card import CardState, ContentType, FailureReason
 from app.models.job import JobState
@@ -107,7 +108,10 @@ async def _write_blocks(session, card_id: str, blocks: list[dict]) -> None:
 
 
 async def _write_collection(session, card_id: str, content_type: ContentType, owner_id: str | None) -> None:
-    """Auto-assign the card to its system collection, creating the collection if absent."""
+    """Auto-assign the card to its system collection if not already organized into a custom collection."""
+    card = await db.get_card_row(session, card_id)
+    if card is not None and card.collection_id is not None:
+        return
     collection = await db.get_or_create_collection(
         session, owner_id=owner_id, system_type=content_type.value
     )
@@ -211,6 +215,7 @@ async def _finish_ready(session, card_id: str, job: db.JobRow) -> None:
     job.state = JobState.DONE.value
     job.finished_at = _utcnow()
     await session.commit()
+    invalidate_graph_cache()
 
 
 async def _fail(
@@ -321,7 +326,13 @@ async def _run_job(session, job: db.JobRow) -> None:
     log.info("%s Step 4/6 persist: writing base -> blocks -> media", tag)
     await _write_base(session, card_id, structured)
     await _write_collection(session, card_id, structured.base.content_type, card.owner_id)
-    await _write_blocks(session, card_id, structured.blocks)
+    current_blocks = []
+    for i, block in enumerate(structured.blocks, 1):
+        current_blocks.append(block)
+        await _write_blocks(session, card_id, current_blocks)
+        heading = block.get("heading") or block.get("title") or f"section {i}"
+        events.publish(card_id, "persisting", "processing", f"Adding {heading}...")
+        await asyncio.sleep(0.4)
     await _write_media_and_meta(
         session, card_id, extraction, download.caption or "", download.resolver,
         creator=download.author,

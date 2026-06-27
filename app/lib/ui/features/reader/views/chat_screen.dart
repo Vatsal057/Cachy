@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/rich_text.dart';
 import '../view_models/chat_view_model.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -199,7 +200,7 @@ class _Bubble extends StatelessWidget {
           ),
           border: isUser ? null : Border.all(color: scheme.outlineVariant),
         ),
-        child: Text(
+        child: RichInlineText(
           message.content,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: isUser ? scheme.onSecondary : scheme.onSurface,

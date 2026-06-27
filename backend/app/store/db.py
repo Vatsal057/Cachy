@@ -3,6 +3,7 @@ card row, not a table-per-block-type (docs/08). The jobs table is the queue."""
 
 from __future__ import annotations
 
+import difflib
 import uuid
 from datetime import datetime, timezone
 
@@ -18,6 +19,7 @@ from sqlalchemy import (
     func,
     select,
     text,
+    update,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -25,6 +27,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.store import media as media_store
@@ -356,6 +359,7 @@ async def upsert_artifact(
     creator: str | None,
     year: int | None,
     thumbnail: str | None,
+    saved: bool = False,
 ) -> ArtifactRow:
     """Insert a catalog item or merge into the existing one (dedupe by type+title).
     Appends card_id to source_card_ids and backfills a missing thumbnail."""
@@ -375,12 +379,15 @@ async def upsert_artifact(
             year=year,
             thumbnail=thumbnail,
             source_card_ids=[card_id],
-            saved=False,
+            saved=saved,
         )
         db.add(row)
     else:
+        if saved:
+            row.saved = True
         if card_id not in (row.source_card_ids or []):
             row.source_card_ids = [*(row.source_card_ids or []), card_id]
+            flag_modified(row, "source_card_ids")
         if not row.thumbnail and thumbnail:
             row.thumbnail = thumbnail
         if not row.creator and creator:
@@ -532,19 +539,41 @@ def _norm_name(name: str) -> str:
     return " ".join(name.lower().split())
 
 
+def _is_similar_concept(norm1: str, norm2: str) -> bool:
+    if norm1 == norm2:
+        return True
+    words1 = set(norm1.split())
+    words2 = set(norm2.split())
+    if len(words1) >= 2 and len(words2) >= 2:
+        if words1 <= words2 or words2 <= words1:
+            return True
+        intersection = words1 & words2
+        union = words1 | words2
+        if len(intersection) / len(union) >= 0.65:
+            return True
+    ratio = difflib.SequenceMatcher(None, norm1, norm2).ratio()
+    return ratio >= 0.78
+
+
 async def upsert_concept(
     db: AsyncSession,
     *,
     card_id: str,
     name: str,
 ) -> ConceptRow:
-    """Insert a concept or merge into the existing one (dedupe by name_norm).
+    """Insert a concept or merge into the existing one (dedupe by exact or fuzzy similarity).
     Appends card_id to source_card_ids."""
     norm = _norm_name(name)
     res = await db.execute(
         select(ConceptRow).where(ConceptRow.name_norm == norm)
     )
     row = res.scalar_one_or_none()
+    if row is None:
+        all_rows = (await db.execute(select(ConceptRow))).scalars().all()
+        for c in all_rows:
+            if _is_similar_concept(norm, c.name_norm):
+                row = c
+                break
     if row is None:
         row = ConceptRow(
             name=name,
@@ -555,6 +584,7 @@ async def upsert_concept(
     else:
         if card_id not in (row.source_card_ids or []):
             row.source_card_ids = [*(row.source_card_ids or []), card_id]
+            flag_modified(row, "source_card_ids")
     await db.commit()
     return row
 
@@ -569,3 +599,58 @@ async def set_concept_definition(
     row.definition = definition
     await db.commit()
     return row
+
+
+async def cleanup_after_card_deletion(
+    db: AsyncSession, card_id: str
+) -> None:
+    """Clean up orphaned collections, concepts, and catalog artifacts after a card is deleted."""
+    # 1. Clean up concepts referencing this card
+    concepts = (await db.execute(select(ConceptRow))).scalars().all()
+    for concept in concepts:
+        current_ids = list(concept.source_card_ids or [])
+        if card_id in current_ids:
+            new_ids = [c for c in current_ids if c != card_id]
+            if not new_ids:
+                await db.delete(concept)
+            else:
+                concept.source_card_ids = new_ids
+                flag_modified(concept, "source_card_ids")
+
+    # 2. Clean up catalog artifacts referencing this card
+    artifacts = (await db.execute(select(ArtifactRow))).scalars().all()
+    for art in artifacts:
+        current_ids = list(art.source_card_ids or [])
+        if card_id in current_ids:
+            new_ids = [c for c in current_ids if c != card_id]
+            if not new_ids:
+                await db.delete(art)
+            else:
+                art.source_card_ids = new_ids
+                flag_modified(art, "source_card_ids")
+
+    # 3. Clean up empty custom collections
+    cols = (
+        await db.execute(
+            select(CollectionRow).where(CollectionRow.is_custom.is_(True))
+        )
+    ).scalars().all()
+    for col in cols:
+        count_res = await db.execute(
+            select(func.count())
+            .select_from(CardRow)
+            .where(CardRow.collection_id == col.id)
+        )
+        if (count_res.scalar_one() or 0) == 0:
+            await db.delete(col)
+
+
+async def reset_orphaned_processing_jobs(db: AsyncSession) -> int:
+    """Reset jobs stuck in PROCESSING back to QUEUED on startup."""
+    res = await db.execute(
+        update(JobRow)
+        .where(JobRow.state == "processing")
+        .values(state="queued")
+    )
+    await db.commit()
+    return res.rowcount

@@ -124,3 +124,38 @@ async def _first_job_id(session, card_id: str) -> str:
     from sqlalchemy import select
     res = await session.execute(select(db.JobRow.id).where(db.JobRow.card_id == card_id))
     return res.scalar_one()
+
+
+async def test_reset_orphaned_processing_jobs(database):
+    card_id, job_id = await _make_card_and_job("https://instagram.com/reel/orphaned")
+    async with db.session() as s:
+        job = await s.get(db.JobRow, job_id)
+        job.state = JobState.PROCESSING.value
+        await s.commit()
+
+    async with db.session() as s:
+        count = await db.reset_orphaned_processing_jobs(s)
+        assert count == 1
+        job = await s.get(db.JobRow, job_id)
+        assert job.state == JobState.QUEUED.value
+
+
+async def test_preserve_custom_collection(database, stub_pipeline):
+    card_id, _ = await _make_card_and_job("https://instagram.com/reel/custom_col")
+    async with db.session() as s:
+        custom_col = await db.create_custom_collection(s, name="My Custom Folder", owner_id=None)
+        row = await db.get_card_row(s, card_id)
+        row.collection_id = custom_col.id
+        await s.commit()
+
+    async with db.session() as s:
+        jid = await _first_job_id(s, card_id)
+        job = await s.get(db.JobRow, jid)
+        await worker._run_job(s, job)
+
+    async with db.session() as s:
+        row = await db.get_card_row(s, card_id)
+        assert row.collection_id is not None
+        col = await s.get(db.CollectionRow, row.collection_id)
+        assert col.name == "My Custom Folder"
+

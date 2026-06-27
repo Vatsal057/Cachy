@@ -18,7 +18,7 @@ async def client(database):
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "1.4"
+    assert r.json()["schema_version"] == "1.5"
 
 
 async def test_create_returns_id_and_queued(client):
@@ -93,15 +93,15 @@ async def test_catalog_upsert_dedupes_and_lists(client, database):
     async with database.session() as s:
         await database.upsert_artifact(
             s, card_id="c1", type_="book", title="Atomic Habits",
-            creator="James Clear", year=2018, thumbnail="http://x/a.jpg",
+            creator="James Clear", year=2018, thumbnail="http://x/a.jpg", saved=True,
         )
         await database.upsert_artifact(
             s, card_id="c2", type_="book", title="atomic   habits",
-            creator=None, year=None, thumbnail=None,
+            creator=None, year=None, thumbnail=None, saved=True,
         )
         await database.upsert_artifact(
             s, card_id="c3", type_="movie", title="Inception",
-            creator="Nolan", year=2010, thumbnail=None,
+            creator="Nolan", year=2010, thumbnail=None, saved=True,
         )
 
     r = await client.get("/catalog")
@@ -187,7 +187,7 @@ async def test_catalog_detail_and_delete(client, database):
     async with database.session() as s:
         row = await database.upsert_artifact(
             s, card_id="c1", type_="podcast", title="Lex Fridman",
-            creator=None, year=None, thumbnail=None,
+            creator=None, year=None, thumbnail=None, saved=True,
         )
         artifact_id = row.id
 
@@ -294,3 +294,85 @@ async def test_search_mode_text_works(client):
     r = await client.get("/search", params={"q": "anything", "mode": "text"})
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+async def test_delete_card_cascades_cleanup(client, database):
+    from sqlalchemy import select
+    async with database.session() as s:
+        c1 = database.CardRow(id="del-1", source_url="http://x/1", state="ready")
+        c2 = database.CardRow(id="del-2", source_url="http://x/2", state="ready")
+        s.add_all([c1, c2])
+        await s.commit()
+
+        col = await database.create_custom_collection(s, name="My Folder", owner_id=None)
+        await database.move_card_to_collection(s, "del-1", col.id)
+
+        await database.upsert_concept(s, name="Idea Solo", card_id="del-1")
+        await database.upsert_concept(s, name="Idea Shared", card_id="del-1")
+        await database.upsert_concept(s, name="Idea Shared", card_id="del-2")
+
+        await database.upsert_artifact(s, card_id="del-1", type_="book", title="Book Solo", creator=None, year=None, thumbnail=None, saved=True)
+        await database.upsert_artifact(s, card_id="del-1", type_="book", title="Book Shared", creator=None, year=None, thumbnail=None, saved=True)
+        await database.upsert_artifact(s, card_id="del-2", type_="book", title="Book Shared", creator=None, year=None, thumbnail=None, saved=True)
+
+    res = await client.delete("/cards/del-1")
+    assert res.status_code == 200
+
+    async with database.session() as s:
+        col_row = await s.get(database.CollectionRow, col.id)
+        assert col_row is None
+
+        solo_c = (await s.execute(select(database.ConceptRow).where(database.ConceptRow.name == "Idea Solo"))).scalar_one_or_none()
+        assert solo_c is None
+
+        shared_c = (await s.execute(select(database.ConceptRow).where(database.ConceptRow.name == "Idea Shared"))).scalar_one()
+        assert shared_c.source_card_ids == ["del-2"]
+
+        solo_a = (await s.execute(select(database.ArtifactRow).where(database.ArtifactRow.title == "Book Solo"))).scalar_one_or_none()
+        assert solo_a is None
+
+        shared_a = (await s.execute(select(database.ArtifactRow).where(database.ArtifactRow.title == "Book Shared"))).scalar_one()
+        assert shared_a.source_card_ids == ["del-2"]
+
+
+@pytest.mark.asyncio
+async def test_concepts_filtering_multi_reel(client):
+    from app.store import db as database
+    async with database.session() as s:
+        c1 = database.CardRow(id="f-1", source_url="http://f/1", state="ready")
+        c2 = database.CardRow(id="f-2", source_url="http://f/2", state="ready")
+        s.add_all([c1, c2])
+        await s.commit()
+
+        await database.upsert_concept(s, name="Single Reel Concept", card_id="f-1")
+        await database.upsert_concept(s, name="Multi Reel Concept", card_id="f-1")
+        await database.upsert_concept(s, name="Multi Reel Concept", card_id="f-2")
+
+    res = await client.get("/concepts")
+    assert res.status_code == 200
+    data = res.json()
+    names = [item["name"] for item in data]
+    assert "Multi Reel Concept" in names
+    assert "Single Reel Concept" not in names
+
+    res_card = await client.get("/concepts?card_id=f-1")
+    assert res_card.status_code == 200
+    card_names = [item["name"] for item in res_card.json()]
+    assert "Single Reel Concept" in card_names
+    assert "Multi Reel Concept" in card_names
+
+
+@pytest.mark.asyncio
+async def test_similar_concept_merging(client):
+    from app.store import db as database
+    async with database.session() as s:
+        c1 = database.CardRow(id="sim-1", source_url="http://sim/1", state="ready")
+        c2 = database.CardRow(id="sim-2", source_url="http://sim/2", state="ready")
+        s.add_all([c1, c2])
+        await s.commit()
+
+        row1 = await database.upsert_concept(s, name="Spaced Repetition", card_id="sim-1")
+        row2 = await database.upsert_concept(s, name="Spaced Repetition System", card_id="sim-2")
+        assert row1.id == row2.id
+        assert set(row2.source_card_ids) == {"sim-1", "sim-2"}
+

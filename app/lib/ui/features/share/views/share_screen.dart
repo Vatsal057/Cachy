@@ -150,112 +150,117 @@ class _ShareView extends StatelessWidget {
       case ShareStatus.idle:
       case ShareStatus.processing:
         final progress = PipelineProgress.calculateProgress(vm.stage);
-        return Column(
-          children: [
-            const SizedBox(height: 20),
-            SizedBox(
-              width: 180,
-              height: 180,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 180,
-                    height: 180,
-                    child: CircularProgressIndicator(
-                      value: 1.0,
-                      strokeWidth: 6,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    height: 180,
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0.0, end: progress),
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, val, _) => CircularProgressIndicator(
-                        value: val,
-                        strokeWidth: 6,
-                        valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
-                        strokeCap: StrokeCap.round,
+        return Center(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: 140,
+                  height: 140,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 140,
+                        height: 140,
+                        child: CircularProgressIndicator(
+                          value: 1.0,
+                          strokeWidth: 6,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+                        ),
                       ),
-                    ),
-                  ),
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                    ),
-                    child: Center(
-                      child: Container(
-                        width: 56,
-                        height: 56,
+                      SizedBox(
+                        width: 140,
+                        height: 140,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(begin: 0.0, end: progress),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, val, _) => CircularProgressIndicator(
+                            value: val,
+                            strokeWidth: 6,
+                            valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+                            strokeCap: StrokeCap.round,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 68,
+                        height: 68,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: theme.colorScheme.primary,
-                          boxShadow: [
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.45),
-                              blurRadius: 32,
-                            ),
-                          ],
+                          color: theme.colorScheme.primary.withValues(alpha: 0.12),
                         ),
-                        child: PhosphorIcon(PhosphorIconsRegular.sparkle, color: theme.colorScheme.onPrimary, size: 28),
+                        child: Center(
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: theme.colorScheme.primary,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: theme.colorScheme.primary.withValues(alpha: 0.45),
+                                  blurRadius: 28,
+                                ),
+                              ],
+                            ),
+                            child: PhosphorIcon(PhosphorIconsRegular.sparkle, color: theme.colorScheme.onPrimary, size: 24),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 28),
-            Text(
-              'Building your card',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'This usually takes under 30 seconds',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 36),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: PipelineProgress(current: vm.stage, detail: vm.detail),
-              ),
-            ),
-            if (vm.cardId != null) ...[
-              OutlinedButton(
-                onPressed: () => _openReader(context, vm.cardId!),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text('Open while it builds'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'Cancel',
+                const SizedBox(height: 24),
+                Text(
+                  'Building your card',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This usually takes under 30 seconds',
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
-              ),
+                const SizedBox(height: 28),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: PipelineProgress(current: vm.stage, detail: vm.detail),
+                ),
+                const SizedBox(height: 28),
+                if (vm.cardId != null) ...[
+                  OutlinedButton(
+                    onPressed: () => _openReader(context, vm.cardId!),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(50),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text('Open while it builds'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Cancel',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
         );
     }
   }

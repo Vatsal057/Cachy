@@ -94,7 +94,14 @@ class CardRepository extends ChangeNotifier {
     return json == null ? null : Card.fromJson(json);
   }
 
-  Stream<PipelineEvent> stream(String cardId) => _api.streamCard(cardId);
+  Stream<PipelineEvent> stream(String cardId) {
+    return _api.streamCard(cardId).map((event) {
+      if (event.isTerminal) {
+        notifyListeners();
+      }
+      return event;
+    });
+  }
 
   /// Optimistically persist toggled checklist/step state. The full block list is
   /// PATCHed (server stores blocks JSON verbatim).
