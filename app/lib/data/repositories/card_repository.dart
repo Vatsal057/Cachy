@@ -76,6 +76,30 @@ class CardRepository extends ChangeNotifier {
     }
   }
 
+  /// Every card, paginated to bypass the per-request cap (export/backup).
+  /// Falls back to the full offline cache if the network is down.
+  Future<List<Card>> listAll() async {
+    const page = 200; // matches backend `le=200`
+    try {
+      final all = <Card>[];
+      for (var offset = 0;; offset += page) {
+        final batch = await _api.listCards(limit: page, offset: offset);
+        for (final c in batch) {
+          await _store.cacheCard(c.cardId, _rawOf(c));
+        }
+        all.addAll(batch);
+        if (batch.length < page) break;
+      }
+      return all;
+    } catch (_) {
+      final cached = _store.readAllCards().map(Card.fromJson).toList()
+        ..sort((a, b) => (b.meta.createdAt ?? DateTime(0))
+            .compareTo(a.meta.createdAt ?? DateTime(0)));
+      if (cached.isEmpty) rethrow;
+      return cached;
+    }
+  }
+
   /// Fetch one card; serves the cache on network failure (offline reading).
   Future<Card> getCard(String cardId) async {
     try {
