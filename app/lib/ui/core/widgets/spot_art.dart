@@ -310,58 +310,48 @@ class _CapturePainter extends CustomPainter {
     final cx = s.width / 2;
     final cy = s.height / 2;
 
-    // A destination structured card on the right
-    final cardCenter = Offset(cx + 14, cy + 4);
-    final card = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: cardCenter, width: 60, height: 70),
-        const Radius.circular(8));
-    canvas.drawRRect(card, pen);
-
-    // Media/header preview box inside card
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-          Rect.fromLTWH(cx - 10, cy - 23, 48, 22), const Radius.circular(5)),
-      fill,
-    );
-    // Summary text lines inside card
-    canvas.drawLine(Offset(cx - 10, cy + 9), Offset(cx + 24, cy + 9), pen);
-    canvas.drawLine(Offset(cx - 10, cy + 21), Offset(cx + 10, cy + 21), pen);
-
-    // Link source badge floating cleanly on the left
-    final lx = cx - 34;
-    final ly = cy - 8;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(lx, ly), width: 36, height: 36),
-          const Radius.circular(12)),
-      fill,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(lx, ly), width: 36, height: 36),
-          const Radius.circular(12)),
-      pen,
-    );
-
-    // Interlocking chain-link icon inside badge
+    // Left: Source Web/Link Window (leaning slightly left)
     canvas.save();
-    canvas.translate(lx, ly);
-    canvas.rotate(-0.785);
+    canvas.translate(cx - 28, cy);
+    canvas.rotate(-0.06);
+    final webWindow = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(-22, -28, 44, 56), const Radius.circular(6));
+    canvas.drawRRect(webWindow, pen);
+    // Browser header bar
+    canvas.drawLine(const Offset(-22, -16), const Offset(22, -16), pen);
+    canvas.drawCircle(const Offset(-15, -22), 1.8, Paint()..color = c);
+    canvas.drawCircle(const Offset(-9, -22), 1.8, Paint()..color = c);
+    canvas.drawLine(const Offset(-3, -22), const Offset(14, -22), pen);
+    // Content preview (representing raw link content)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-          const Rect.fromLTWH(-13, -5, 15, 10), const Radius.circular(5)),
-      pen,
+          const Rect.fromLTWH(-16, -10, 32, 20), const Radius.circular(4)),
+      fill,
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-          const Rect.fromLTWH(-2, -5, 15, 10), const Radius.circular(5)),
-      pen,
-    );
+    canvas.drawLine(const Offset(-16, 16), const Offset(10, 16), pen);
     canvas.restore();
 
-    // Hand-crafted sparkle accents indicating seamless capture
-    canvas.drawCircle(Offset(cx - 14, cy - 24), 2.0, Paint()..color = c);
-    canvas.drawCircle(Offset(cx - 48, cy + 16), 1.5, Paint()..color = c);
+    // Right: Captured Structured Card (leaning slightly right)
+    canvas.save();
+    canvas.translate(cx + 26, cy + 2);
+    canvas.rotate(0.04);
+    final cachyCard = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(-24, -30, 48, 60), const Radius.circular(8));
+    canvas.drawRRect(cachyCard, pen);
+    // Structured extraction header chip
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          const Rect.fromLTWH(-18, -22, 24, 8), const Radius.circular(4)),
+      fill,
+    );
+    // Structured action bullets
+    for (var i = 0; i < 3; i++) {
+      final y = -6 + i * 14.0;
+      canvas.drawCircle(Offset(-15, y), 2.0, Paint()..color = c);
+      final len = i == 2 ? 18.0 : 28.0;
+      canvas.drawLine(Offset(-9, y), Offset(-9 + len, y), pen);
+    }
+    canvas.restore();
   }
 
   @override

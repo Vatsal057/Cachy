@@ -17,6 +17,15 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    project.plugins.withId("com.android.library") {
+        project.plugins.apply("org.jetbrains.kotlin.android")
+        project.extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+            compileSdk = 36
+        }
+    }
+    project.plugins.withId("com.android.application") {
+        project.plugins.apply("org.jetbrains.kotlin.android")
+    }
 }
 
 tasks.register<Delete>("clean") {
