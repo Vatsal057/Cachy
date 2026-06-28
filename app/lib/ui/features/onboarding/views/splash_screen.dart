@@ -4,7 +4,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 
@@ -42,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _finish() {
-    if (_done) return;
+    if (!mounted || _done) return;
     _done = true;
     widget.onDone();
   }
@@ -55,10 +54,15 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final groundColor = isDark ? Brand.charcoalGround : Brand.paperGround;
+    final textColor = isDark ? Brand.cream : Brand.ink;
+    final accentColor = Brand.accentFor(Theme.of(context).brightness);
+
     return GestureDetector(
       onTap: _finish,
       child: Scaffold(
-        backgroundColor: Brand.paperGround,
+        backgroundColor: groundColor,
         body: Center(
           child: AnimatedBuilder(
             animation: _c,
@@ -67,8 +71,8 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 CachyGlyph(
                   size: 92,
-                  color: Brand.ink,
-                  reelColor: Brand.sage,
+                  color: textColor,
+                  reelColor: accentColor,
                   reelDrop: _drop.value,
                 ),
                 const SizedBox(height: 20),
@@ -78,64 +82,12 @@ class _SplashScreenState extends State<SplashScreen>
                     offset: Offset(0, (1 - _wordmark.value) * 10),
                     child: Text(
                       'cachy',
-                      style: Brand.wordmarkStyle(44, color: Brand.ink),
+                      style: Brand.wordmarkStyle(44, color: textColor),
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
-                _FloatingChip(
-                  icon: PhosphorIconsRegular.videoCamera,
-                  label: 'Short-form videos',
-                  t: _wordmark.value,
-                ),
-                const SizedBox(height: 12),
-                _FloatingChip(
-                  icon: PhosphorIconsRegular.sparkle,
-                  label: 'AI-powered recall',
-                  t: (_wordmark.value * 1.25 - 0.25).clamp(0.0, 1.0),
-                ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FloatingChip extends StatelessWidget {
-  const _FloatingChip({required this.icon, required this.label, required this.t});
-  final PhosphorIconData icon;
-  final String label;
-  final double t;
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: t.clamp(0.0, 1.0),
-      child: Transform.translate(
-        offset: Offset(0, (1 - t) * 16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            color: Brand.paperRaised,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Brand.ink.withValues(alpha: 0.08)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PhosphorIcon(icon, size: 15, color: Brand.sage),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: Brand.label(
-                  size: 12,
-                  color: Brand.ink,
-                  weight: FontWeight.w600,
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -149,10 +101,15 @@ class SplashStatic extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Brand.paperGround,
-      body: const Center(
-        child: CachyGlyph(size: 92, color: Brand.ink, reelColor: Brand.sage),
+      backgroundColor: isDark ? Brand.charcoalGround : Brand.paperGround,
+      body: Center(
+        child: CachyGlyph(
+          size: 92,
+          color: isDark ? Brand.cream : Brand.ink,
+          reelColor: Brand.accentFor(Theme.of(context).brightness),
+        ),
       ),
     );
   }

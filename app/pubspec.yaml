@@ -94,15 +94,23 @@ flutter_launcher_icons:
   android: true
   ios: false # iOS Runner not present in this repo; enable when it's scaffolded
   image_path: "assets/brand/icon.png"
-  adaptive_icon_background: "#5B5BD6"
-  adaptive_icon_foreground: "assets/brand/icon.png"
+  adaptive_icon_background: "#F5F0E8"
+  adaptive_icon_foreground: "assets/brand/adaptive_foreground.png"
+  adaptive_icon_monochrome: "assets/brand/adaptive_monochrome.png"
+  web:
+    generate: true
+    image_path: "assets/brand/icon.png"
+    background_color: "#F5F0E8"
+    theme_color: "#181818"
 
 # Native splash shown before Flutter boots, continuing into SplashScreen.
 flutter_native_splash:
-  color: "#5B5BD6"
+  color: "#F5F0E8"
+  color_dark: "#181818"
   image: "assets/brand/splash_logo.png"
   android_12:
-    color: "#5B5BD6"
+    color: "#F5F0E8"
+    color_dark: "#181818"
     image: "assets/brand/splash_logo.png"
 
   # To add assets to your application, add an assets section, like this:

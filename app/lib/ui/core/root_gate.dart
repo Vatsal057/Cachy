@@ -2,10 +2,12 @@
 /// onboarding, then the home shell. Keeps that branching out of main.dart.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../features/onboarding/views/onboarding_screen.dart';
+import '../features/onboarding/views/splash_screen.dart';
 import 'app_controller.dart';
 import 'home_shell.dart';
 
@@ -25,7 +27,15 @@ class _RootGateState extends State<RootGate> {
   void initState() {
     super.initState();
     final app = context.read<AppController>();
-    _phase = app.seenOnboarding ? _Phase.shell : _Phase.onboarding;
+    _phase = kIsWeb
+        ? (app.seenOnboarding ? _Phase.shell : _Phase.onboarding)
+        : _Phase.splash;
+  }
+
+  void _finishSplash() {
+    if (!mounted) return;
+    final app = context.read<AppController>();
+    setState(() => _phase = app.seenOnboarding ? _Phase.shell : _Phase.onboarding);
   }
 
   Future<void> _finishOnboarding() async {
@@ -35,11 +45,18 @@ class _RootGateState extends State<RootGate> {
 
   @override
   Widget build(BuildContext context) {
-    return switch (_phase) {
-      _Phase.splash => const SizedBox.shrink(),
-      _Phase.onboarding =>
-        OnboardingScreen(key: const ValueKey('onboarding'), onDone: _finishOnboarding),
-      _Phase.shell => const HomeShell(key: ValueKey('shell')),
-    };
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 550),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+      child: switch (_phase) {
+        _Phase.splash =>
+          SplashScreen(key: const ValueKey('splash'), onDone: _finishSplash),
+        _Phase.onboarding =>
+          OnboardingScreen(key: const ValueKey('onboarding'), onDone: _finishOnboarding),
+        _Phase.shell => const HomeShell(key: ValueKey('shell')),
+      },
+    );
   }
 }

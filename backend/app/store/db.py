@@ -282,7 +282,6 @@ async def init_db() -> None:
                 "description": "TEXT",
             },
         )
-        await conn.execute(text("UPDATE artifacts SET saved = 0 WHERE saved = 1"))
         await _add_missing_columns(
             conn,
             "cards",

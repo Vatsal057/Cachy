@@ -23,10 +23,18 @@ class ConceptsViewModel extends ChangeNotifier {
     }
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _repository.removeListener(_onRepoChange);
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
   }
 
   ConceptsStatus _status = ConceptsStatus.idle;

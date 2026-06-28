@@ -292,7 +292,7 @@ class _StructurePainter extends CustomPainter {
 // ── Capture: a link dropping into a card ─────────────────────────────────────
 
 class CaptureSpot extends StatelessWidget {
-  const CaptureSpot({super.key, this.color, this.size = const Size(116, 70)});
+  const CaptureSpot({super.key, this.color, this.size = const Size(120, 88)});
   final Color? color;
   final Size size;
   @override
@@ -306,26 +306,62 @@ class _CapturePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size s) {
     final pen = _pen(c);
+    final fill = Paint()..color = c.withValues(alpha: 0.18);
     final cx = s.width / 2;
     final cy = s.height / 2;
-    // a card
+
+    // A destination structured card on the right
+    final cardCenter = Offset(cx + 14, cy + 4);
+    final card = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: cardCenter, width: 60, height: 70),
+        const Radius.circular(8));
+    canvas.drawRRect(card, pen);
+
+    // Media/header preview box inside card
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-          Rect.fromLTWH(cx - 4, cy - 18, 52, 44), const Radius.circular(8)),
+          Rect.fromLTWH(cx - 10, cy - 23, 48, 22), const Radius.circular(5)),
+      fill,
+    );
+    // Summary text lines inside card
+    canvas.drawLine(Offset(cx - 10, cy + 9), Offset(cx + 24, cy + 9), pen);
+    canvas.drawLine(Offset(cx - 10, cy + 21), Offset(cx + 10, cy + 21), pen);
+
+    // Link source badge floating cleanly on the left
+    final lx = cx - 34;
+    final ly = cy - 8;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(lx, ly), width: 36, height: 36),
+          const Radius.circular(12)),
+      fill,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(lx, ly), width: 36, height: 36),
+          const Radius.circular(12)),
       pen,
     );
-    canvas.drawLine(Offset(cx + 6, cy + 4), Offset(cx + 38, cy + 4), pen);
-    canvas.drawLine(Offset(cx + 6, cy + 14), Offset(cx + 26, cy + 14), pen);
-    // two chain links arcing in from the left
-    for (var i = 0; i < 2; i++) {
-      final ox = cx - 40 + i * 18.0;
-      final oy = cy - 14 + i * 12.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(ox, oy, 22, 12), const Radius.circular(6)),
-        pen,
-      );
-    }
+
+    // Interlocking chain-link icon inside badge
+    canvas.save();
+    canvas.translate(lx, ly);
+    canvas.rotate(-0.785);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          const Rect.fromLTWH(-13, -5, 15, 10), const Radius.circular(5)),
+      pen,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          const Rect.fromLTWH(-2, -5, 15, 10), const Radius.circular(5)),
+      pen,
+    );
+    canvas.restore();
+
+    // Hand-crafted sparkle accents indicating seamless capture
+    canvas.drawCircle(Offset(cx - 14, cy - 24), 2.0, Paint()..color = c);
+    canvas.drawCircle(Offset(cx - 48, cy + 16), 1.5, Paint()..color = c);
   }
 
   @override
