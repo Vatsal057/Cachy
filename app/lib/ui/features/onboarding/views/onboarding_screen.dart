@@ -246,7 +246,7 @@ class _PageHook extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          CaptureSpot(color: scheme.primary.withValues(alpha: 0.7)),
+          CaptureSpot(color: scheme.primary.withValues(alpha: 0.75), size: const Size(120, 88)),
           const SizedBox(height: 32),
           Text(
             'Videos, articles, newsletters, Wikipedia — paste any link and Cachy distills the key takeaways into a browsable card.',

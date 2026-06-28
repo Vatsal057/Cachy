@@ -64,6 +64,16 @@ class AppTheme {
 
     return base.copyWith(
       scaffoldBackgroundColor: ground,
+      splashFactory: NoSplash.splashFactory,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: IOSPageTransitionsBuilder(),
+          TargetPlatform.iOS: IOSPageTransitionsBuilder(),
+          TargetPlatform.macOS: IOSPageTransitionsBuilder(),
+          TargetPlatform.windows: IOSPageTransitionsBuilder(),
+          TargetPlatform.linux: IOSPageTransitionsBuilder(),
+        },
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: onGround,
@@ -126,13 +136,6 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         insetPadding: const EdgeInsets.all(16),
       ),
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-        },
-      ),
     );
   }
 }
@@ -153,4 +156,61 @@ class Insets {
   static const block = 16.0;
   static const radius = 14.0;
   static const readingColumn = 680.0;
+}
+
+/// Custom transition builder allowing swipe-right-to-go-back from ANYWHERE
+/// on the screen, while preserving iOS slide transitions.
+class IOSPageTransitionsBuilder extends PageTransitionsBuilder {
+  const IOSPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return const CupertinoPageTransitionsBuilder().buildTransitions<T>(
+      route,
+      context,
+      animation,
+      secondaryAnimation,
+      _SwipeBackGate(child: child),
+    );
+  }
+}
+
+class _SwipeBackGate extends StatefulWidget {
+  const _SwipeBackGate({required this.child});
+  final Widget child;
+
+  @override
+  State<_SwipeBackGate> createState() => _SwipeBackGateState();
+}
+
+class _SwipeBackGateState extends State<_SwipeBackGate> {
+  double _dragDistance = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: (_) => _dragDistance = 0,
+      onHorizontalDragUpdate: (details) {
+        _dragDistance += details.delta.dx;
+      },
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if ((velocity > 300 || _dragDistance > 70) && _dragDistance > 0) {
+          final nav = Navigator.of(context);
+          if (nav.canPop()) {
+            nav.pop();
+          }
+        }
+        _dragDistance = 0;
+      },
+      child: widget.child,
+    );
+  }
 }

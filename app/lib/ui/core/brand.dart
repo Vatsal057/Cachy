@@ -175,7 +175,7 @@ class _GlyphPainter extends CustomPainter {
     canvas.drawPath(path, bracketPaint);
 
     final topY = h * 0.06;
-    final restY = h * 0.40;
+    final restY = h * 0.50;
     final cy = topY + (restY - topY) * reelDrop.clamp(0.0, 1.0);
     final reelSize = w * 0.30;
     final reelRect = RRect.fromRectAndRadius(

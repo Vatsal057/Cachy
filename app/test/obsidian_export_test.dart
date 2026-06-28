@@ -4,7 +4,6 @@ import 'package:archive/archive.dart';
 import 'package:cachy/data/services/obsidian_export.dart';
 import 'package:cachy/domain/models/block.dart';
 import 'package:cachy/domain/models/card.dart';
-import 'package:cachy/domain/models/enums.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Card _card(String id, String oneLiner, {List<Block> blocks = const []}) => Card(

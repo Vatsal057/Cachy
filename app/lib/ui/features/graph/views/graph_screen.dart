@@ -1,11 +1,15 @@
-/// Obsidian-style knowledge graph: a live force-directed physics simulation that
+/// d3-force style knowledge graph: a live force-directed physics simulation that
 /// runs on every open, letting nodes wiggle and settle into emergent clusters.
 ///
-/// Four configurable forces:
-///   1. **Repulsion** — every node pushes every other node away (Coulomb's law).
-///   2. **Link/spring** — connected nodes pull together (Hooke's law).
-///   3. **Center** — gentle gravity toward the origin keeps the graph compact.
-///   4. **Link distance** — ideal spring rest length.
+/// Physics model ported from Org Roam UI's d3-force engine:
+///   1. **Charge** — every node repels every other (forceManyBody).
+///   2. **Link** — connected nodes spring toward ideal distance (forceLink).
+///   3. **Center** — gentle pull toward origin (forceCenter).
+///   4. **Gravity** — forceX/Y toward origin.
+///   5. **Collision** — prevents node overlap (forceCollide).
+///
+/// Uses alpha-decay cooling: forces scale by alpha (0→1), which decays
+/// exponentially each tick. This gives smooth "settling into equilibrium" feel.
 ///
 /// Drag pins a node while physics recalculates around it (rubber-band effect).
 /// Two node types (card = circle, catalog = rounded square), three edge styles,
@@ -36,16 +40,59 @@ import '../../reader/views/reader_screen.dart';
 // ========================================================================== //
 
 class _PhysicsConfig {
-  double repelForce;
-  double linkForce;
-  double centerForce;
+  /// forceManyBody strength (negative = repulsive). Org Roam UI default: -700.
+  double charge;
+
+  /// forceLink strength. Org Roam UI default: 0.3.
+  double linkStrength;
+
+  /// forceLink ideal rest length.
   double linkDistance;
 
+  /// forceLink constraint iterations per tick.
+  int linkIterations;
+
+  /// forceX/Y gravity strength. Org Roam UI default: 0.3.
+  double gravity;
+
+  /// Whether gravity forces are active.
+  bool gravityOn;
+
+  /// forceCenter strength. Org Roam UI default: 0.2.
+  double centerStrength;
+
+  /// Whether centering force is active.
+  bool centerOn;
+
+  /// Whether collision detection is active.
+  bool collision;
+
+  /// forceCollide radius.
+  double collisionRadius;
+
+  /// Alpha decay rate per tick (lower = slower settling). Org Roam UI: 0.0228.
+  double alphaDecay;
+
+  /// Velocity damping per tick (0–1, higher = more damping). Org Roam UI: 0.25.
+  double velocityDecay;
+
+  /// Minimum alpha before simulation stops.
+  double alphaMin;
+
   _PhysicsConfig({
-    this.repelForce = 1.6,
-    this.linkForce = 1.3,
-    this.centerForce = 0.025,
-    this.linkDistance = 110,
+    this.charge = -900,
+    this.linkStrength = 0.6,
+    this.linkDistance = 115,
+    this.linkIterations = 1,
+    this.gravity = 0.04,
+    this.gravityOn = true,
+    this.centerStrength = 0.08,
+    this.centerOn = true,
+    this.collision = true,
+    this.collisionRadius = 50,
+    this.alphaDecay = 0.035,
+    this.velocityDecay = 0.28,
+    this.alphaMin = 0.001,
   });
 }
 
@@ -76,14 +123,10 @@ class _GraphScreenState extends State<GraphScreen>
   final Map<String, List<String>> _adj = {};
   final Map<String, double> _edgeWeights = {};
 
-  // Star layout anchors — the ideal position each node should occupy.
-  final Map<String, Offset> _starPos = {};
-  final Map<String, Offset> _starRel = {};
-  final Map<String, String> _hubFor = {};
-  static const double _starRadius = 125.0;
-  // Loose strength so the spring-back feels natural, not snappy.
-  static const double _starRestoreStrength = 0.04;
-  double _temperature = 0;
+  // d3-force alpha — controls how much force is applied each tick.
+  // Starts at 1.0 on reheat, decays toward alphaMin.
+  double _alpha = 1.0;
+  double _alphaTarget = 0.0;
 
   // View transform.
   Offset _pan = Offset.zero;
@@ -96,7 +139,21 @@ class _GraphScreenState extends State<GraphScreen>
   int? _activeCluster;
 
   // Physics config.
-  final _physics = _PhysicsConfig();
+  final _physics = _PhysicsConfig(
+    charge: -900,
+    linkStrength: 0.6,
+    linkDistance: 115,
+    linkIterations: 1,
+    gravity: 0.04,
+    gravityOn: true,
+    centerStrength: 0.08,
+    centerOn: true,
+    collision: true,
+    collisionRadius: 50,
+    alphaDecay: 0.035,
+    velocityDecay: 0.28,
+    alphaMin: 0.001,
+  );
 
   // Local graph mode.
   bool _localMode = false;
@@ -147,9 +204,6 @@ class _GraphScreenState extends State<GraphScreen>
     _vel.clear();
     _adj.clear();
     _edgeWeights.clear();
-    _starPos.clear();
-    _starRel.clear();
-    _hubFor.clear();
 
     // Initialise adjacency lists and zero velocities.
     for (final node in data.nodes) {
@@ -165,61 +219,26 @@ class _GraphScreenState extends State<GraphScreen>
       _edgeWeights[key] = e.weight;
     }
 
-    // Compute star positions and seed nodes directly into them so the graph
-    // opens already in star form — no physics convergence needed.
-    _starPos.addAll(_computeStarLayout(data, data.nodes));
-    for (final node in data.nodes) {
-      _pos[node.id] = _starPos[node.id] ?? Offset.zero;
-    }
-
-    _temperature = 45;
-    if (!_ticker.isActive && data.nodes.isNotEmpty) _ticker.start();
-  }
-
-  // --------------------------------------------------------------------------
-  // Star layout computation
-  // --------------------------------------------------------------------------
-
-  /// Returns the ideal star position for each node in [visible].
-  ///
-  /// Each connected cluster gets one **hub** (highest-degree node) placed on a
-  /// coarse ring, with all other cluster members as **spokes** radiating
-  /// outward at equal angular intervals.
-  ///
-  /// Cluster-hub separation = `_starRadius * 2.4` so adjacent clusters' spoke
-  /// disks never spatially overlap, preventing cross-cluster edge crossings.
-  Map<String, Offset> _computeStarLayout(
-      GraphData data, List<GraphNode> visible) {
-    final result = <String, Offset>{};
-
-    // Group nodes by cluster ID.
+    // Cluster-ring seeding: place clusters on a ring, jitter nodes within.
+    // Physics will find the organic layout from here.
     final clusterMap = <int, List<GraphNode>>{};
-    for (final node in visible) {
+    for (final node in data.nodes) {
       clusterMap.putIfAbsent(node.clusterId, () => []).add(node);
     }
-
-    // Isolated nodes (-1) live on an outer ring, handled separately.
     final isolated = clusterMap.remove(-1) ?? <GraphNode>[];
     final clusterIds = clusterMap.keys.toList()..sort();
     final numClusters = clusterIds.length;
+    final rng = math.Random(42);
 
-    // Minimum separation between adjacent cluster hubs so that no spoke from
-    // cluster A can reach any spoke of cluster B.
-    const clusterSep = _starRadius * 2.4;
-    // Chord formula: for n equally spaced points on a ring, the chord between
-    // adjacent points = 2 * R * sin(π / n). Solve for R given chord = clusterSep.
+    // Cluster hubs on a ring.
+    const clusterSep = 200.0;
     final hubRingRadius = numClusters <= 1
         ? 0.0
-        : clusterSep / (2 * math.sin(math.pi / numClusters));
+        : clusterSep / (2 * math.sin(math.pi / math.max(2, numClusters)));
 
     for (var ci = 0; ci < numClusters; ci++) {
       final cid = clusterIds[ci];
-      final nodes = List<GraphNode>.from(clusterMap[cid]!);
-
-      // Highest-degree node becomes the star's hub.
-      nodes.sort((a, b) => b.degree.compareTo(a.degree));
-      final hub = nodes.first;
-
+      final nodes = clusterMap[cid]!;
       final hubAngle =
           (ci / math.max(1, numClusters)) * 2 * math.pi - math.pi / 2;
       final hubPos = numClusters <= 1
@@ -228,52 +247,42 @@ class _GraphScreenState extends State<GraphScreen>
               math.cos(hubAngle) * hubRingRadius,
               math.sin(hubAngle) * hubRingRadius,
             );
-      result[hub.id] = hubPos;
-      _hubFor[hub.id] = hub.id;
-      _starRel[hub.id] = Offset.zero;
 
-      // Place spoke nodes at equal angular intervals around the hub.
-      final spokes = nodes.skip(1).toList();
-      for (var si = 0; si < spokes.length; si++) {
-        final spokeAngle =
-            (si / math.max(1, spokes.length)) * 2 * math.pi - math.pi / 2;
-        final rel = Offset(
-          math.cos(spokeAngle) * _starRadius,
-          math.sin(spokeAngle) * _starRadius,
-        );
-        result[spokes[si].id] = hubPos + rel;
-        _hubFor[spokes[si].id] = hub.id;
-        _starRel[spokes[si].id] = rel;
+      // Jitter each node around the cluster center.
+      for (final node in nodes) {
+        _pos[node.id] = hubPos +
+            Offset(
+              (rng.nextDouble() - 0.5) * 80,
+              (rng.nextDouble() - 0.5) * 80,
+            );
       }
     }
 
-    // Isolated nodes on a ring well beyond all star clusters.
-    final outerRadius = hubRingRadius + _starRadius * 1.6;
+    // Isolated nodes in a ring beyond clusters.
+    final outerRadius = hubRingRadius + 180;
     for (var ii = 0; ii < isolated.length; ii++) {
       final angle =
           (ii / math.max(1, isolated.length)) * 2 * math.pi - math.pi / 2;
-      result[isolated[ii].id] = Offset(
+      _pos[isolated[ii].id] = Offset(
         math.cos(angle) * outerRadius,
         math.sin(angle) * outerRadius,
       );
-      _hubFor[isolated[ii].id] = isolated[ii].id;
-      _starRel[isolated[ii].id] = Offset.zero;
     }
 
-    return result;
-  }
-
-  /// Recomputes star target positions for the currently visible node set and
-  /// updates [_starPos].  Call whenever local-mode or depth changes.
-  void _recomputeStar() {
-    final data = _data;
-    if (data == null) return;
+    // Run 80 warmup ticks silently so the graph opens in a settled state
+    // rather than showing chaotic initial animation.
+    _alpha = 1.0;
+    _alphaTarget = 0.0;
     final visible = _visibleNodes(data);
-    _starRel.clear();
-    _hubFor.clear();
-    _starPos
-      ..clear()
-      ..addAll(_computeStarLayout(data, visible));
+    final visibleIds = visible.map((n) => n.id).toSet();
+    for (var i = 0; i < 80; i++) {
+      _step(data, visible, visibleIds);
+      if (_alpha < _physics.alphaMin) break;
+    }
+
+    // Start the ticker for remaining settling.
+    _alpha = math.max(_alpha, 0.1);
+    if (!_ticker.isActive && data.nodes.isNotEmpty) _ticker.start();
   }
 
   // --------------------------------------------------------------------------
@@ -289,43 +298,31 @@ class _GraphScreenState extends State<GraphScreen>
 
     _step(data, visible, visibleIds);
 
-    if (_temperature < 0.5) {
+    if (_alpha < _physics.alphaMin) {
       _ticker.stop();
     }
     if (mounted) setState(() {});
   }
 
+  /// d3-force simulation step.
+  ///
+  /// Applies five forces scaled by [_alpha], matching Org Roam UI's d3-force:
+  ///   1. Charge (forceManyBody) — repulsion between all node pairs.
+  ///   2. Link (forceLink) — spring toward ideal distance.
+  ///   3. Center (forceCenter) — pull toward origin.
+  ///   4. Gravity (forceX/Y) — directional pull toward origin.
+  ///   5. Collision (forceCollide) — prevents node overlap.
   void _step(GraphData data, List<GraphNode> visible, Set<String> visibleIds) {
     final ids = visible.map((n) => n.id).toList();
     final n = ids.length;
     if (n == 0) return;
 
-    final k = _physics.linkDistance;
-    final disp = <String, Offset>{for (final id in ids) id: Offset.zero};
+    // --- Alpha decay (d3's cooling schedule) ---
+    _alpha += (_alphaTarget - _alpha) * _physics.alphaDecay;
 
-    // Group visible nodes into connected components (families)
-    final family = <String, int>{};
-    var nextFamily = 0;
-    for (final id in ids) {
-      if (family.containsKey(id)) continue;
-      nextFamily++;
-      final queue = [id];
-      family[id] = nextFamily;
-      var head = 0;
-      while (head < queue.length) {
-        final curr = queue[head++];
-        for (final nbr in (_adj[curr] ?? <String>[])) {
-          if (visibleIds.contains(nbr) && !family.containsKey(nbr)) {
-            family[nbr] = nextFamily;
-            queue.add(nbr);
-          }
-        }
-      }
-    }
-
-    // --- Force 1: Repulsion (Coulomb's law) ---
-    // Every node pushes every other node away. Separate families repel 8x harder.
-    final repelK = k * k * _physics.repelForce;
+    // --- Force 1: Charge / Many-Body (d3.forceManyBody) ---
+    // Every node repels every other node.
+    // d3 formula: vel += delta * strength * alpha / d²  (raw delta, NOT unit vector)
     for (var i = 0; i < n; i++) {
       for (var j = i + 1; j < n; j++) {
         final pa = _pos[ids[i]];
@@ -333,107 +330,130 @@ class _GraphScreenState extends State<GraphScreen>
         if (pa == null || pb == null) continue;
         var delta = pa - pb;
         var d = delta.distance;
-        if (d < 0.01) {
-          delta = const Offset(0.5, 0.3);
+        if (d < 1.0) {
+          // Jitter to break degeneracy (d3 does this too).
+          delta = Offset(
+            (ids[i].hashCode.isEven ? 1 : -1) * 0.5,
+            (ids[j].hashCode.isEven ? 1 : -1) * 0.3,
+          );
           d = delta.distance;
         }
-        final sameFamily = family[ids[i]] == family[ids[j]];
-        final mult = sameFamily ? 3.5 : 15.0;
-        final force = (repelK * mult) / (d * d);
-        final push = delta / d * force;
-        disp[ids[i]] = disp[ids[i]]! + push;
-        disp[ids[j]] = disp[ids[j]]! - push;
+        // d3's forceManyBody: delta * strength * alpha / d²
+        // Using raw delta (not normalized) — this is critical.
+        // Makes force fall off as 1/d (not 1/d²), giving long-range repulsion.
+        final w = _physics.charge * _alpha / (d * d);
+        final push = delta * w;
+        // Negative charge → push is opposite to delta → repulsive.
+        _vel[ids[i]] = (_vel[ids[i]] ?? Offset.zero) - push;
+        _vel[ids[j]] = (_vel[ids[j]] ?? Offset.zero) + push;
       }
     }
 
-    // --- Force 2: Link/spring (Hooke's law) ---
-    // Connected nodes attract each other toward the ideal link distance.
-    for (final e in data.edges) {
-      if (!visibleIds.contains(e.source) || !visibleIds.contains(e.target)) {
+    // --- Force 2: Link / Spring (d3.forceLink) ---
+    // Multiple iterations for constraint convergence (d3's linkIterations).
+    for (var iter = 0; iter < _physics.linkIterations; iter++) {
+      for (final e in data.edges) {
+        if (!visibleIds.contains(e.source) ||
+            !visibleIds.contains(e.target)) {
+          continue;
+        }
+        final pa = _pos[e.source];
+        final pb = _pos[e.target];
+        if (pa == null || pb == null) continue;
+        var delta = pb - pa;
+        var d = delta.distance;
+        if (d < 0.01) d = 0.01;
+
+        // d3-style bias: distribute force inversely by degree.
+        final degA = math.max(1.0, (_adj[e.source]?.length ?? 1).toDouble());
+        final degB = math.max(1.0, (_adj[e.target]?.length ?? 1).toDouble());
+        final bias = degA / (degA + degB);
+
+        // Spring force: pull toward ideal link distance.
+        // D3 degree scaling: divide strength by minDeg so densely connected hubs don't crush together.
+        final minDeg = math.min(degA, degB);
+        final k = _physics.linkDistance;
+        final strength = (_physics.linkStrength / minDeg) * _alpha;
+        final force = (d - k) / d * strength;
+        final fx = delta.dx * force;
+        final fy = delta.dy * force;
+
+        // Apply with degree-bias (lighter nodes move more).
+        _vel[e.target] = (_vel[e.target] ?? Offset.zero) -
+            Offset(fx * bias, fy * bias);
+        _vel[e.source] = (_vel[e.source] ?? Offset.zero) +
+            Offset(fx * (1 - bias), fy * (1 - bias));
+      }
+    }
+
+    // --- Force 3: Center (d3.forceCenter) ---
+    // Shifts the center of mass toward origin.
+    if (_physics.centerOn) {
+      var cx = 0.0, cy = 0.0;
+      var count = 0;
+      for (final id in ids) {
+        final p = _pos[id];
+        if (p == null) continue;
+        cx += p.dx;
+        cy += p.dy;
+        count++;
+      }
+      if (count > 0) {
+        cx = cx / count * _physics.centerStrength;
+        cy = cy / count * _physics.centerStrength;
+        for (final id in ids) {
+          final p = _pos[id];
+          if (p == null) continue;
+          _pos[id] = Offset(p.dx - cx, p.dy - cy);
+        }
+      }
+    }
+
+    // --- Force 4: Gravity (d3.forceX / d3.forceY) ---
+    // Individual pull toward origin (unlike center which shifts the mean).
+    if (_physics.gravityOn) {
+      for (final id in ids) {
+        final p = _pos[id];
+        if (p == null) continue;
+        _vel[id] = (_vel[id] ?? Offset.zero) +
+            Offset(-p.dx * _physics.gravity * _alpha,
+                   -p.dy * _physics.gravity * _alpha);
+      }
+    }
+
+    // --- Force 5: Collision (d3.forceCollide) ---
+    if (_physics.collision) {
+      final r = _physics.collisionRadius;
+      for (var i = 0; i < n; i++) {
+        for (var j = i + 1; j < n; j++) {
+          final pa = _pos[ids[i]];
+          final pb = _pos[ids[j]];
+          if (pa == null || pb == null) continue;
+          var delta = pa - pb;
+          var d = delta.distance;
+          final minDist = r * 2; // each node has radius r
+          if (d < minDist && d > 0.01) {
+            final overlap = (minDist - d) / d * 0.5;
+            final push = delta * overlap;
+            _pos[ids[i]] = pa + push;
+            _pos[ids[j]] = pb - push;
+          }
+        }
+      }
+    }
+
+    // --- Apply velocity + damping (d3's velocityDecay) ---
+    for (final node in visible) {
+      if (node.id == _draggedNode) {
+        _vel[node.id] = Offset.zero;
         continue;
       }
-      final pa = _pos[e.source];
-      final pb = _pos[e.target];
-      if (pa == null || pb == null) continue;
-      var delta = pa - pb;
-      var d = delta.distance;
-      if (d < 0.01) d = 0.01;
-      // Spring: pulls when distance > k, pushes when < k.
-      final force = (d - k) / d * _physics.linkForce * (0.4 + e.weight);
-      final pull = delta / d * force;
-      final degA = (_adj[e.source]?.length ?? 1).toDouble();
-      final degB = (_adj[e.target]?.length ?? 1).toDouble();
-      final totalDeg = degA + degB;
-      final biasA = degB / totalDeg; // hub anchor stability
-      final biasB = degA / totalDeg; // leaf node pull
-
-      disp[e.source] = disp[e.source]! - pull * (biasA * 2);
-      disp[e.target] = disp[e.target]! + pull * (biasB * 2);
+      final vel = _vel[node.id] ?? Offset.zero;
+      // d3 velocity decay: vel *= (1 - velocityDecay)
+      final dampedVel = vel * (1.0 - _physics.velocityDecay);
+      _vel[node.id] = dampedVel;
+      _pos[node.id] = (_pos[node.id] ?? Offset.zero) + dampedVel;
     }
-
-    // --- Force 3: Center gravity ---
-    // Gentle pull toward origin keeps connected items centered inside.
-    for (final id in ids) {
-      if ((_adj[id]?.isEmpty ?? true)) continue; // empty nodes bypass inward gravity
-      final p = _pos[id];
-      if (p == null) continue;
-      disp[id] = disp[id]! - p * _physics.centerForce;
-    }
-
-    // --- Force 4: Relative Star Schema Restoring Spring ---
-    // Pulls every spoke node gently toward its ideal star offset relative to its CURRENT LIVE HUB POSITION.
-    for (final id in ids) {
-      if (id == _draggedNode) continue;
-      final hubId = _hubFor[id];
-      final rel = _starRel[id];
-      if (hubId == null || rel == null || hubId == id) continue; // hub itself is free
-      final hubPos = _pos[hubId];
-      final curr = _pos[id];
-      if (hubPos == null || curr == null) continue;
-      final target = hubPos + rel;
-      disp[id] = disp[id]! + (target - curr) * 0.22;
-    }
-
-    // --- Force 5: Segregated Circle Containment Wall ---
-    // Connected clusters stay centered (< 130px). Empty nodes orbit far outer rim (220 - 260px).
-    for (final id in ids) {
-      if (id == _draggedNode) continue;
-      final p = _pos[id];
-      if (p == null) continue;
-      final dist = p.distance;
-      if (dist < 0.01) continue;
-      if ((_adj[id]?.isEmpty ?? true)) {
-        // Orbit rim halo for empty nodes.
-        if (dist > 280.0) {
-          disp[id] = disp[id]! - (p / dist) * (dist - 280.0) * 0.25;
-        } else if (dist < 240.0) {
-          disp[id] = disp[id]! + (p / dist) * (240.0 - dist) * 0.15;
-        }
-      } else {
-        // Interior containment for connected nodes.
-        if (dist > 190.0) {
-          disp[id] = disp[id]! - (p / dist) * (dist - 190.0) * 0.25;
-        }
-      }
-    }
-
-    // --- Apply forces with temperature clamping + velocity damping ---
-    const damping = 0.80; // less drag = bouncier spring oscillation
-    for (final node in visible) {
-      if (node.id == _draggedNode) continue;
-      var dd = disp[node.id]!;
-      // Add velocity (momentum).
-      final oldVel = _vel[node.id] ?? Offset.zero;
-      dd = dd + oldVel * damping;
-      final len = dd.distance;
-      if (len > 0) {
-        dd = dd / len * math.min(len, _temperature);
-      }
-      _pos[node.id] = _pos[node.id]! + dd;
-      _vel[node.id] = dd * 0.65; // carry 65% kinetic energy for snappy snapback
-    }
-
-    _temperature = _temperature * 0.96; // allow decaying below 0.5 so ticker stops naturally
   }
 
   // --------------------------------------------------------------------------
@@ -473,19 +493,29 @@ class _GraphScreenState extends State<GraphScreen>
     if (hit != null && d.pointerCount == 1) {
       _draggedNode = hit;
       _selected = hit;
-      // Reheat physics so neighbors react to the drag (rubber-band effect).
-      _temperature = math.max(_temperature, 8.0);
+      _lastDragWorld = null;
+      // Reheat strongly so neighbors react to the drag.
+      _alphaTarget = 0.3;
+      _alpha = math.max(_alpha, 0.5);
       if (!_ticker.isActive) _ticker.start();
     }
   }
+
+  Offset? _lastDragWorld;
 
   void _onScaleUpdate(ScaleUpdateDetails d, Size size) {
     if (_draggedNode != null && d.pointerCount == 1) {
       final center = Offset(size.width / 2, size.height / 2);
       final world = (d.localFocalPoint - center - _pan) / _zoom;
+      final prev = _lastDragWorld ?? _pos[_draggedNode!] ?? world;
+      final worldDelta = world - prev;
       _pos[_draggedNode!] = world;
-      // High heat while dragging so the constellation tracks smoothly.
-      _temperature = math.max(_temperature, 35.0);
+      _vel[_draggedNode!] = Offset.zero;
+      _lastDragWorld = world;
+      // Elastic drag: pull neighbors along with depth-decaying strength.
+      _dragFamily(_draggedNode!, worldDelta);
+      // Keep alpha warm while dragging.
+      _alpha = math.max(_alpha, 0.3);
       if (!_ticker.isActive) _ticker.start();
       setState(() {});
       return;
@@ -500,9 +530,11 @@ class _GraphScreenState extends State<GraphScreen>
 
   void _onScaleEnd(ScaleEndDetails d) {
     if (_draggedNode != null) {
-      // Reheat enough for the restoring force to animate the snap-back
-      // visibly, but not so hot that distant nodes thrash.
-      _temperature = math.max(_temperature, 45.0);
+      _vel[_draggedNode!] = Offset.zero;
+      // Let it settle naturally from a moderate alpha.
+      _alphaTarget = 0.0;
+      _alpha = math.max(_alpha, 0.3);
+      _lastDragWorld = null;
       if (!_ticker.isActive) _ticker.start();
     }
     _draggedNode = null;
@@ -512,9 +544,9 @@ class _GraphScreenState extends State<GraphScreen>
     final visited = <String>{rootId};
     var frontier = <String>{rootId};
     var depth = 1;
-    while (frontier.isNotEmpty && depth <= 25) {
+    while (frontier.isNotEmpty && depth <= 6) {
       final next = <String>{};
-      final factor = math.pow(0.96, depth).toDouble();
+      final factor = math.pow(0.7, depth).toDouble();
       for (final id in frontier) {
         for (final neighbor in (_adj[id] ?? <String>[])) {
           if (visited.add(neighbor)) {
@@ -598,10 +630,10 @@ class _GraphScreenState extends State<GraphScreen>
           setState(() {
             _localMode = true;
             _localRoot = node.id;
-            _temperature = 60;
+            _alpha = 1.0;
+            _alphaTarget = 0.0;
             if (!_ticker.isActive) _ticker.start();
           });
-          _recomputeStar();
         },
       ),
     );
@@ -622,7 +654,8 @@ class _GraphScreenState extends State<GraphScreen>
         onChanged: () {
           setState(() {
             // Reheat so graph reacts to new forces.
-            _temperature = 60;
+            _alpha = 1.0;
+            _alphaTarget = 0.0;
             if (!_ticker.isActive) _ticker.start();
           });
           // Update the bottom sheet's own state.
@@ -632,20 +665,20 @@ class _GraphScreenState extends State<GraphScreen>
           setState(() {
             _localMode = v;
             if (!v) _localRoot = null;
-            _temperature = 60;
+            _alpha = 1.0;
+            _alphaTarget = 0.0;
             if (!_ticker.isActive) _ticker.start();
           });
-          _recomputeStar();
           // Update the bottom sheet's own state.
           (ctx as Element).markNeedsBuild();
         },
         onLocalDepthChanged: (v) {
           setState(() {
             _localDepth = v;
-            _temperature = 60;
+            _alpha = 1.0;
+            _alphaTarget = 0.0;
             if (!_ticker.isActive) _ticker.start();
           });
-          _recomputeStar();
           (ctx as Element).markNeedsBuild();
         },
       ),
@@ -731,10 +764,10 @@ class _GraphScreenState extends State<GraphScreen>
               setState(() {
                 _localMode = false;
                 _localRoot = null;
-                _temperature = 60;
+                _alpha = 1.0;
+                _alphaTarget = 0.0;
                 if (!_ticker.isActive) _ticker.start();
               });
-              _recomputeStar();
             },
           ),
         // Cluster filter chips.
@@ -774,10 +807,10 @@ class _GraphScreenState extends State<GraphScreen>
                   onSelected: (v) {
                     setState(() {
                       _showConcepts = v;
-                      _temperature = 60;
+                      _alpha = 1.0;
+                      _alphaTarget = 0.0;
                       if (!_ticker.isActive) _ticker.start();
                     });
-                    _recomputeStar();
                   },
                   showCheckmark: false,
                 ),
@@ -801,7 +834,6 @@ class _GraphScreenState extends State<GraphScreen>
                       data: data,
                       visibleIds: visibleIds,
                       positions: _pos,
-                      hubMap: _hubFor,
                       pan: _pan,
                       zoom: _zoom,
                       selected: _selected,
@@ -1136,32 +1168,22 @@ class _SettingsSheet extends StatelessWidget {
                   color: scheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           _SliderRow(
-            label: 'Repel force',
-            value: physics.repelForce,
+            label: 'Charge',
+            value: -physics.charge / 100,
             min: 0.0,
-            max: 3.0,
+            max: 20.0,
             onChanged: (v) {
-              physics.repelForce = v;
+              physics.charge = -v * 100;
               onChanged();
             },
           ),
           _SliderRow(
-            label: 'Link force',
-            value: physics.linkForce,
+            label: 'Link strength',
+            value: physics.linkStrength * 5,
             min: 0.0,
-            max: 3.0,
+            max: 5.0,
             onChanged: (v) {
-              physics.linkForce = v;
-              onChanged();
-            },
-          ),
-          _SliderRow(
-            label: 'Center force',
-            value: physics.centerForce,
-            min: 0.0,
-            max: 1.0,
-            onChanged: (v) {
-              physics.centerForce = v;
+              physics.linkStrength = v / 5;
               onChanged();
             },
           ),
@@ -1169,9 +1191,49 @@ class _SettingsSheet extends StatelessWidget {
             label: 'Link distance',
             value: physics.linkDistance,
             min: 30,
-            max: 200,
+            max: 300,
             onChanged: (v) {
               physics.linkDistance = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Gravity',
+            value: physics.gravity * 10,
+            min: 0.0,
+            max: 10.0,
+            onChanged: (v) {
+              physics.gravity = v / 10;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Center force',
+            value: physics.centerStrength,
+            min: 0.0,
+            max: 2.0,
+            onChanged: (v) {
+              physics.centerStrength = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Damping',
+            value: physics.velocityDecay * 10,
+            min: 0.0,
+            max: 10.0,
+            onChanged: (v) {
+              physics.velocityDecay = v / 10;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Settle rate',
+            value: physics.alphaDecay * 50,
+            min: 0.0,
+            max: 5.0,
+            onChanged: (v) {
+              physics.alphaDecay = v / 50;
               onChanged();
             },
           ),
@@ -1266,7 +1328,6 @@ class _GraphPainter extends CustomPainter {
     required this.data,
     required this.visibleIds,
     required this.positions,
-    required this.hubMap,
     required this.pan,
     required this.zoom,
     required this.selected,
@@ -1278,7 +1339,6 @@ class _GraphPainter extends CustomPainter {
   final GraphData data;
   final Set<String> visibleIds;
   final Map<String, Offset> positions;
-  final Map<String, String> hubMap;
   final Offset pan;
   final double zoom;
   final String? selected;
@@ -1388,7 +1448,6 @@ class _GraphPainter extends CustomPainter {
     }
 
     // --- Nodes ---
-    final dim = selected != null || activeCluster != null;
     for (final node in data.nodes) {
       if (!visibleIds.contains(node.id)) continue;
       final p = positions[node.id];
@@ -1480,19 +1539,8 @@ class _GraphPainter extends CustomPainter {
           ellipsis: '…',
         )..layout(maxWidth: 105);
         Offset labelPos;
-        final hId = hubMap[node.id];
-        final hPos = hId != null ? positions[hId] : null;
-        final cPos = positions[node.id];
-        if (hPos != null && cPos != null && hId != node.id) {
-          final d = cPos - hPos;
-          final ang = math.atan2(d.dy, d.dx);
-          final out = r + 4.0;
-          final cx = s.dx + math.cos(ang) * (out + tp.width / 2);
-          final cy = s.dy + math.sin(ang) * (out + tp.height / 2);
-          labelPos = Offset(cx - tp.width / 2, cy - tp.height / 2);
-        } else {
-          labelPos = Offset(s.dx - tp.width / 2, s.dy + r + 3);
-        }
+        // Place labels below nodes (no hub-based placement needed).
+        labelPos = Offset(s.dx - tp.width / 2, s.dy + r + 3);
         tp.paint(canvas, labelPos);
       }
 
@@ -1580,8 +1628,11 @@ class _GraphPainter extends CustomPainter {
       final angle = (i * 60 - 30) * math.pi / 180;
       final x = center.dx + r * math.cos(angle);
       final y = center.dy + r * math.sin(angle);
-      if (i == 0) path.moveTo(x, y);
-      else path.lineTo(x, y);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
     }
     return path..close();
   }
