@@ -137,16 +137,32 @@ def _dedup_frames(frames: list[str]) -> list[str]:
 
 
 # --------------------------------------------------------------------------- #
-# Transcription (Groq Whisper, off Gemini)
+# Transcription — cascade: local faster-whisper → Groq Whisper
 # --------------------------------------------------------------------------- #
 
-def _transcribe(audio_path: str | None) -> str:
+def _transcribe_local(audio_path: str) -> str:
+    """faster-whisper: runs on CPU, no API, no rate limits. tiny=39MB, base=74MB."""
+    try:
+        from faster_whisper import WhisperModel
+    except Exception:
+        log.warning("faster-whisper not installed; skipping local transcription")
+        return ""
     settings = get_settings()
-    if not audio_path or not settings.groq_enabled:
+    try:
+        model = WhisperModel(settings.local_whisper_model, device="cpu", compute_type="int8")
+        segments, _ = model.transcribe(audio_path, beam_size=1)
+        return " ".join(s.text for s in segments).strip()
+    except Exception as e:
+        log.warning("local whisper failed: %s", e)
+        return ""
+
+
+def _transcribe_groq(audio_path: str) -> str:
+    settings = get_settings()
+    if not settings.groq_enabled:
         return ""
     try:
         from groq import Groq
-
         client = Groq(api_key=settings.groq_api_key)
         with open(audio_path, "rb") as f:
             resp = client.audio.transcriptions.create(
@@ -159,9 +175,42 @@ def _transcribe(audio_path: str | None) -> str:
         return ""
 
 
+def _transcribe(audio_path: str | None) -> str:
+    """Cascade: local faster-whisper (if whisper_backend=local) → Groq → local fallback."""
+    if not audio_path:
+        return ""
+    settings = get_settings()
+    if settings.local_whisper_enabled:
+        return _transcribe_local(audio_path)
+    result = _transcribe_groq(audio_path)
+    if result:
+        return result
+    # Groq failed (rate limit / no key) — try local as fallback
+    return _transcribe_local(audio_path)
+
+
 # --------------------------------------------------------------------------- #
 # OCR (Tesseract, local)
 # --------------------------------------------------------------------------- #
+
+def _preprocess_for_ocr(im):
+    """CLAHE + sharpen + adaptive threshold. Helps Tesseract on low-contrast overlays."""
+    try:
+        import cv2
+        import numpy as np
+        gray = cv2.cvtColor(np.array(im.convert("RGB")), cv2.COLOR_RGB2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+        gray = cv2.filter2D(gray, -1, kernel)
+        binary = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+        from PIL import Image
+        return Image.fromarray(binary)
+    except Exception:
+        return im
+
 
 def _ocr(frames: list[str]) -> str:
     if not frames:
@@ -180,7 +229,8 @@ def _ocr(frames: list[str]) -> str:
     for path in frames:
         try:
             with Image.open(path) as im:
-                text = pytesseract.image_to_string(im).strip()
+                processed = _preprocess_for_ocr(im)
+                text = pytesseract.image_to_string(processed).strip()
         except Exception:
             continue
         # de-dup repeated overlay text across frames
@@ -192,7 +242,8 @@ def _ocr(frames: list[str]) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Vision reader (Groq VLM, free tier) — for stylized carousel slides
+# Vision reader — for stylized carousel slides
+# Cascade: Gemini (1M TPM free) → Groq (30k TPM free) → Tesseract fallback
 # --------------------------------------------------------------------------- #
 
 _VISION_PROMPT = (
@@ -202,20 +253,43 @@ _VISION_PROMPT = (
     "text only — no preamble, no markdown, no commentary."
 )
 
+_VISION_NO_TEXT = {"none", "no text", "no text shown"}
 
-def _vision_read(frames: list[str]) -> str:
-    """Read stylized carousel/infographic slides with Groq's free vision model.
 
-    Tesseract mangles social-media text (docs/03 step 5: stylized overlays read
-    far worse than a VLM). Carousel slides are text-as-image, so a vision model
-    recovers the slide's real content + structure that OCR loses. Each image is an
-    isolated call — one failure skips that slide, never the whole pass."""
+def _vision_read_gemini(frames: list[str]) -> str:
+    """Gemini Flash Lite: 1M TPM / 1500 req/day free — primary vision backend."""
+    settings = get_settings()
+    if not frames or not settings.gemini_vision_enabled:
+        return ""
+    try:
+        import google.generativeai as genai
+        from PIL import Image
+    except Exception:
+        return ""
+
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel(settings.gemini_vision_model)
+    chunks: list[str] = []
+    for idx, path in enumerate(frames, 1):
+        try:
+            with Image.open(path) as img:
+                resp = model.generate_content([_VISION_PROMPT, img])
+            text = (resp.text or "").strip()
+        except Exception as e:
+            log.warning("gemini vision failed on slide %d: %s", idx, e)
+            continue
+        if text and text.lower() not in _VISION_NO_TEXT:
+            chunks.append(f"[slide {idx}] {text}")
+    return "\n".join(chunks)
+
+
+def _vision_read_groq(frames: list[str]) -> str:
+    """Groq VLM: 30k TPM free — fallback when Gemini unavailable/exhausted."""
     settings = get_settings()
     if not frames or not settings.groq_vision_enabled:
         return ""
     try:
         import base64
-
         from groq import Groq
     except Exception:
         return ""
@@ -246,9 +320,17 @@ def _vision_read(frames: list[str]) -> str:
         except Exception as e:
             log.warning("groq vision failed on slide %d: %s", idx, e)
             continue
-        if text and text.lower() not in {"none", "no text", "no text shown"}:
+        if text and text.lower() not in _VISION_NO_TEXT:
             chunks.append(f"[slide {idx}] {text}")
     return "\n".join(chunks)
+
+
+def _vision_read(frames: list[str]) -> str:
+    """Cascade: Gemini → Groq → empty (caller falls back to Tesseract)."""
+    result = _vision_read_gemini(frames)
+    if result:
+        return result
+    return _vision_read_groq(frames)
 
 
 # --------------------------------------------------------------------------- #

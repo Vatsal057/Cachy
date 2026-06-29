@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app import discovery
 from app.api import cards, catalog, collections, concepts, graph, library_chat, search
 from app.models.card import SCHEMA_VERSION
 from app.pipeline import worker
@@ -34,10 +35,13 @@ async def lifespan(app: FastAPI):
             log.info("reset %d orphaned job(s) from processing to queued", reset_count)
     worker.reset_stop()
     _worker_task = asyncio.create_task(worker.run_worker_loop())
+    discovery_transport = await discovery.start_discovery()
     log.info("startup complete; worker running")
     try:
         yield
     finally:
+        if discovery_transport is not None:
+            discovery_transport.close()
         worker.stop_worker()
         if _worker_task is not None:
             _worker_task.cancel()

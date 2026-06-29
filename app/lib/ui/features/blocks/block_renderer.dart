@@ -10,6 +10,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../domain/models/artifact.dart';
 import '../../../domain/models/block.dart';
+import '../../../domain/models/concept.dart';
 import '../../core/theme.dart';
 import '../../core/widgets/rich_text.dart';
 
@@ -26,6 +27,8 @@ class BlockList extends StatelessWidget {
     this.onOpenUrl,
     this.artifacts = const [],
     this.onOpenArtifact,
+    this.concepts = const [],
+    this.onOpenConcept,
     this.animate = true,
     this.onHighlight,
   });
@@ -39,6 +42,10 @@ class BlockList extends StatelessWidget {
   /// into tappable links right where the text introduces them.
   final List<CatalogEntry> artifacts;
   final void Function(CatalogEntry)? onOpenArtifact;
+
+  /// The card's concepts, used to resolve inline `[[idea]]` wiki-links.
+  final List<ConceptEntry> concepts;
+  final void Function(ConceptEntry)? onOpenConcept;
 
   final bool animate;
 
@@ -63,13 +70,22 @@ class BlockList extends StatelessWidget {
       children: widgets,
     );
     // Provide the inline-reference resolver to descendant rich-text widgets.
-    if (artifacts.isEmpty || onOpenArtifact == null) return column;
+    final hasArtifacts = artifacts.isNotEmpty && onOpenArtifact != null;
+    final hasConcepts = concepts.isNotEmpty && onOpenConcept != null;
+    if (!hasArtifacts && !hasConcepts) return column;
     return ReferenceScope(
       refs: {
-        for (final a in artifacts)
-          if (a.title.trim().isNotEmpty) a.title.toLowerCase().trim(): a,
+        if (hasArtifacts)
+          for (final a in artifacts)
+            if (a.title.trim().isNotEmpty) a.title.toLowerCase().trim(): a,
       },
-      onTap: onOpenArtifact!,
+      onTap: onOpenArtifact ?? (_) {},
+      conceptRefs: {
+        if (hasConcepts)
+          for (final c in concepts)
+            if (c.name.trim().isNotEmpty) c.name.toLowerCase().trim(): c,
+      },
+      onTapConcept: onOpenConcept,
       child: column,
     );
   }
