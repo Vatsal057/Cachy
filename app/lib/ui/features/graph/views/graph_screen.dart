@@ -1421,13 +1421,13 @@ class _GraphPainter extends CustomPainter {
 
       double sw;
       if (e.kind == 'reference') {
-        sw = (highlight ? 2.5 : 1.2 + e.weight) * clampedZoom;
+        sw = (highlight ? 1.5 : 0.6 + e.weight * 0.5) * clampedZoom;
       } else if (e.kind == 'tag') {
-        sw = (highlight ? 1.5 : 0.5) * clampedZoom;
+        sw = (highlight ? 0.9 : 0.35) * clampedZoom;
       } else if (e.kind == 'membership') {
-        sw = (highlight ? 2.0 : 1.4) * clampedZoom;
+        sw = (highlight ? 1.2 : 0.7) * clampedZoom;
       } else {
-        sw = (highlight ? 2.2 : 0.6 + e.weight * 1.6) * clampedZoom;
+        sw = (highlight ? 1.4 : 0.35 + e.weight * 0.9) * clampedZoom;
       }
 
       final paint = Paint()

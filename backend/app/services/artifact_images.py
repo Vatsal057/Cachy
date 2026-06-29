@@ -23,7 +23,15 @@ from app.models.artifact import Artifact, ArtifactType
 log = logging.getLogger("services.artifact_images")
 
 _TIMEOUT = httpx.Timeout(8.0)
-_HEADERS = {"User-Agent": "Cachy/0.1 (catalog thumbnail lookup)"}
+# Wikimedia policy requires a descriptive User-Agent with a contact URL/email.
+# Without this, their API returns 403. See: https://meta.wikimedia.org/wiki/User-Agent_policy
+_HEADERS = {
+    "User-Agent": (
+        "Cachy/1.0 (personal knowledge library; "
+        "https://github.com/Vatsal057/Cachy) httpx/python"
+    )
+}
+
 
 # iTunes Search `entity` per artifact type (covers most media).
 _ITUNES_ENTITY: dict[ArtifactType, str] = {
@@ -43,21 +51,28 @@ def resolve_thumbnail(artifact: Artifact) -> str | None:
                 _from_open_library(artifact)
                 or _from_google_books(artifact)
                 or _from_wikipedia(artifact)
+                or _from_wikimedia_commons(artifact)
             )
         if artifact.type == ArtifactType.MUSIC:
             return (
                 _from_itunes(artifact)
                 or _from_musicbrainz(artifact)
                 or _from_wikipedia(artifact)
+                or _from_wikimedia_commons(artifact)
             )
         if artifact.type in _ITUNES_ENTITY:
             return (
                 _from_itunes(artifact)
                 or _from_wikidata(artifact)
                 or _from_wikipedia(artifact)
+                or _from_wikimedia_commons(artifact)
             )
-        # product / place / other
-        return _from_wikidata(artifact) or _from_wikipedia(artifact)
+        # product / place / other / software / web
+        return (
+            _from_wikidata(artifact)
+            or _from_wikipedia(artifact)
+            or _from_wikimedia_commons(artifact)
+        )
     except Exception as e:  # noqa: BLE001 — thumbnail lookup must never break a card
         log.info("thumbnail lookup failed for %r: %s", artifact.title, e)
         return None
@@ -70,20 +85,38 @@ def _query(artifact: Artifact) -> str:
     return " ".join(parts)
 
 
+def _queries(artifact: Artifact) -> list[str]:
+    qs = []
+    full = _query(artifact)
+    qs.append(full)
+    if artifact.creator and artifact.title != full:
+        qs.append(artifact.title)
+    return qs
+
+
+def _words_overlap(query: str, title: str) -> bool:
+    """Return True if at least one significant word (>3 chars) from the query
+    appears in the matched Wikipedia article title (case-insensitive).
+    Prevents clearly wrong fuzzy matches (e.g. 'SkyKit Learn' -> 'A Discovery of Witches').
+    """
+    q_words = {w.lower() for w in query.split() if len(w) > 3}
+    t_lower = title.lower()
+    return any(w in t_lower for w in q_words)
+
+
 def _from_itunes(artifact: Artifact) -> str | None:
     entity = _ITUNES_ENTITY[artifact.type]
-    params = {"term": _query(artifact), "entity": entity, "limit": 1}
-    with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
-        resp = client.get("https://itunes.apple.com/search", params=params)
-        resp.raise_for_status()
-        results = resp.json().get("results") or []
-    if not results:
-        return None
-    art = results[0].get("artworkUrl100")
-    if not art:
-        return None
-    # Upscale the 100px thumbnail iTunes returns to a crisper catalog cover.
-    return art.replace("100x100bb", "400x400bb")
+    for query in _queries(artifact):
+        params = {"term": query, "entity": entity, "limit": 1}
+        with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            resp = client.get("https://itunes.apple.com/search", params=params)
+            resp.raise_for_status()
+            results = resp.json().get("results") or []
+        if results:
+            art = results[0].get("artworkUrl100")
+            if art:
+                return art.replace("100x100bb", "400x400bb")
+    return None
 
 
 def _from_open_library(artifact: Artifact) -> str | None:
@@ -106,17 +139,74 @@ def _from_open_library(artifact: Artifact) -> str | None:
 
 
 def _from_wikipedia(artifact: Artifact) -> str | None:
-    title = quote(artifact.title.replace(" ", "_"))
-    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-    with httpx.Client(
-        timeout=_TIMEOUT, headers=_HEADERS, follow_redirects=True
-    ) as client:
-        resp = client.get(url)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-    thumb = data.get("thumbnail") or {}
-    return thumb.get("source")
+    """Two-step fuzzy lookup: search Wikipedia first (handles typos/alt names),
+    then fetch the summary of the best match to get its thumbnail."""
+    for query in _queries(artifact):
+        with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            search_resp = client.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "format": "json",
+                    "srlimit": 1,
+                    "srprop": "",
+                },
+            )
+            if search_resp.status_code != 200:
+                continue
+            hits = search_resp.json().get("query", {}).get("search", [])
+        if not hits:
+            continue
+        matched_title = hits[0]["title"]
+        if not _words_overlap(query, matched_title):
+            continue
+        page_title = quote(matched_title.replace(" ", "_"))
+        with httpx.Client(
+            timeout=_TIMEOUT, headers=_HEADERS, follow_redirects=True
+        ) as client:
+            summary_resp = client.get(
+                f"https://en.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+            )
+            if summary_resp.status_code == 200:
+                thumb = summary_resp.json().get("thumbnail") or {}
+                source = thumb.get("source")
+                if source:
+                    return source
+    return None
+
+
+def _from_wikimedia_commons(artifact: Artifact) -> str | None:
+    """Search Wikimedia Commons directly for logos or icons."""
+    for query in _queries(artifact):
+        search_q = f"{query} logo"
+        with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            resp = client.get(
+                "https://commons.wikimedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": search_q,
+                    "format": "json",
+                    "srnamespace": 6,
+                    "srlimit": 1,
+                },
+            )
+            if resp.status_code != 200:
+                continue
+            hits = resp.json().get("query", {}).get("search", [])
+        if not hits:
+            continue
+        matched_title = hits[0]["title"]
+        if not _words_overlap(query, matched_title):
+            continue
+        filename = matched_title.replace("File:", "").strip()
+        encoded = filename.replace(" ", "_")
+        return f"https://commons.wikimedia.org/wiki/Special:FilePath/{encoded}?width=400"
+    return None
+
+
 
 
 def _from_google_books(artifact: Artifact) -> str | None:
@@ -162,32 +252,54 @@ def _from_musicbrainz(artifact: Artifact) -> str | None:
 
 
 def _from_wikidata(artifact: Artifact) -> str | None:
-    search_params = {
-        "action": "wbsearchentities",
-        "search": _query(artifact),
-        "language": "en",
-        "format": "json",
-        "limit": 1,
-    }
-    with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
-        resp = client.get("https://www.wikidata.org/w/api.php", params=search_params)
-        resp.raise_for_status()
-        results = resp.json().get("search") or []
+    results = []
+    for query in _queries(artifact):
+        search_params = {
+            "action": "wbsearchentities",
+            "search": query,
+            "language": "en",
+            "format": "json",
+            "limit": 3,
+        }
+        with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            resp = client.get("https://www.wikidata.org/w/api.php", params=search_params)
+            resp.raise_for_status()
+            results = resp.json().get("search") or []
+        if results:
+            break
     if not results:
         return None
-    qid = results[0].get("id")
-    if not qid:
-        return None
+
+    best_fallback = None
     with httpx.Client(timeout=_TIMEOUT, headers=_HEADERS) as client:
-        entity_resp = client.get(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")
-        entity_resp.raise_for_status()
-        entities = entity_resp.json().get("entities", {})
-    claims = entities.get(qid, {}).get("claims", {})
-    p18 = claims.get("P18", [])  # P18 = image
-    if not p18:
-        return None
-    filename = p18[0].get("mainsnak", {}).get("datavalue", {}).get("value")
-    if not filename:
-        return None
-    encoded = filename.replace(" ", "_")
-    return f"https://commons.wikimedia.org/wiki/Special:FilePath/{encoded}?width=400"
+        for hit in results[:3]:
+            qid = hit.get("id")
+            if not qid:
+                continue
+            try:
+                entity_resp = client.get(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")
+                entity_resp.raise_for_status()
+                entities = entity_resp.json().get("entities", {})
+            except Exception:
+                continue
+            claims = entities.get(qid, {}).get("claims", {})
+            for prop in ("P154", "P18"):
+                entries = claims.get(prop, [])
+                if entries:
+                    filename = entries[0].get("mainsnak", {}).get("datavalue", {}).get("value")
+                    if filename:
+                        encoded = filename.replace(" ", "_")
+                        url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{encoded}?width=400"
+                        if prop == "P154":
+                            return url
+                        if not best_fallback:
+                            best_fallback = url
+            p856 = claims.get("P856", [])
+            if p856:
+                website_url = p856[0].get("mainsnak", {}).get("datavalue", {}).get("value")
+                if website_url:
+                    from urllib.parse import urlparse
+                    domain = urlparse(website_url).netloc
+                    if domain:
+                        return f"https://www.google.com/s2/favicons?domain={domain}&sz=256"
+    return best_fallback

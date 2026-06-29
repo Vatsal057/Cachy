@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_vision_model: str = "gemini-2.0-flash-lite"
 
+    # NVIDIA NVLM vision (OpenAI-compatible; free credits at integrate.api.nvidia.com)
+    nvidia_api_key: str = ""
+    nvidia_vision_model: str = "nvidia/nvlm-d-72b"
+
     # local Whisper via faster-whisper (no API, no rate limits)
     # tiny=39MB | base=74MB | small=244MB
     local_whisper_model: str = "base"
@@ -92,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def gemini_vision_enabled(self) -> bool:
         return bool(self.gemini_api_key.strip())
+
+    @property
+    def nvidia_vision_enabled(self) -> bool:
+        return bool(self.nvidia_api_key.strip())
 
     @property
     def local_whisper_enabled(self) -> bool:

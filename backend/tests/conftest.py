@@ -18,6 +18,8 @@ os.environ["MEDIA_DIR"] = f"{_TMP}/media"
 os.environ["LLM_BACKEND"] = "none"
 os.environ["HF_API_KEY"] = ""
 os.environ["GROQ_API_KEY"] = ""
+os.environ["CEREBRAS_API_KEY"] = ""
+os.environ["GEMINI_API_KEY"] = ""
 os.environ["WHISPER_BACKEND"] = "none"
 os.environ["MAX_ATTEMPTS"] = "2"
 
