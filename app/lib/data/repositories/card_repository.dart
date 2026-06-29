@@ -174,9 +174,15 @@ class CardRepository extends ChangeNotifier {
   }
 
   Future<void> delete(String cardId) async {
-    await _api.deleteCard(cardId);
+    // Phone is source of truth: remove from cache first so the card is never
+    // re-pushed to the server by _syncMissingToServer after a restart.
     await _store.removeCard(cardId);
     notifyListeners();
+    try {
+      await _api.deleteCard(cardId);
+    } catch (_) {
+      // Best-effort; card is already gone from local cache.
+    }
   }
 
   Future<List<Card>> search(String query) => _api.search(query);
