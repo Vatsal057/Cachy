@@ -168,7 +168,7 @@ async def import_cards(
                 one_liner=card.base.one_liner,
                 tldr=card.base.tldr,
                 tags=list(card.base.tags),
-                blocks=list(card.blocks or []),
+                blocks=[b.model_dump() for b in (card.blocks or [])],
                 insight=card.insight.model_dump() if card.insight else None,
                 primary_action=card.primary_action.model_dump(),
                 action_items=card.action_items.model_dump(),
