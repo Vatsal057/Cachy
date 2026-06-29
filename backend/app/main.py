@@ -88,3 +88,10 @@ app.mount(
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "schema_version": SCHEMA_VERSION}
+
+
+# Flutter web SPA — mounted last so all API routes take priority.
+# Built into ./static by the multi-stage Dockerfile.
+_STATIC = "static"
+if __import__("os").path.isdir(_STATIC):
+    app.mount("/", StaticFiles(directory=_STATIC, html=True), name="web")
