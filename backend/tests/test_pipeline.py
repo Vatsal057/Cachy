@@ -5,6 +5,7 @@ import os
 
 import pytest
 
+from app.models.artifact import Artifact, ArtifactType
 from app.models.card import CardState
 from app.models.job import JobState
 from app.pipeline import worker
@@ -158,4 +159,46 @@ async def test_preserve_custom_collection(database, stub_pipeline):
         assert row.collection_id is not None
         col = await s.get(db.CollectionRow, row.collection_id)
         assert col.name == "My Custom Folder"
+
+
+async def test_persist_artifacts_sequential_and_rollback(database, monkeypatch):
+    """Verify that multiple artifacts resolve thumbnails in parallel but upsert
+    sequentially, and any individual failure triggers session rollback so the
+    session remains valid for subsequent operations."""
+    card_id, _ = await _make_card_and_job("https://instagram.com/reel/artifacts_test")
+    artifacts = [
+        Artifact(type=ArtifactType.BOOK, title=f"Book {i}") for i in range(5)
+    ]
+
+    def fake_thumb(art):
+        return f"https://img/{art.title}.jpg"
+
+    monkeypatch.setattr(worker.artifact_images, "resolve_thumbnail", fake_thumb)
+
+    orig_upsert = db.upsert_artifact
+
+    async def flaky_upsert(session, **kwargs):
+        if kwargs["title"] == "Book 2":
+            raise RuntimeError("simulated DB constraint failure")
+        return await orig_upsert(session, **kwargs)
+
+    monkeypatch.setattr(db, "upsert_artifact", flaky_upsert)
+
+    async with db.session() as s:
+        await worker._persist_artifacts(s, card_id, artifacts)
+        # Session must still be usable (not in PendingRollbackError state)
+        row = await db.get_card_row(s, card_id)
+        assert row is not None
+
+    async with db.session() as s:
+        from sqlalchemy import select
+        res = await s.execute(select(db.ArtifactRow).order_by(db.ArtifactRow.title))
+        rows = res.scalars().all()
+        titles = [r.title for r in rows]
+        assert "Book 0" in titles
+        assert "Book 1" in titles
+        assert "Book 2" not in titles
+        assert "Book 3" in titles
+        assert "Book 4" in titles
+
 

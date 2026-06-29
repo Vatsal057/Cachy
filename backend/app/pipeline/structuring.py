@@ -176,8 +176,7 @@ Rules for blocks (MOST IMPORTANT):
 
 Other rules:
 - base.one_liner and base.tldr MUST always be non-empty.
-- base.tags: 3-6 short, lowercase, topical keywords.
-- artifacts: include ONLY concrete, named, real-world things the video names. Do NOT invent any.
+- artifacts: include ONLY concrete, named, real-world things the video names (books, tools, products). Do NOT include social media hosting platforms (Instagram, TikTok) or downloading scrapers.
 - Inline references: wrap artifact names and concept names in [[double brackets]] the FIRST time they appear in prose.
 - action_items: concrete doable tasks the video tells the viewer to take. Short imperative phrases, max ~8.
 - depth: "deep" for idea-rich, knowledge-heavy, or argumentative content. "shallow" for procedural/lightweight.
@@ -197,19 +196,20 @@ Extracted text bundle:
 # Bundle preprocessor (Gemini Flash Lite — separate quota pool)
 # --------------------------------------------------------------------------- #
 
-_PREPROCESS_PROMPT = """You clean a noisy text bundle extracted from a short-form video \
+_PREPROCESS_PROMPT = """You clean and prepare a noisy text bundle extracted from a short-form video \
 (caption + audio transcript + on-screen/slide text) before it is turned into a detailed knowledge note.
 
-Your job is ONLY to remove noise, never to reduce information density.
+Your job: remove noise AND translate non-English text to English. Never reduce information density.
 
 Do ONLY this:
+- If the TRANSCRIPT is in a non-English language, translate it fully to English in-place, preserving ALL content, names, examples, and meaning. Update the section label to: "TRANSCRIPT (translated from [Language]):". Keep every detail from the original — do not summarize.
 - Remove EXACT duplicates across channels (e.g. on-screen text word-for-word repeating the transcript). If in doubt, KEEP BOTH.
 - Remove pure engagement bait with zero informational value ("like and subscribe", "link in bio", "follow for more").
 - Remove spoken filler with zero content ("um", "uh", "you know", "so basically").
 - NEVER remove or merge: names, numbers, steps, tips, tools, apps, products, prices, quantities, quotes, claims, or explanations — even partial ones.
 - NEVER summarize, paraphrase, reorder, or shorten any real information.
 - NEVER drop a sentence just because it seems redundant to you — the structuring model will judge relevance.
-- Keep the CAPTION / TRANSCRIPT / ON-SCREEN TEXT / SOURCE section labels and structure intact.
+- Keep the CAPTION / TRANSCRIPT / ON-SCREEN TEXT / VISUAL CONTEXT / SOURCE PLATFORM section labels and structure intact.
 - Output ONLY the cleaned bundle text — no preamble, no explanation, no markdown.
 
 If you are unsure whether something is noise or content, KEEP IT.
@@ -229,17 +229,23 @@ def _preprocess_bundle(bundle: str) -> str:
     settings = get_settings()
     if not settings.gemini_preprocess_enabled:
         return bundle
+    log.info("preprocess: cleaning bundle with Gemini (%s)", settings.gemini_preprocess_model)
     try:
-        import google.generativeai as genai
+        from google import genai as google_genai
 
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel(settings.gemini_preprocess_model)
-        resp = model.generate_content(_PREPROCESS_PROMPT.format(bundle=bundle))
+        client = google_genai.Client(api_key=settings.gemini_api_key)
+        resp = client.models.generate_content(
+            model=settings.gemini_preprocess_model,
+            contents=_PREPROCESS_PROMPT.format(bundle=bundle),
+        )
         cleaned = (resp.text or "").strip()
+        if cleaned:
+            log.info("preprocess: done (%d → %d chars)", len(bundle), len(cleaned))
         return cleaned or bundle
     except Exception as e:
         log.warning("bundle preprocess (gemini) failed: %s; using raw bundle", e)
         return bundle
+
 
 
 # --------------------------------------------------------------------------- #
@@ -269,6 +275,7 @@ def _call_llm(bundle: str) -> str | None:
 
 def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | None:
     settings = get_settings()
+    log.info("llm: calling Cerebras (%s)", settings.cerebras_llm_model)
     try:
         from cerebras.cloud.sdk import Cerebras
 
@@ -280,7 +287,10 @@ def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | No
             max_tokens=max_tokens,
         )
         text = resp.choices[0].message.content if resp.choices else ""
-        return (text or "").strip()
+        result = (text or "").strip()
+        if result:
+            log.info("llm: Cerebras OK (%d chars)", len(result))
+        return result
     except Exception as e:
         log.warning("llm call (cerebras) failed: %s", e)
         return None
@@ -288,6 +298,7 @@ def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | No
 
 def _call_groq(prompt: str, max_tokens: int, temperature: float) -> str | None:
     settings = get_settings()
+    log.info("llm: calling Groq (%s)", settings.groq_llm_model)
     try:
         from groq import Groq
 
@@ -299,7 +310,10 @@ def _call_groq(prompt: str, max_tokens: int, temperature: float) -> str | None:
             max_tokens=max_tokens,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
         )
         text = resp.choices[0].message.content if resp.choices else ""
-        return (text or "").strip()
+        result = (text or "").strip()
+        if result:
+            log.info("llm: Groq OK (%d chars)", len(result))
+        return result
     except Exception as e:
         log.warning("llm call (groq) failed: %s", e)
         return None

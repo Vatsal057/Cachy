@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import or_, select, update
 
@@ -157,14 +158,23 @@ async def _write_media_and_meta(
     await session.commit()
 
 
-async def _persist_artifacts(session, card_id: str, artifacts) -> None:
-    """Aggregate referenced things into the global catalog (docs/12). Each lookup
-    is best-effort and isolated — a failure here never affects the card itself."""
-    for art in artifacts:
+async def _persist_artifacts(session: Any, card_id: str, artifacts: list[Any]) -> None:
+    """Aggregate referenced things into the global catalog (docs/12). Thumbnail
+    lookups run in parallel — each is best-effort and never blocks the card."""
+    async def _resolve_thumb(art: Any) -> tuple[Any, str | None]:
         try:
             thumbnail = await asyncio.to_thread(
                 artifact_images.resolve_thumbnail, art
             )
+            return art, thumbnail
+        except Exception as e:
+            log.warning("thumbnail lookup failed for %r: %s", art.title, str(e), exc_info=True)
+            return art, None
+
+    resolved = await asyncio.gather(*(_resolve_thumb(art) for art in artifacts))
+
+    for art, thumbnail in resolved:
+        try:
             await db.upsert_artifact(
                 session,
                 card_id=card_id,
@@ -174,21 +184,23 @@ async def _persist_artifacts(session, card_id: str, artifacts) -> None:
                 year=art.year,
                 thumbnail=thumbnail,
             )
-        except Exception:  # noqa: BLE001 — catalog is non-critical to the card
-            log.warning("catalog upsert failed for %r", art.title, exc_info=True)
+        except Exception as e:  # noqa: BLE001 — catalog is non-critical to the card
+            await session.rollback()
+            log.warning("catalog upsert failed for %r: %s", art.title, str(e), exc_info=True)
 
 
-async def _persist_concepts(session, card_id: str, concepts: list[str]) -> None:
+async def _persist_concepts(session: Any, card_id: str, concepts: list[str]) -> None:
     """Aggregate evergreen ideas into the global concept store. Best-effort and
     isolated — a failure here never affects the card itself."""
     for name in concepts:
         try:
             await db.upsert_concept(session, card_id=card_id, name=name)
-        except Exception:  # noqa: BLE001 — concepts are non-critical to the card
-            log.warning("concept upsert failed for %r", name, exc_info=True)
+        except Exception as e:  # noqa: BLE001 — concepts are non-critical to the card
+            await session.rollback()
+            log.warning("concept upsert failed for %r: %s", name, str(e), exc_info=True)
 
 
-async def _embed_card(session, card_id: str) -> None:
+async def _embed_card(session: Any, card_id: str) -> None:
     """Compute + store a semantic-search embedding for the card (docs/09).
     Best-effort and isolated: any failure (no HF key, network) leaves the card
     embedding-less, and search degrades to full-text. Reuses the same flattened
@@ -288,7 +300,7 @@ async def _run_job(session, job: db.JobRow) -> None:
     events.publish(card_id, "extracting", "processing", "Extracting audio + frames")
     log.info("%s Step 2/6 extract: transcript + on-screen text from media", tag)
     work_dir = media.job_dir_for_card(card_id)
-    source_line = f"{platform or 'unknown'} / {download.resolver}"
+    source_line = platform.title() if platform else "Short-form video"
     extraction = await extract_async(download, work_dir, source_line)
     log.info(
         "%s Step 2/6 extract OK | frames=%d transcript=%s ocr=%s vision=%s",
@@ -373,8 +385,9 @@ async def _run_job(session, job: db.JobRow) -> None:
                     })
             else:
                 log.info("%s Step 4b deep-analysis: no usable layer produced", tag)
-        except Exception:  # noqa: BLE001 — insight is non-critical to the card
-            log.warning("%s Step 4b deep-analysis failed", tag, exc_info=True)
+        except Exception as e:  # noqa: BLE001 — insight is non-critical to the card
+            await session.rollback()
+            log.warning("%s Step 4b deep-analysis failed: %s", tag, str(e), exc_info=True)
     else:
         log.info("%s Step 4b deep-analysis: depth=shallow, skipping", tag)
 
@@ -399,9 +412,10 @@ async def _run_job(session, job: db.JobRow) -> None:
     log.info("%s Step 6/6 index: embedding card for semantic search", tag)
     try:
         await _embed_card(session, card_id)
-    except Exception:  # noqa: BLE001 — semantic index is non-critical to the card
+    except Exception as e:  # noqa: BLE001 — semantic index is non-critical to the card
+        await session.rollback()
         log.warning("%s Step 6/6 index: embedding failed (search degrades to "
-                    "full-text)", tag, exc_info=True)
+                    "full-text): %s", tag, str(e), exc_info=True)
 
     # Optionally discard the source video, keep keyframes+thumbnail (docs/11)
     if get_settings().discard_source_video and download.media_type == "video":
@@ -428,20 +442,24 @@ async def run_worker_loop() -> None:
                 if job is None:
                     await asyncio.sleep(settings.worker_poll_seconds)
                     continue
+                job_id = job.id
+                card_id = job.card_id
                 try:
                     await asyncio.wait_for(
                         _run_job(session, job),
                         timeout=settings.job_timeout_seconds,
                     )
-                except asyncio.TimeoutError:
+                except asyncio.TimeoutError as e:
+                    await session.rollback()
                     await _fail(
-                        session, job.card_id, job, FailureReason.TIMEOUT, "job timed out"
+                        session, card_id, job, FailureReason.TIMEOUT, f"job timed out: {e}"
                     )
-                    events.publish(job.card_id, "failed", "failed", "Timed out",
+                    events.publish(card_id, "failed", "failed", "Timed out",
                                    FailureReason.TIMEOUT.value)
                 except Exception as e:  # noqa: BLE001 — pipeline must never crash the loop
-                    log.exception("job %s failed", job.id)
-                    await _fail(session, job.card_id, job, FailureReason.UNAVAILABLE, str(e))
+                    await session.rollback()
+                    log.exception("job %s failed: %s", job_id, str(e))
+                    await _fail(session, card_id, job, FailureReason.UNAVAILABLE, str(e))
         except Exception:  # noqa: BLE001
             log.exception("worker loop iteration error")
             await asyncio.sleep(settings.worker_poll_seconds)

@@ -15,11 +15,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app import discovery
 from app.api import cards, catalog, collections, concepts, graph, library_chat, search
+from app.logging_config import configure_logging
 from app.models.card import SCHEMA_VERSION
 from app.pipeline import worker
 from app.store import db, media
 
-logging.basicConfig(level=logging.INFO)
+# Apply at import time (catches logs before lifespan runs).
+configure_logging()
 log = logging.getLogger("app.main")
 
 _worker_task: asyncio.Task | None = None
@@ -28,6 +30,8 @@ _worker_task: asyncio.Task | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _worker_task
+    # Re-apply after uvicorn has configured its own handlers so our format wins.
+    configure_logging()
     await db.init_db()
     async with db.session() as s:
         reset_count = await db.reset_orphaned_processing_jobs(s)
