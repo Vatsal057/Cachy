@@ -9,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/artifact.dart';
+import '../../../domain/models/concept.dart';
 
 /// Inline grammar: `[[Reference]]`, then **bold**, *italic* / _italic_, `code`.
 final _richPattern = RegExp(
@@ -23,19 +24,29 @@ class ReferenceScope extends InheritedWidget {
     super.key,
     required this.refs,
     required this.onTap,
+    this.conceptRefs = const {},
+    this.onTapConcept,
     required super.child,
   });
 
-  final Map<String, CatalogEntry> refs; // normalised title -> entry
+  final Map<String, CatalogEntry> refs; // normalised title -> artifact
   final void Function(CatalogEntry) onTap;
 
+  /// Concept wiki-links: a `[[idea]]` that names one of the card's concepts
+  /// resolves here when it isn't an artifact.
+  final Map<String, ConceptEntry> conceptRefs; // normalised name -> concept
+  final void Function(ConceptEntry)? onTapConcept;
+
   CatalogEntry? resolve(String label) => refs[label.toLowerCase().trim()];
+  ConceptEntry? resolveConcept(String label) =>
+      conceptRefs[label.toLowerCase().trim()];
 
   static ReferenceScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ReferenceScope>();
 
   @override
-  bool updateShouldNotify(ReferenceScope old) => old.refs != refs;
+  bool updateShouldNotify(ReferenceScope old) =>
+      old.refs != refs || old.conceptRefs != conceptRefs;
 }
 
 /// Drop-in for `Text` rendering the inline subset above. Stateful so tap
@@ -111,20 +122,31 @@ class _RichInlineTextState extends State<RichInlineText> {
     return spans;
   }
 
-  /// A `[[Name]]` marker: a tappable link if it resolves to a card artifact,
-  /// otherwise the bare name (brackets stripped) so unknown refs never leak.
+  /// A `[[Name]]` marker: resolves to artifact first, then concept, else bare name.
   InlineSpan _referenceSpan(String label, TextStyle? base, ReferenceScope? scope) {
     final entry = scope?.resolve(label);
-    if (entry == null) return TextSpan(text: label, style: base);
-    final recognizer = TapGestureRecognizer()..onTap = () => scope!.onTap(entry);
-    _recognizers.add(recognizer);
-    return TextSpan(
-      text: label,
-      style: base?.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.w600,
-      ),
-      recognizer: recognizer,
-    );
+    if (entry != null) {
+      final recognizer = TapGestureRecognizer()..onTap = () => scope!.onTap(entry);
+      _recognizers.add(recognizer);
+      return _linkSpan(label, base, recognizer);
+    }
+    final concept = scope?.resolveConcept(label);
+    if (concept != null && scope?.onTapConcept != null) {
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () => scope!.onTapConcept!(concept);
+      _recognizers.add(recognizer);
+      return _linkSpan(label, base, recognizer);
+    }
+    return TextSpan(text: label, style: base);
   }
+
+  InlineSpan _linkSpan(String label, TextStyle? base, TapGestureRecognizer recognizer) =>
+      TextSpan(
+        text: label,
+        style: base?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
+        recognizer: recognizer,
+      );
 }

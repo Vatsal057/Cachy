@@ -49,6 +49,10 @@ def run_app() -> int:
         str(venv_uvicorn),
         "app.main:app",
         "--reload",
+        # Bind all interfaces so a phone on the same WiFi can reach the API after
+        # LAN discovery (not just localhost). Local-testing only.
+        "--host",
+        "0.0.0.0",
         "--port",
         "8000",
     ]

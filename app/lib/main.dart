@@ -26,7 +26,7 @@ Future<void> main() async {
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   final store = await LocalStore.open();
   final highlightStore = await HighlightStore.open();
-  final api = ApiClient();
+  final api = ApiClient(baseUrl: await ApiClient.resolveBaseUrl());
   final repository = CardRepository(api: api, store: store);
   final appController = AppController(store);
   FlutterNativeSplash.remove();

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow cleartext (HTTP) on private LAN ranges for local testing. Production
+         (HF) uses HTTPS and is unaffected. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Private IPv4 ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 -->
+        <domain includeSubdomains="true">10.0.0.0/8</domain>
+        <domain includeSubdomains="true">172.16.0.0/12</domain>
+        <domain includeSubdomains="true">192.168.0.0/16</domain>
+        <!-- Localhost for emulator testing -->
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+    <!-- Require HTTPS for all other domains (production) -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">example.com</domain>
+    </domain-config>
+</network-security-config>

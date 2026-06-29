@@ -21,11 +21,16 @@ dependencies = [
     "Pillow>=10.0",
     "imagehash>=4.3",
     # structuring / transcription (optional at runtime, graceful fallback if keys absent)
+    "cerebras-cloud-sdk>=1.0",  # note-generation primary (60k TPM free tier)
     "google-generativeai>=0.5",
     "groq>=0.9",
     "huggingface_hub>=0.27",
     # OCR is optional; pytesseract needs the tesseract binary present
     "pytesseract>=0.3.10",
+    # image preprocessing for OCR (adaptive threshold + sharpen)
+    "opencv-python-headless>=4.9",
+    # local Whisper transcription — no API, no rate limits (model downloads on first use)
+    "faster-whisper>=1.0",
 ]
 
 [project.optional-dependencies]

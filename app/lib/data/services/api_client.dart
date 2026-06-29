@@ -13,6 +13,7 @@ import '../../domain/models/collection.dart';
 import '../../domain/models/concept.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/graph.dart';
+import 'lan_discovery.dart';
 import '../../domain/models/pipeline_event.dart';
 
 class ApiException implements Exception {
@@ -56,10 +57,20 @@ class ApiClient {
   /// Override at build time: `--dart-define=CACHY_API_BASE=https://host`.
   /// Default targets the Android emulator's host loopback; iOS sim uses
   /// localhost so override there if needed.
+  static const String _emulatorDefault = 'http://10.0.2.2:8000';
   static const String _defaultBaseUrl = String.fromEnvironment(
     'CACHY_API_BASE',
-    defaultValue: 'http://10.0.2.2:8000',
+    defaultValue: _emulatorDefault,
   );
+
+  /// Resolve the backend URL at launch. An explicit `CACHY_API_BASE` (a real
+  /// deploy, e.g. Hugging Face) always wins and skips discovery. Otherwise try
+  /// LAN auto-connect for a backend on the same WiFi, falling back to the
+  /// emulator loopback.
+  static Future<String> resolveBaseUrl() async {
+    if (_defaultBaseUrl != _emulatorDefault) return _defaultBaseUrl;
+    return (await discoverBackend()) ?? _defaultBaseUrl;
+  }
 
   final String baseUrl;
   final http.Client _client;

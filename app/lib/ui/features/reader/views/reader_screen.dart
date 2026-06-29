@@ -165,6 +165,12 @@ class _ReaderView extends StatelessWidget {
                           onOpenUrl: (url) => _copyUrl(context, url),
                           artifacts: vm.artifacts,
                           onOpenArtifact: (e) => openLookup(e),
+                          concepts: vm.concepts,
+                          onOpenConcept: (entry) => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ConceptDetailScreen(entry: entry),
+                            ),
+                          ),
                           onHighlight: card.isReady ? onHighlight : null,
                         )),
                         if (card.isProcessing) ...[

@@ -3,9 +3,12 @@ this module then ALWAYS validates it before persisting. The guarantee — a card
 always renders something sane — comes from validation + paragraph fallback, never
 from trusting the model.
 
-The LLM backend is selectable (config.llm_backend): HuggingFace Inference Providers
-(default, Qwen2.5-72B-Instruct) or Groq. No key? Bad JSON? Empty output?
--> deterministic paragraph fallback."""
+Note generation runs in two stages, on two separate free-tier quota pools:
+  1. Preprocess (Gemini Flash Lite, 500 RPD): dedupe + strip filler from the fat
+     extraction bundle. Forgiving task; failure passes the raw bundle through.
+  2. Structure (Cerebras llama-3.3-70b, 60k TPM): the fat-tolerant primary. Groq
+     is the fallback when Cerebras is down.
+No key? Bad JSON? Empty output? -> deterministic paragraph fallback."""
 
 from __future__ import annotations
 
@@ -128,18 +131,23 @@ Formatting rules:
   *italic* for emphasis. Use it sparingly. No other markdown (no #, no links).
 """.strip()
 
-_PROMPT = """You convert a short-form video's extracted text into a structured knowledge card.
+_PROMPT = """You convert a short-form video's extracted text into a COMPREHENSIVE, LOSSLESS structured knowledge card.
+
+Your PRIME DIRECTIVE: capture EVERY piece of information from the source. Do NOT summarize, compress, or omit anything.
+Every name, number, step, tip, quote, tool, product, claim, statistic, and detail MUST appear in the blocks.
+If the video says 10 things, your card captures all 10 — not 3. If it mentions a specific number, tool, or name, it appears verbatim.
+A reader who never watches the video should know EVERYTHING the video said, in full detail.
 
 Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 {{
   "base": {{
     "one_liner": str,        // what the video GIVES the viewer, not what it's about
-    "tldr": str,             // a standalone summary understandable without the video
+    "tldr": str,             // a 2-4 sentence standalone summary covering the key ideas
     "content_type": "recipe|workout|tutorial|tip|product_list|travel|news_explainer|other",
     "type_confidence": 0.0-1.0,
     "tags": [str]            // 3-6 short lowercase topical tags (e.g. "fitness", "budgeting")
   }},
-  "blocks": [ ... ],         // ordered list using ONLY the allowed block types
+  "blocks": [ ... ],         // EXHAUSTIVE ordered list — every detail from the source goes here
   "artifacts": [             // real, named things the video REFERENCES (may be empty)
     {{ "type": "book|movie|tv_show|podcast|music|product|place|app|other",
        "title": str,         // the proper name of the thing
@@ -150,40 +158,30 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
     str                      // one short imperative task, e.g. "Batch emails into two daily windows"
   ],
   "concepts": [str],         // 1-6 evergreen source-independent IDEAS (may be empty)
-  "depth": "shallow|deep"    // does this content warrant deep analysis? (see below)
+  "depth": "shallow|deep"    // does this content warrant deep analysis?
 }}
 
-Rules:
+Rules for blocks (MOST IMPORTANT):
+- You MUST use as many blocks as needed to capture ALL content. There is no limit.
+- Start with a `heading` (level 1) that names the main topic.
+- Break content into logical sections using `heading` (level 2) blocks.
+- Every section the video discusses must become its own headed section with full detail.
+- For lists of tools/products/features/steps: use `table` (with name + description columns) or `step_list`.
+- For tips, insights, or claims: each one is a separate `bullet_list` item or a `paragraph` — do NOT merge them.
+- For exact quotes, statistics, or emphasized claims: use a `callout` block.
+- NEVER collapse 5 points into 1. NEVER write "and more" or "etc." — list everything explicitly.
+- NEVER skip context. If the video explains WHY something works, that explanation goes in a `paragraph` block.
+- If the video names specific tools, apps, or products: list every single one in a `table` with what each does.
+- If the video gives steps or instructions: every step goes in a `step_list`, no steps omitted.
+
+Other rules:
 - base.one_liner and base.tldr MUST always be non-empty.
-- base.tags: 3-6 short, lowercase, topical keywords for browsing/grouping the card.
-- Choose content_type, then arrange blocks to fit it (e.g. recipe -> heading,
-  key_value(time/serves), checklist(ingredients), step_list(steps)).
-- Use ONLY the allowed block types below. Output strict JSON.
-- artifacts: include ONLY concrete, named, real-world things the video names
-  (e.g. a specific book, movie, podcast, product, or place). Do NOT invent any;
-  if the video names none, return an empty list. Use the most specific type.
-- Inline references: when you mention one of your `artifacts` inside a text field
-  (paragraph/bullet/step/callout — NOT table cells), wrap its name in double
-  brackets where you introduce it, e.g. "I loved [[Atomic Habits]]." Wrap only
-  names that are in your artifacts list, and wrap each name at most once.
-- action_items: the concrete, doable tasks the video is telling the viewer to take
-  away and DO (e.g. "Drink water before each meal", "Try the Notion template").
-  Short imperative phrases, max ~8. These are the takeaways to act on, NOT a
-  restatement of every step in a recipe/tutorial. Return an empty list if the
-  video is purely informational with nothing to act on.
-- depth: judge whether this content rewards DEEPER analysis (claims to fact-check,
-  unstated assumptions, open questions, a web of related concepts). Answer "deep"
-  ONLY for idea-rich, knowledge-heavy, or argumentative content (e.g. a science
-  explainer, an investing thesis, a psychology breakdown, a contested take).
-  Answer "shallow" for practical/procedural or lightweight content with nothing
-  to interrogate (a recipe, a workout, a product list, a quick how-to, a meme).
-  When unsure, answer "shallow". Most videos are shallow.
-- concepts: 1-6 evergreen, source-independent IDEAS this content is about —
-  lowercase canonical noun phrases (e.g. "compounding", "loss aversion",
-  "intermittent fasting"). These are abstract ideas a reader might want to
-  understand and connect across multiple cards, NOT tags, NOT artifact names,
-  NOT procedural steps. Return an empty list if the card is purely procedural
-  (a recipe, a workout, a product list) and contains no abstract ideas.
+- base.tags: 3-6 short, lowercase, topical keywords.
+- artifacts: include ONLY concrete, named, real-world things the video names. Do NOT invent any.
+- Inline references: wrap artifact names and concept names in [[double brackets]] the FIRST time they appear in prose.
+- action_items: concrete doable tasks the video tells the viewer to take. Short imperative phrases, max ~8.
+- depth: "deep" for idea-rich, knowledge-heavy, or argumentative content. "shallow" for procedural/lightweight.
+- concepts: 1-6 evergreen, source-independent IDEAS. Lowercase noun phrases.
 
 {vocab}
 
@@ -194,51 +192,97 @@ Extracted text bundle:
 """
 
 
+
 # --------------------------------------------------------------------------- #
-# LLM call (selectable backend: huggingface | groq)
+# Bundle preprocessor (Gemini Flash Lite — separate quota pool)
+# --------------------------------------------------------------------------- #
+
+_PREPROCESS_PROMPT = """You clean a noisy text bundle extracted from a short-form video \
+(caption + audio transcript + on-screen/slide text) before it is turned into a detailed knowledge note.
+
+Your job is ONLY to remove noise, never to reduce information density.
+
+Do ONLY this:
+- Remove EXACT duplicates across channels (e.g. on-screen text word-for-word repeating the transcript). If in doubt, KEEP BOTH.
+- Remove pure engagement bait with zero informational value ("like and subscribe", "link in bio", "follow for more").
+- Remove spoken filler with zero content ("um", "uh", "you know", "so basically").
+- NEVER remove or merge: names, numbers, steps, tips, tools, apps, products, prices, quantities, quotes, claims, or explanations — even partial ones.
+- NEVER summarize, paraphrase, reorder, or shorten any real information.
+- NEVER drop a sentence just because it seems redundant to you — the structuring model will judge relevance.
+- Keep the CAPTION / TRANSCRIPT / ON-SCREEN TEXT / SOURCE section labels and structure intact.
+- Output ONLY the cleaned bundle text — no preamble, no explanation, no markdown.
+
+If you are unsure whether something is noise or content, KEEP IT.
+
+Bundle:
+---
+{bundle}
+---
+"""
+
+
+
+def _preprocess_bundle(bundle: str) -> str:
+    """Gemini Flash Lite (500 RPD, separate pool): dedupe + strip filler before the
+    main structuring call. Pure optimization — any failure passes the raw bundle
+    through, so Cerebras (60k TPM) still handles the fat bundle fine."""
+    settings = get_settings()
+    if not settings.gemini_preprocess_enabled:
+        return bundle
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=settings.gemini_api_key)
+        model = genai.GenerativeModel(settings.gemini_preprocess_model)
+        resp = model.generate_content(_PREPROCESS_PROMPT.format(bundle=bundle))
+        cleaned = (resp.text or "").strip()
+        return cleaned or bundle
+    except Exception as e:
+        log.warning("bundle preprocess (gemini) failed: %s; using raw bundle", e)
+        return bundle
+
+
+# --------------------------------------------------------------------------- #
+# LLM call (Cerebras primary -> Groq fallback)
 # --------------------------------------------------------------------------- #
 
 def complete(prompt: str, *, max_tokens: int = 8192, temperature: float = 0.2) -> str | None:
-    """Generic single-prompt completion via the configured backend (HF, with a
-    Groq fallback). Shared by the structuring pass and the gated insight pass
+    """Generic single-prompt completion: Cerebras primary (60k TPM, reliable 70b),
+    Groq fallback. Shared by the structuring pass and the gated insight pass
     (docs/14). Any failure -> None; callers decide how to degrade."""
     settings = get_settings()
-    if settings.hf_enabled:
-        out = _call_hf(prompt, max_tokens, temperature)
+    if settings.cerebras_enabled:
+        out = _call_cerebras(prompt, max_tokens, temperature)
         if out:
             return out
-        # HF's free router 504s on long generations (e.g. big carousels). Rather
-        # than drop straight to failure, fall back to Groq when a key exists.
-        if settings.groq_api_key.strip():
-            log.info("llm: HF backend failed; falling back to Groq")
-            return _call_groq(prompt, max_tokens, temperature)
-        return None
-    if settings.groq_llm_enabled:
+        log.info("llm: Cerebras failed; falling back to Groq")
+    if settings.groq_api_key.strip():
         return _call_groq(prompt, max_tokens, temperature)
     return None
 
 
 def _call_llm(bundle: str) -> str | None:
-    """Structuring (pass 1): format the card prompt and complete it."""
-    return complete(_PROMPT.format(vocab=_VOCAB_SPEC, bundle=bundle))
+    """Structuring (pass 1): preprocess the bundle, then format + complete the card prompt."""
+    cleaned = _preprocess_bundle(bundle)
+    return complete(_PROMPT.format(vocab=_VOCAB_SPEC, bundle=cleaned))
 
 
-def _call_hf(prompt: str, max_tokens: int, temperature: float) -> str | None:
+def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | None:
     settings = get_settings()
     try:
-        from huggingface_hub import InferenceClient
+        from cerebras.cloud.sdk import Cerebras
 
-        client = InferenceClient(api_key=settings.hf_api_key)
-        resp = client.chat_completion(
-            model=settings.hf_model,  # free Inference Providers, e.g. Qwen2.5-72B-Instruct
+        client = Cerebras(api_key=settings.cerebras_api_key)
+        resp = client.chat.completions.create(
+            model=settings.cerebras_llm_model,  # free tier; default llama-3.3-70b (60k TPM)
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
-            max_tokens=max_tokens,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
+            max_tokens=max_tokens,
         )
         text = resp.choices[0].message.content if resp.choices else ""
         return (text or "").strip()
     except Exception as e:
-        log.warning("llm call (huggingface) failed: %s", e)
+        log.warning("llm call (cerebras) failed: %s", e)
         return None
 
 

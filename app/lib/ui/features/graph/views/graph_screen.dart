@@ -160,8 +160,8 @@ class _GraphScreenState extends State<GraphScreen>
   int _localDepth = 1;
   String? _localRoot; // node ID that is the ego-center
 
-  // Concept node visibility (off by default — they can bloat the graph).
-  bool _showConcepts = false;
+  // Concepts ON by default — they're the backbone hubs connecting cards by meaning.
+  bool _showConcepts = true;
 
   @override
   void initState() {
@@ -1455,7 +1455,10 @@ class _GraphPainter extends CustomPainter {
       final s = _screen(p, size);
       final accent = _nodeColor(node);
       final double r;
-      if (node.isFolder) {
+      if (node.isConcept) {
+        // Hub size scales with how many cards share the concept.
+        r = (14.0 + node.degree * 1.2).clamp(14.0, 30.0) * clampedZoom;
+      } else if (node.isFolder) {
         r = (22.0 + node.degree * 0.6).clamp(22.0, 36.0) * clampedZoom;
       } else if (node.isCard) {
         r = (10.0 + node.degree * 0.8).clamp(10.0, 18.0) * clampedZoom;

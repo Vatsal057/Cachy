@@ -252,8 +252,8 @@ def _cluster_labels(
 
 @router.get("", response_model=GraphResponse)
 async def get_graph(
-    threshold: float = Query(0.55, ge=0.0, le=1.0),
-    top_k: int = Query(4, ge=1, le=12),
+    threshold: float = Query(0.62, ge=0.0, le=1.0),
+    top_k: int = Query(2, ge=1, le=12),
 ) -> GraphResponse:
     """Build the multi-entity card + catalog similarity graph. Cached until the
     underlying data changes (card/artifact create/update/delete)."""
@@ -278,9 +278,6 @@ async def get_graph(
             await session.execute(
                 select(db.ArtifactRow).where(db.ArtifactRow.saved.is_(True))
             )
-        ).scalars().all()
-        collection_rows = (
-            await session.execute(select(db.CollectionRow))
         ).scalars().all()
         concept_rows = (
             await session.execute(select(db.ConceptRow))
@@ -317,17 +314,9 @@ async def get_graph(
             )
         )
 
-    folder_ids: set[str] = set()
-    for col in collection_rows:
-        folder_ids.add(col.id)
-        nodes.append(
-            GraphNode(
-                id=col.id,
-                label=col.name,
-                node_type="folder",
-                content_type=col.system_type or "custom",
-            )
-        )
+    # Folders are NOT nodes — they're navigation, not knowledge links. Cards are
+    # already coloured by content_type client-side; system folders map 1:1 to
+    # content_type so the grouping comes for free without folder spoke-chains.
 
     concept_ids: set[str] = set()
     for c in concept_rows:
@@ -400,16 +389,7 @@ async def get_graph(
                 adj[a.id].append((card_id, 1.0))
                 adj[card_id].append((a.id, 1.0))
 
-    # 3) Folder membership edges — folder node → each card belonging to it.
-    for r in card_rows:
-        if r.collection_id and r.collection_id in folder_ids:
-            edges.append(
-                GraphEdge(source=r.collection_id, target=r.id, weight=0.8, kind="membership")
-            )
-            adj[r.collection_id].append((r.id, 0.8))
-            adj[r.id].append((r.collection_id, 0.8))
-
-    # 4) Concept-card reference edges (concept → each source card).
+    # 3) Concept-card reference edges (concept → each source card).
     for c in concept_rows:
         for cid in (c.source_card_ids or []):
             if cid in card_ids:
