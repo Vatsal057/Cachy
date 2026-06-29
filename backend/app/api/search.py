@@ -14,8 +14,9 @@ with no embeddings all fall back to full-text, so search never returns 5xx."""
 from __future__ import annotations
 
 import json
+from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query
 from sqlalchemy import or_, select
 
 from app.models.card import Card, CardState
@@ -30,20 +31,19 @@ async def search(
     q: str = Query(..., min_length=1),
     limit: int = Query(30, ge=1, le=100),
     mode: str = Query("auto", pattern="^(auto|semantic|text)$"),
+    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> list[Card]:
     want_semantic = mode == "semantic" or (mode == "auto" and embeddings.embeddings_enabled())
     if want_semantic:
-        results = await _semantic(q, limit)
+        results = await _semantic(q, limit, x_owner_id)
         if results is not None:
             return results
         if mode == "semantic":
-            # Explicit semantic request but it couldn't run — fall back rather
-            # than return nothing, keeping search useful without a key.
             pass
-    return await _full_text(q, limit)
+    return await _full_text(q, limit, x_owner_id)
 
 
-async def _semantic(q: str, limit: int) -> list[Card] | None:
+async def _semantic(q: str, limit: int, owner_id: str | None) -> list[Card] | None:
     """Cosine rank over stored embeddings. None if semantic can't run (caller
     falls back to full-text)."""
     query_vec = embeddings.embed(q)
@@ -51,6 +51,8 @@ async def _semantic(q: str, limit: int) -> list[Card] | None:
         return None
     async with db.session() as session:
         stmt = select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
+        if owner_id is not None:
+            stmt = stmt.where(db.CardRow.owner_id == owner_id)
         rows = (await session.execute(stmt)).scalars().all()
 
     scored: list[tuple[float, db.CardRow]] = []
@@ -67,7 +69,7 @@ async def _semantic(q: str, limit: int) -> list[Card] | None:
     return [r.to_card() for _, r in scored[:limit]]
 
 
-async def _full_text(q: str, limit: int) -> list[Card]:
+async def _full_text(q: str, limit: int, owner_id: str | None) -> list[Card]:
     needle = f"%{q.lower()}%"
     async with db.session() as session:
         stmt = (
@@ -81,11 +83,12 @@ async def _full_text(q: str, limit: int) -> list[Card]:
                 )
             )
             .order_by(db.CardRow.created_at.desc())
-            .limit(limit * 3)  # over-fetch, then refine by block text below
+            .limit(limit * 3)
         )
+        if owner_id is not None:
+            stmt = stmt.where(db.CardRow.owner_id == owner_id)
         rows = (await session.execute(stmt)).scalars().all()
 
-    # Lightweight block-text match on top of the column match.
     ql = q.lower()
     results = []
     for r in rows:

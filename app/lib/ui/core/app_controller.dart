@@ -17,6 +17,13 @@ class AppController extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
 
   bool get seenOnboarding => _store.seenOnboarding;
+  String? get userName => _store.userName;
+  bool get hasUserName => (_store.userName ?? '').isNotEmpty;
+
+  Future<void> setUserName(String name) async {
+    await _store.setUserName(name.trim());
+    notifyListeners();
+  }
 
   Future<void> setThemeMode(ThemeMode mode) async {
     if (mode == _themeMode) return;

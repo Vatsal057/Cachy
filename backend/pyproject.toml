@@ -22,7 +22,7 @@ dependencies = [
     "imagehash>=4.3",
     # structuring / transcription (optional at runtime, graceful fallback if keys absent)
     "cerebras-cloud-sdk>=1.0",  # note-generation primary (60k TPM free tier)
-    "google-generativeai>=0.5",
+    "google-genai>=0.5",
     "groq>=0.9",
     "huggingface_hub>=0.27",
     # OCR is optional; pytesseract needs the tesseract binary present

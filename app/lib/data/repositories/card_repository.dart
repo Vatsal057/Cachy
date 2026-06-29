@@ -57,13 +57,16 @@ class CardRepository extends ChangeNotifier {
   }
 
   /// Library listing. Falls back to the local cache when the network is down so
-  /// previously-seen cards remain browsable offline.
+  /// previously-seen cards remain browsable offline. On success, silently
+  /// restores any locally-cached cards missing from the server (e.g. after HF restart).
   Future<List<Card>> list({CardState? state}) async {
     try {
       final cards = await _api.listCards(state: state, limit: 100);
       for (final c in cards) {
         await _store.cacheCard(c.cardId, _rawOf(c));
       }
+      // Fire-and-forget: restore phone-only cards back to server
+      _syncMissingToServer(cards);
       return cards;
     } catch (_) {
       final cached = _store.readAllCards().map(Card.fromJson).toList()
@@ -73,6 +76,31 @@ class CardRepository extends ChangeNotifier {
       return state == null
           ? cached
           : cached.where((c) => c.state == state).toList();
+    }
+  }
+
+  /// Restore locally-cached READY cards that the server doesn't have.
+  /// Runs silently in the background; errors are swallowed.
+  Future<void> _syncMissingToServer(List<Card> serverCards) async {
+    try {
+      final serverUrls = serverCards.map((c) => c.source.url).toSet();
+      final missing = _store
+          .readAllCards()
+          .map(Card.fromJson)
+          .where((c) =>
+              c.state == CardState.ready &&
+              !serverUrls.contains(c.source.url))
+          .toList();
+      if (missing.isEmpty) return;
+      await _api.importCards(missing.map(_rawOf).toList());
+      // Refresh cache with new server-assigned IDs
+      final refreshed = await _api.listCards(limit: 200);
+      for (final c in refreshed) {
+        await _store.cacheCard(c.cardId, _rawOf(c));
+      }
+      notifyListeners();
+    } catch (_) {
+      // Silent: will retry on next list() call
     }
   }
 
@@ -275,6 +303,22 @@ class CardRepository extends ChangeNotifier {
         },
         'action_items': card.actionItems.toJson(),
         'blocks': card.rawBlocks,
+        'insight': card.insight == null
+            ? null
+            : {
+                'rabbit_hole': {
+                  'questions': card.insight!.rabbitHole.questions,
+                  'adjacent_topics': card.insight!.rabbitHole.adjacentTopics,
+                  'advanced_concepts': card.insight!.rabbitHole.advancedConcepts,
+                },
+                'topic_map': card.insight!.topicMap == null
+                    ? null
+                    : {
+                        'center': card.insight!.topicMap!.center,
+                        'nodes': card.insight!.topicMap!.nodes,
+                      },
+                'deep_research_prompt': card.insight!.deepResearchPrompt,
+              },
         'collection_id': card.collectionId,
         'media': {
           'thumbnail': card.media.thumbnail,

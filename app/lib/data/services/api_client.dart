@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/models/artifact.dart';
+import 'local_store.dart';
 import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
 import '../../domain/models/concept.dart';
@@ -50,9 +51,10 @@ class LibraryChatResult {
 }
 
 class ApiClient {
-  ApiClient({String? baseUrl, http.Client? client})
+  ApiClient({String? baseUrl, http.Client? client, LocalStore? store})
       : baseUrl = (baseUrl ?? _defaultBaseUrl).replaceAll(RegExp(r'/+$'), ''),
-        _client = client ?? http.Client();
+        _client = client ?? http.Client(),
+        _store = store;
 
   /// Override at build time: `--dart-define=CACHY_API_BASE=https://host`.
   /// Default targets the Android emulator's host loopback; iOS sim uses
@@ -74,6 +76,13 @@ class ApiClient {
 
   final String baseUrl;
   final http.Client _client;
+  final LocalStore? _store;
+
+  Map<String, String> get _ownerHeader {
+    final name = _store?.userName;
+    if (name == null || name.isEmpty) return const {};
+    return {'x-owner-id': name};
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('$baseUrl$path')
       .replace(queryParameters: query?.map((k, v) => MapEntry(k, '$v')));
@@ -94,7 +103,7 @@ class ApiClient {
   Future<CreateCardResult> createCard(String url) async {
     final resp = await _client.post(
       _uri('/cards'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'url': url}),
     );
     final json = _decodeMap(resp);
@@ -106,7 +115,7 @@ class ApiClient {
   }
 
   Future<Card> getCard(String cardId) async {
-    final resp = await _client.get(_uri('/cards/$cardId'));
+    final resp = await _client.get(_uri('/cards/$cardId'), headers: _ownerHeader);
     return Card.fromJson(_decodeMap(resp));
   }
 
@@ -117,13 +126,16 @@ class ApiClient {
     int limit = 50,
     int offset = 0,
   }) async {
-    final resp = await _client.get(_uri('/cards', {
-      'state': ?state?.wire,
-      'content_type': ?contentType,
-      'collection_id': ?collectionId,
-      'limit': limit,
-      'offset': offset,
-    }));
+    final resp = await _client.get(
+      _uri('/cards', {
+        'state': ?state?.wire,
+        'content_type': ?contentType,
+        'collection_id': ?collectionId,
+        'limit': limit,
+        'offset': offset,
+      }),
+      headers: _ownerHeader,
+    );
     return _decodeList(resp).map(Card.fromJson).toList();
   }
 
@@ -160,8 +172,21 @@ class ApiClient {
     }
   }
 
+  Future<void> importCards(List<Map<String, dynamic>> cards) async {
+    if (cards.isEmpty) return;
+    final resp = await _client.post(
+      _uri('/cards/import'),
+      headers: {'content-type': 'application/json', ..._ownerHeader},
+      body: jsonEncode({'cards': cards}),
+    );
+    if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
+  }
+
   Future<List<Card>> search(String query, {int limit = 30}) async {
-    final resp = await _client.get(_uri('/search', {'q': query, 'limit': limit}));
+    final resp = await _client.get(
+      _uri('/search', {'q': query, 'limit': limit}),
+      headers: _ownerHeader,
+    );
     return _decodeList(resp).map(Card.fromJson).toList();
   }
 
@@ -181,7 +206,7 @@ class ApiClient {
   // ------------------------------------------------------------------------- //
 
   Future<List<CollectionEntry>> listCollections() async {
-    final resp = await _client.get(_uri('/collections'));
+    final resp = await _client.get(_uri('/collections'), headers: _ownerHeader);
     return _decodeList(resp).map(CollectionEntry.fromJson).toList();
   }
 
@@ -197,7 +222,7 @@ class ApiClient {
   Future<CollectionEntry> createCollection(String name) async {
     final resp = await _client.post(
       _uri('/collections'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'name': name}),
     );
     return CollectionEntry.fromJson(_decodeMap(resp));

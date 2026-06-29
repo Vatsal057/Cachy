@@ -6,12 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../features/onboarding/views/name_screen.dart';
 import '../features/onboarding/views/onboarding_screen.dart';
 import '../features/onboarding/views/splash_screen.dart';
 import 'app_controller.dart';
 import 'home_shell.dart';
 
-enum _Phase { splash, onboarding, shell }
+enum _Phase { splash, onboarding, nameEntry, shell }
 
 class RootGate extends StatefulWidget {
   const RootGate({super.key});
@@ -23,23 +24,32 @@ class RootGate extends StatefulWidget {
 class _RootGateState extends State<RootGate> {
   late _Phase _phase;
 
+  _Phase _afterSplash(AppController app) {
+    if (!app.seenOnboarding) return _Phase.onboarding;
+    if (!app.hasUserName) return _Phase.nameEntry;
+    return _Phase.shell;
+  }
+
   @override
   void initState() {
     super.initState();
     final app = context.read<AppController>();
-    _phase = kIsWeb
-        ? (app.seenOnboarding ? _Phase.shell : _Phase.onboarding)
-        : _Phase.splash;
+    _phase = kIsWeb ? _afterSplash(app) : _Phase.splash;
   }
 
   void _finishSplash() {
     if (!mounted) return;
-    final app = context.read<AppController>();
-    setState(() => _phase = app.seenOnboarding ? _Phase.shell : _Phase.onboarding);
+    setState(() => _phase = _afterSplash(context.read<AppController>()));
   }
 
   Future<void> _finishOnboarding() async {
     await context.read<AppController>().completeOnboarding();
+    if (!mounted) return;
+    final app = context.read<AppController>();
+    setState(() => _phase = app.hasUserName ? _Phase.shell : _Phase.nameEntry);
+  }
+
+  void _finishNameEntry() {
     if (mounted) setState(() => _phase = _Phase.shell);
   }
 
@@ -55,6 +65,8 @@ class _RootGateState extends State<RootGate> {
           SplashScreen(key: const ValueKey('splash'), onDone: _finishSplash),
         _Phase.onboarding =>
           OnboardingScreen(key: const ValueKey('onboarding'), onDone: _finishOnboarding),
+        _Phase.nameEntry =>
+          NameScreen(key: const ValueKey('nameEntry'), onDone: _finishNameEntry),
         _Phase.shell => const HomeShell(key: ValueKey('shell')),
       },
     );
