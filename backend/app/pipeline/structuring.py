@@ -113,20 +113,23 @@ Allowed block types (use ONLY these; never invent a type):
 - link           { "type":"link", "url": str, "label": str }
 - table          { "type":"table", "headers": [str, ...], "rows": [ [str, ...], ... ] }
 
-Choose the block type that fits the data's SHAPE, not just its topic:
-- table       -> a list where each entry has a name AND a description/attribute
-                 (e.g. apps + what they do, tools + purpose). PREFER table over
-                 bullet_list whenever every item carries a second column of info.
-- step_list   -> ordered, sequential instructions to perform (rendered numbered).
-- key_value   -> a few attribute/value facts about ONE thing (time, serves, price).
-- checklist   -> things to tick off (ingredients, packing, requirements).
-- bullet_list -> short, label-only items with NO per-item description.
+Block selection — match the DATA SHAPE:
+- heading (level 2/3) + paragraph  -> a tip, habit, or concept that needs explanation.
+                                       Use heading for the name, paragraph for the WHY/HOW.
+                                       This is the primary pattern for tips, habits, advice.
+- callout (info)     -> a single standout insight, principle, or core idea worth highlighting.
+- callout (warning)  -> a caveat, risk, or common mistake.
+- step_list          -> ordered, sequential instructions (rendered numbered).
+- checklist          -> things to tick off (packing list, requirements, ingredients to buy).
+- key_value          -> 2-6 quick attribute/value facts about ONE thing (serves: 4, time: 20 min).
+- bullet_list        -> a short list of items where each item needs NO further explanation.
+- table              -> LAST RESORT only. Use ONLY when content is genuinely comparative:
+                        multiple entities each with 2+ named attributes that must be read
+                        side-by-side (e.g. 5 tools with name + version + cost columns).
+                        NEVER use table for tips, habits, advice, or anything with explanations.
 
 Formatting rules:
-- For a LONG list split across categories, emit a `heading` (level 2) for EACH
-  category followed by that category's `table`. Do NOT cram everything into one
-  giant table with a repeated category column.
-- The app auto-numbers table rows. Do NOT add your own "#"/number/index column.
+- The app auto-numbers table rows. Do NOT add your own number/index column.
 - You may use inline markdown inside any text field: **bold** for key terms and
   *italic* for emphasis. Use it sparingly. No other markdown (no #, no links).
 """.strip()
@@ -162,16 +165,18 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 
 Rules for blocks (MOST IMPORTANT):
 - Start with a `heading` (level 1) that names the main topic.
-- Use `heading` (level 2) to divide logical sections.
-- TIPS / HABITS / ADVICE: use a `table` with columns "Habit / Tip" and "Why it works / How to apply". Every row must have a meaningful explanation — never leave the second column vague or empty. If the video gives a reason or mechanism, put it there verbatim.
+- Use `heading` (level 2) for major sections, `heading` (level 3) for individual items within a section.
+- TIPS / HABITS / ADVICE: for each tip, emit a `heading` (level 3) with the tip name, then a `paragraph` explaining WHY it works and HOW to apply it. Never flatten tips into a bare list. If the video gives a reason or mechanism, it goes in the paragraph verbatim.
 - STEPS / INSTRUCTIONS: use `step_list` with every step, none omitted.
-- KEY INSIGHT or MINDSET SHIFT: use a `callout` (variant: "info") to highlight it so it stands out visually.
+- KEY INSIGHT or CORE PRINCIPLE: use a `callout` (variant: "info") to make it visually prominent.
 - WARNINGS or CAVEATS: use a `callout` (variant: "warning").
-- TOOLS / PRODUCTS / APPS: use a `table` with "Name" and "What it does" columns.
-- SHORT LABEL-ONLY lists with no per-item description: `bullet_list`.
-- For exact quotes or emphasized claims: `callout` (variant: "info", confidence: "high").
+- TOOLS / PRODUCTS / APPS (3 or fewer, each needs explanation): `heading` (level 3) + `paragraph` per tool.
+- TOOLS / PRODUCTS / APPS (4+ with short descriptions only): `bullet_list` with **Name** — description inline.
+- QUICK FACTS about one thing (serves, time, cost, difficulty): `key_value`.
+- SIMPLE LABELS with no explanation needed: `bullet_list`.
+- TABLE: only for genuinely comparative multi-column data (rarely needed — see vocab for the rule).
 - NEVER collapse multiple points into one. NEVER write "and more" or "etc."
-- If the video explains a concept or mechanism, add a `paragraph` block for it — do NOT skip the explanation.
+- Always include the explanation, the mechanism, the reason. Context is never optional.
 
 What NOT to include in blocks:
 - Do NOT describe the presenter's appearance, clothing, or physical setting.
