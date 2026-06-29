@@ -131,12 +131,11 @@ Formatting rules:
   *italic* for emphasis. Use it sparingly. No other markdown (no #, no links).
 """.strip()
 
-_PROMPT = """You convert a short-form video's extracted text into a COMPREHENSIVE, LOSSLESS structured knowledge card.
+_PROMPT = """You convert a short-form video's extracted text into a COMPREHENSIVE, RICHLY STRUCTURED knowledge card.
 
-Your PRIME DIRECTIVE: capture EVERY piece of information from the source. Do NOT summarize, compress, or omit anything.
-Every name, number, step, tip, quote, tool, product, claim, statistic, and detail MUST appear in the blocks.
-If the video says 10 things, your card captures all 10 — not 3. If it mentions a specific number, tool, or name, it appears verbatim.
-A reader who never watches the video should know EVERYTHING the video said, in full detail.
+Your PRIME DIRECTIVE: capture every meaningful insight with full context — not just WHAT, but WHY it works and HOW to apply it.
+Every tip, habit, step, claim, or tool must appear with its explanation, not as a bare label.
+A reader who never watches the video should understand the ideas deeply, not just know they exist.
 
 Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 {{
@@ -147,7 +146,7 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
     "type_confidence": 0.0-1.0,
     "tags": [str]            // 3-6 short lowercase topical tags (e.g. "fitness", "budgeting")
   }},
-  "blocks": [ ... ],         // EXHAUSTIVE ordered list — every detail from the source goes here
+  "blocks": [ ... ],         // ordered list — every insight with full context goes here
   "artifacts": [             // real, named things the video REFERENCES (may be empty)
     {{ "type": "book|movie|tv_show|podcast|music|product|place|app|other",
        "title": str,         // the proper name of the thing
@@ -162,22 +161,27 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 }}
 
 Rules for blocks (MOST IMPORTANT):
-- You MUST use as many blocks as needed to capture ALL content. There is no limit.
 - Start with a `heading` (level 1) that names the main topic.
-- Break content into logical sections using `heading` (level 2) blocks.
-- Every section the video discusses must become its own headed section with full detail.
-- For lists of tools/products/features/steps: use `table` (with name + description columns) or `step_list`.
-- For tips, insights, or claims: each one is a separate `bullet_list` item or a `paragraph` — do NOT merge them.
-- For exact quotes, statistics, or emphasized claims: use a `callout` block.
-- NEVER collapse 5 points into 1. NEVER write "and more" or "etc." — list everything explicitly.
-- NEVER skip context. If the video explains WHY something works, that explanation goes in a `paragraph` block.
-- If the video names specific tools, apps, or products: list every single one in a `table` with what each does.
-- If the video gives steps or instructions: every step goes in a `step_list`, no steps omitted.
+- Use `heading` (level 2) to divide logical sections.
+- TIPS / HABITS / ADVICE: use a `table` with columns "Habit / Tip" and "Why it works / How to apply". Every row must have a meaningful explanation — never leave the second column vague or empty. If the video gives a reason or mechanism, put it there verbatim.
+- STEPS / INSTRUCTIONS: use `step_list` with every step, none omitted.
+- KEY INSIGHT or MINDSET SHIFT: use a `callout` (variant: "info") to highlight it so it stands out visually.
+- WARNINGS or CAVEATS: use a `callout` (variant: "warning").
+- TOOLS / PRODUCTS / APPS: use a `table` with "Name" and "What it does" columns.
+- SHORT LABEL-ONLY lists with no per-item description: `bullet_list`.
+- For exact quotes or emphasized claims: `callout` (variant: "info", confidence: "high").
+- NEVER collapse multiple points into one. NEVER write "and more" or "etc."
+- If the video explains a concept or mechanism, add a `paragraph` block for it — do NOT skip the explanation.
+
+What NOT to include in blocks:
+- Do NOT describe the presenter's appearance, clothing, or physical setting.
+- Do NOT include on-screen UI labels, reaction graphics, or decorative text overlays that are clearly interface noise rather than the video's actual content (e.g. meme captions, split-screen labels).
+- Do NOT include OCR noise or garbled/illegible characters (e.g. "2 eee see— = a Fe ee"). Only include text that carries semantic meaning.
+- Do NOT create a "Visual Context" section. Visual frame data is only useful for extracting on-screen information, diagrams, or products — not who is presenting or what they are wearing.
 
 Other rules:
 - base.one_liner and base.tldr MUST always be non-empty.
-- Ignore any text that is clearly OCR noise or garbled/illegible characters (e.g. random symbols, fragments like "2 eee see— = a Fe ee"). Do NOT include such garbage in any block. Only include text that carries semantic meaning.
-- artifacts: include ONLY concrete, named, real-world things the video names (books, tools, products). Do NOT include social media hosting platforms (Instagram, TikTok) or downloading scrapers.
+- artifacts: include ONLY concrete, named, real-world things the video names (books, tools, products). Do NOT include social media platforms or downloading tools.
 - Inline references: wrap artifact names and concept names in [[double brackets]] the FIRST time they appear in prose.
 - action_items: concrete doable tasks the video tells the viewer to take. Short imperative phrases, max ~8.
 - depth: "deep" for idea-rich, knowledge-heavy, or argumentative content. "shallow" for procedural/lightweight.
