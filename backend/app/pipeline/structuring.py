@@ -176,6 +176,7 @@ Rules for blocks (MOST IMPORTANT):
 
 Other rules:
 - base.one_liner and base.tldr MUST always be non-empty.
+- Ignore any text that is clearly OCR noise or garbled/illegible characters (e.g. random symbols, fragments like "2 eee see— = a Fe ee"). Do NOT include such garbage in any block. Only include text that carries semantic meaning.
 - artifacts: include ONLY concrete, named, real-world things the video names (books, tools, products). Do NOT include social media hosting platforms (Instagram, TikTok) or downloading scrapers.
 - Inline references: wrap artifact names and concept names in [[double brackets]] the FIRST time they appear in prose.
 - action_items: concrete doable tasks the video tells the viewer to take. Short imperative phrases, max ~8.

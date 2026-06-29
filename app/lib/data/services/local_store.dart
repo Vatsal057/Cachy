@@ -17,6 +17,7 @@ class LocalStore {
   static const _shareQueueKey = 'share_queue';
   static const _themeModeKey = 'theme_mode';
   static const _seenOnboardingKey = 'seen_onboarding';
+  static const _userNameKey = 'user_name';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
@@ -32,6 +33,9 @@ class LocalStore {
   bool get seenOnboarding => _prefs.getBool(_seenOnboardingKey) ?? false;
   Future<void> setSeenOnboarding(bool seen) =>
       _prefs.setBool(_seenOnboardingKey, seen);
+
+  String? get userName => _prefs.getString(_userNameKey);
+  Future<void> setUserName(String name) => _prefs.setString(_userNameKey, name);
 
   // --------------------------------------------------------------------- //
   // Card cache

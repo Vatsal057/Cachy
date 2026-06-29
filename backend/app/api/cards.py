@@ -7,7 +7,9 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
@@ -47,6 +49,10 @@ class PatchCardRequest(BaseModel):
     state: None = None  # state is server-controlled; ignored if sent
 
 
+class BulkImportRequest(BaseModel):
+    cards: list[Card]
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant"
     content: str
@@ -69,14 +75,17 @@ def _platform_for(url: str) -> str | None:
 # --------------------------------------------------------------------------- #
 
 @router.post("", response_model=CreateCardResponse)
-async def create_card(req: CreateCardRequest) -> CreateCardResponse:
+async def create_card(
+    req: CreateCardRequest,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> CreateCardResponse:
     url = req.url.strip()
     if not url:
         raise HTTPException(status_code=422, detail="url is required")
 
     async with db.session() as session:
         # Dedup: re-sharing the same reel returns the existing card (docs/02).
-        existing = await cache.existing_card_for_url(session, url)
+        existing = await cache.existing_card_for_url(session, url, owner_id=x_owner_id)
         if existing is not None:
             return CreateCardResponse(
                 card_id=existing.id, state=CardState(existing.state), cached=True
@@ -87,6 +96,7 @@ async def create_card(req: CreateCardRequest) -> CreateCardResponse:
             platform=_platform_for(url),
             state=CardState.QUEUED.value,
             blocks=[],
+            owner_id=x_owner_id,
         )
         session.add(card)
         await session.flush()  # assign card.id
@@ -128,6 +138,53 @@ async def stream_card(card_id: str) -> StreamingResponse:
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
+@router.post("/import")
+async def import_cards(
+    req: BulkImportRequest,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> dict:
+    """Restore pre-processed cards from the phone cache after a server wipe.
+    Skips URLs already on the server. Assigns new IDs so no PK conflicts."""
+    imported = 0
+    async with db.session() as session:
+        for card in req.cards:
+            if card.state != CardState.READY:
+                continue
+            existing = await cache.existing_card_for_url(
+                session, card.source.url, owner_id=x_owner_id
+            )
+            if existing is not None:
+                continue
+            row = db.CardRow(
+                source_url=card.source.url,
+                platform=card.source.platform,
+                creator=card.source.creator,
+                caption=card.source.caption,
+                duration_seconds=card.source.duration_seconds,
+                resolver=card.source.resolver,
+                state=CardState.READY.value,
+                content_type=card.base.content_type,
+                type_confidence=card.base.type_confidence,
+                one_liner=card.base.one_liner,
+                tldr=card.base.tldr,
+                tags=list(card.base.tags),
+                blocks=list(card.blocks or []),
+                insight=card.insight.model_dump() if card.insight else None,
+                primary_action=card.primary_action.model_dump(),
+                action_items=card.action_items.model_dump(),
+                thumbnail=card.media.thumbnail,
+                keyframes=list(card.media.keyframes),
+                collection_id=None,  # collections don't survive server wipe
+                owner_id=x_owner_id,
+                schema_version=card.schema_version,
+            )
+            session.add(row)
+            imported += 1
+        await session.commit()
+    invalidate_graph_cache()
+    return {"imported": imported}
+
+
 @router.get("/{card_id}", response_model=Card)
 async def get_card(card_id: str) -> Card:
     async with db.session() as session:
@@ -139,6 +196,7 @@ async def get_card(card_id: str) -> Card:
 
 @router.get("", response_model=list[Card])
 async def list_cards(
+    x_owner_id: Annotated[str | None, Header()] = None,
     state: CardState | None = None,
     content_type: str | None = None,
     collection_id: str | None = None,
@@ -147,6 +205,8 @@ async def list_cards(
 ) -> list[Card]:
     async with db.session() as session:
         stmt = select(db.CardRow).order_by(db.CardRow.created_at.desc())
+        if x_owner_id is not None:
+            stmt = stmt.where(db.CardRow.owner_id == x_owner_id)
         if state is not None:
             stmt = stmt.where(db.CardRow.state == state.value)
         if content_type is not None:

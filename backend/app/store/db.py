@@ -340,8 +340,13 @@ async def get_card_row(db: AsyncSession, card_id: str) -> CardRow | None:
     return await db.get(CardRow, card_id)
 
 
-async def find_card_by_url(db: AsyncSession, url: str) -> CardRow | None:
-    res = await db.execute(select(CardRow).where(CardRow.source_url == url))
+async def find_card_by_url(
+    db: AsyncSession, url: str, owner_id: str | None = None
+) -> CardRow | None:
+    stmt = select(CardRow).where(CardRow.source_url == url)
+    if owner_id is not None:
+        stmt = stmt.where(CardRow.owner_id == owner_id)
+    res = await db.execute(stmt)
     return res.scalar_one_or_none()
 
 
