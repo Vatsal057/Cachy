@@ -51,8 +51,8 @@ def test_one_liner_synthesized_when_omitted():
     assert sc.base.tldr
 
 
-def test_hf_backend_no_key_falls_back():
-    # default LLM_BACKEND=huggingface but no HF_API_KEY in tests -> dispatch must not
+def test_no_llm_key_falls_back_to_paragraph():
+    # No CEREBRAS_API_KEY or GROQ_API_KEY in tests -> dispatch must not
     # crash and must degrade to the paragraph fallback.
     sc = structuring.structure(
         bundle="TRANSCRIPT: Mix flour and water.",

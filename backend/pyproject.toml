@@ -25,7 +25,6 @@ dependencies = [
     "cerebras-cloud-sdk>=1.0",  # note-generation primary (60k TPM free tier)
     "google-genai>=0.5",
     "groq>=0.9",
-    "huggingface_hub>=0.27",
     "asyncpg>=0.29",
     # OCR is optional; pytesseract needs the tesseract binary present
     "pytesseract>=0.3.10",
