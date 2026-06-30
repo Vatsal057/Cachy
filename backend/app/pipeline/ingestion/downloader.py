@@ -183,7 +183,7 @@ def download_content(
     # 1) Optional keyless resolvers & RapidAPI — free, fragile, ordered (Instagram only).
     if "instagram.com" in url:
         for name, fn in _keyless_resolvers():
-            log.debug("trying keyless resolver: %s", name)
+            log.info("trying keyless resolver: %s", name)
             res = _safe_call(name, lambda fn=fn: fn(url, output_path))
             if res:
                 if len(res) == 3:
@@ -214,7 +214,7 @@ def download_content(
     #    Placed before yt-dlp because yt-dlp fails on HF (SSL restrictions).
     cobalt = getattr(resolvers, "_download_cobalt", None)
     if callable(cobalt):
-        log.debug("trying cobalt")
+        log.info("trying cobalt")
         res = _safe_call("cobalt", lambda: cobalt(url, output_path))
         if res:
             if len(res) == 3:
@@ -228,7 +228,7 @@ def download_content(
     # 4) yt-dlp — local fallback for videos/reels.
     yt = getattr(resolvers, "_download_yt_dlp", None)
     if callable(yt):
-        log.debug("trying yt-dlp")
+        log.info("trying yt-dlp")
         res = _safe_call(
             "yt-dlp", lambda: yt(url, output_path, config.cookies_path)
         )
@@ -243,7 +243,7 @@ def download_content(
     #    a later fix before running parallel workers (docs/02).
     insta = getattr(resolvers, "_download_instaloader", None)
     if "instagram.com" in url and callable(insta):
-        log.debug("trying instaloader")
+        log.info("trying instaloader")
         res = _safe_call("instaloader", lambda: insta(url))
         if res:
             paths, caption = res

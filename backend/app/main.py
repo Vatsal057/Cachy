@@ -19,7 +19,7 @@ from app.api import cards, catalog, collections, concepts, graph, library_chat, 
 from app.logging_config import configure_logging
 from app.models.card import SCHEMA_VERSION
 from app.pipeline import worker
-from app.store import db, media
+from app.store import db
 
 # Apply at import time (catches logs before lifespan runs).
 configure_logging()
@@ -90,13 +90,7 @@ app.include_router(library_chat.router)
 app.include_router(search.router)
 app.include_router(graph.router)
 
-# Serve extracted keyframes/thumbnails so the frontend faces load (docs/05).
-# Ephemeral on HF free tier; survives only the container's life (docs/01, docs/11).
-app.mount(
-    media.MEDIA_URL_PREFIX,
-    StaticFiles(directory=media.media_root()),
-    name="media",
-)
+# Media is persisted to HF Dataset (no local static mount — nothing stored on disk).
 
 
 @app.get("/health")

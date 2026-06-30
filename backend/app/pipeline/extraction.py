@@ -300,9 +300,11 @@ _VISION_NO_TEXT = {"none", "no text", "no text shown"}
 
 
 def _vision_read_gemini(frames: list[str], prompt: str = _VISION_PROMPT) -> str:
-    """Gemini Flash Lite: single batched call with all frames — 1 API call instead of N."""
+    """Gemini Flash Lite: single batched call with all frames — 1 API call instead of N.
+    Tries the dedicated key, then the spare-account pool, before giving up to Groq."""
     settings = get_settings()
-    if not frames or not settings.gemini_vision_enabled:
+    keys = settings.gemini_vision_keys
+    if not frames or not keys:
         return ""
     try:
         import io
@@ -312,30 +314,34 @@ def _vision_read_gemini(frames: list[str], prompt: str = _VISION_PROMPT) -> str:
     except Exception:
         return ""
 
-    client = google_genai.Client(api_key=settings.gemini_jk)
-    try:
-        contents: list = [prompt]
-        for path in frames:
-            with Image.open(path) as img:
-                buf = io.BytesIO()
-                img.convert("RGB").save(buf, format="JPEG")
-            contents.append(
-                genai_types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
-            )
-        resp = client.models.generate_content(
-            model=settings.gemini_vision_model, contents=contents
+    contents: list = [prompt]
+    for path in frames:
+        with Image.open(path) as img:
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, format="JPEG")
+        contents.append(
+            genai_types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
         )
-        text = (resp.text or "").strip()
-        if text and text.lower() not in _VISION_NO_TEXT:
-            return text
-        return ""
-    except Exception as e:
-        err_str = str(e)
-        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-            log.warning("gemini vision: quota exhausted, handing off to Groq fallback")
-        else:
+
+    for key in keys:
+        try:
+            client = google_genai.Client(api_key=key)
+            resp = client.models.generate_content(
+                model=settings.gemini_vision_model, contents=contents
+            )
+            text = (resp.text or "").strip()
+            if text and text.lower() not in _VISION_NO_TEXT:
+                return text
+            return ""
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                log.warning("gemini vision: quota exhausted, trying next pool key (%s)", err_str)
+                continue
             log.warning("gemini vision failed: %s", e)
-        return ""
+            return ""
+    log.warning("gemini vision: all keys exhausted, handing off to Groq fallback")
+    return ""
 
 
 _GROQ_VISION_MAX_FRAMES = 5  # Llama-4-scout multi-image limit

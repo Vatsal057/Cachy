@@ -13,7 +13,6 @@ class Settings(BaseSettings):
 
     # storage — set DATABASE_URL=postgresql+asyncpg://... for Neon/persistent DB
     database_url: str = "sqlite+aiosqlite:///./cachy.db"
-    media_dir: str = "./downloads"
     # HF Dataset repo for persistent media (thumbnails + keyframes).
     # Create a public dataset repo e.g. "yourname/cachy-media". Reuses hf_api_key.
     hf_media_repo: str = "Vatxzz/cachy-media"
@@ -53,7 +52,7 @@ class Settings(BaseSettings):
     groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     # Gemini vision (generous free tier: 1M TPM / 1500 req/day)
-    gemini_vision_model: str = "gemini-2.0-flash-lite"
+    gemini_vision_model: str = "gemini-2.5-flash-lite"
 
     # NVIDIA NVLM vision (OpenAI-compatible; free credits at integrate.api.nvidia.com)
     nvidia_api_key: str = ""
@@ -77,8 +76,7 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = 1.0
     job_timeout_seconds: int = 300
 
-    # misc
-    discard_source_video: bool = True
+    # misc (source video always discarded after extraction — nothing stored locally)
 
     @property
     def hf_media_enabled(self) -> bool:
@@ -98,10 +96,6 @@ class Settings(BaseSettings):
         return bool(self.cerebras_api_key.strip())
 
     @property
-    def gemini_preprocess_enabled(self) -> bool:
-        return bool(self.gemini_jk.strip())
-
-    @property
     def gemini_key_pool(self) -> list[str]:
         return [
             k.strip()
@@ -118,13 +112,20 @@ class Settings(BaseSettings):
         return dedicated + self.gemini_key_pool
 
     @property
+    def gemini_vision_keys(self) -> list[str]:
+        """Dedicated vision/preprocess key first, then the spare-account pool as
+        deeper fallback (e.g. on quota-exhausted 429s) before Groq."""
+        dedicated = [self.gemini_jk.strip()] if self.gemini_jk.strip() else []
+        return dedicated + self.gemini_key_pool
+
+    @property
     def groq_vision_enabled(self) -> bool:
         # vision only needs a Groq key, independent of the structuring backend
         return bool(self.groq_api_key.strip())
 
     @property
     def gemini_vision_enabled(self) -> bool:
-        return bool(self.gemini_jk.strip())
+        return bool(self.gemini_vision_keys)
 
     @property
     def nvidia_vision_enabled(self) -> bool:

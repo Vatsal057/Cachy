@@ -1,16 +1,16 @@
-"""Media file storage — local disk (dev) or Cloudflare R2 (production).
+"""Media storage — HF Dataset repo only (no local persistence).
 
-Per-job isolated directories so concurrent workers never collide (docs/01, docs/02).
-Keyframes + thumbnail are kept; the source video may be discarded after extraction
-(docs/11). When R2 is configured, upload_file() returns a persistent public URL and
-the caller is responsible for deleting the local temp file afterward."""
+Per-job scratch dirs live under the OS temp directory and are nuked after each
+job completes. Thumbnails and keyframes are uploaded to HF Dataset; if upload
+fails or HF is not configured the card simply has no thumbnail (None). Nothing
+is kept on the machine running the backend."""
 
 from __future__ import annotations
 
 import logging
 import os
 import shutil
-import uuid
+import tempfile
 from pathlib import Path
 
 from app.config import get_settings
@@ -18,60 +18,42 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 
-def media_root() -> str:
-    root = get_settings().media_dir
-    os.makedirs(root, exist_ok=True)
-    return root
-
-
-def new_job_dir() -> str:
-    """A unique directory for one ingestion+extraction job."""
-    job_dir = os.path.join(media_root(), uuid.uuid4().hex)
-    os.makedirs(job_dir, exist_ok=True)
-    return job_dir
-
-
 def job_dir_for_card(card_id: str) -> str:
-    return os.path.join(media_root(), "card_" + card_id)
-
-
-# URL prefix the static mount (app.main) serves media_root() under.
-MEDIA_URL_PREFIX = "/media"
+    """OS temp scratch dir for one card's job (download + extraction).
+    Cleaned up after upload; same path returned on repeated calls within a job."""
+    path = os.path.join(tempfile.gettempdir(), "cachy_" + card_id)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def to_media_url(path: str | None) -> str | None:
-    """Map an on-disk media path under media_root() to a served URL.
+    """Return a publicly accessible URL for a media path.
 
-    The DB keeps raw disk paths (deletion needs them); only the serialized Card
-    carries URLs. Absolute http(s) refs pass through; paths outside media_root()
-    return None so the frontend degrades to its accent face rather than 404."""
+    - http(s) refs pass through as-is (already an HF URL or external link).
+    - Local paths reconstruct the HF Dataset URL from the card_id embedded in the
+      path (handles old rows that still have a local path in the DB).
+    - Returns None if no HF repo is configured or the path can't be resolved."""
     if not path:
         return None
     if path.startswith("http://") or path.startswith("https://"):
         return path
-    abs_path = os.path.abspath(path)
-    rel = os.path.relpath(abs_path, os.path.abspath(media_root()))
-    if not (rel.startswith(os.pardir) or os.path.isabs(rel)):
-        return MEDIA_URL_PREFIX + "/" + rel.replace(os.sep, "/")
-
-    # If path is outside local media_root() (e.g., /data/downloads/... from cloud DB),
-    # fallback to cloud server repo (HF Dataset media storage)
+    # Reconstruct HF URL from a legacy local path like /tmp/cachy_<card_id>/thumb.jpg
     s = get_settings()
     if s.hf_media_repo:
         parts = path.replace("\\", "/").split("/")
         card_id = None
         for p in parts:
-            if p.startswith("card_"):
-                card_id = p[len("card_"):]
+            if p.startswith("cachy_"):
+                card_id = p[len("cachy_"):]
                 break
         if card_id:
             filename = Path(path).name
             return f"https://huggingface.co/datasets/{s.hf_media_repo}/resolve/main/media/{card_id}/{filename}"
-
     return None
 
 
 def remove_path(path: str | None) -> None:
+    """Delete a file or directory, silently ignoring errors."""
     if not path:
         return
     try:
@@ -84,7 +66,7 @@ def remove_path(path: str | None) -> None:
 
 
 def remove_card_media(card_id: str, paths: list[str | None]) -> None:
-    """Delete a card's per-job dir plus any explicit media paths (docs/08)."""
+    """Delete a card's scratch dir plus any explicit paths (called on card deletion)."""
     remove_path(job_dir_for_card(card_id))
     for p in paths:
         remove_path(p)
@@ -97,8 +79,8 @@ def remove_card_media(card_id: str, paths: list[str | None]) -> None:
 def upload_file(local_path: str, card_id: str) -> str | None:
     """Upload a local media file to the HF Dataset media repo and return its public URL.
 
-    Returns None if HF media is not configured or upload fails (caller keeps
-    the local path as fallback). Files are grouped under media/{card_id}/."""
+    Returns None if HF media is not configured or upload fails — caller treats
+    this as no thumbnail rather than keeping a local copy."""
     s = get_settings()
     if not s.hf_media_enabled:
         return None
