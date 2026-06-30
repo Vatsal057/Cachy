@@ -58,6 +58,16 @@ class LibraryViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- desktop split-pane selection --------------------------------------- //
+  String? _selectedCardId;
+  String? get selectedCardId => _selectedCardId;
+
+  void selectCard(String? cardId) {
+    if (_selectedCardId == cardId) return;
+    _selectedCardId = cardId;
+    notifyListeners();
+  }
+
   String? _error;
   String? get error => _error;
 
@@ -160,6 +170,7 @@ class LibraryViewModel extends ChangeNotifier {
     if (_cards.isEmpty && _status == LibraryStatus.ready) {
       _status = LibraryStatus.empty;
     }
+    if (_selectedCardId == cardId) _selectedCardId = null;
     notifyListeners();
     try {
       await _repository.delete(cardId);

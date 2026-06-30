@@ -9,8 +9,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import discovery
@@ -59,6 +60,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Cachy", version="0.1.0", lifespan=lifespan)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    import traceback
+
+    tb = traceback.format_exc()
+    log.error("Unhandled exception on %s %s:\n%s", request.method, request.url, tb)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{exc.__class__.__name__}: {exc}", "traceback": tb},
+    )
+
+
 # Dev-open CORS so the Flutter web client (Chrome) can reach the API + SSE stream
 # from its own origin. Tighten to specific origins before any real deployment.
 app.add_middleware(
@@ -88,6 +102,78 @@ app.mount(
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "schema_version": SCHEMA_VERSION}
+
+
+@app.get("/admin/stats")
+async def admin_stats() -> dict:
+    """Owner and card counts across all users."""
+    from sqlalchemy import func, select
+    from app.store.db import CardRow, session as db_session
+    async with db_session() as s:
+        rows = (
+            await s.execute(
+                select(CardRow.owner_id, func.count().label("cards"))
+                .group_by(CardRow.owner_id)
+                .order_by(func.count().desc())
+            )
+        ).all()
+    users = [{"owner": r[0] or "(anonymous)", "cards": r[1]} for r in rows]
+    return {"total_users": len(users), "users": users}
+
+
+@app.get("/debug/jobs")
+async def debug_jobs() -> dict:
+    from sqlalchemy import select
+    from app.store.db import JobRow, session as db_session
+
+    async with db_session() as s:
+        jobs = (
+            await s.execute(
+                select(JobRow).order_by(JobRow.created_at.desc()).limit(20)
+            )
+        ).scalars().all()
+    return {
+        "jobs": [
+            {
+                "id": j.id,
+                "card_id": j.card_id,
+                "state": j.state,
+                "attempts": j.attempts,
+                "last_error": j.last_error,
+                "created_at": str(j.created_at),
+                "started_at": str(j.started_at),
+                "finished_at": str(j.finished_at),
+            }
+            for j in jobs
+        ]
+    }
+
+
+@app.post("/debug/kill_stuck")
+async def kill_stuck() -> dict:
+    import asyncio
+    from sqlalchemy import update
+    from app.store.db import JobRow, JobState, session as db_session
+    from datetime import datetime, timezone
+    global _worker_task
+
+    async with db_session() as s:
+        res = await s.execute(
+            update(JobRow)
+            .where(JobRow.state == JobState.PROCESSING.value)
+            .values(state=JobState.DEAD.value, finished_at=datetime.now(timezone.utc), last_error="Killed via debug endpoint")
+        )
+        await s.commit()
+
+    if _worker_task is not None:
+        _worker_task.cancel()
+    worker.reset_stop()
+    _worker_task = asyncio.create_task(worker.run_worker_loop())
+
+    return {"killed": res.rowcount, "worker_restarted": True}
+
+
+
 
 
 # Flutter web SPA — mounted last so all API routes take priority.

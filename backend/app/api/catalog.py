@@ -4,7 +4,9 @@ worker, not by clients."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -27,17 +29,23 @@ async def list_catalog(
     card_id: str | None = None,
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> list[CatalogEntry]:
     async with db.session() as session:
         stmt = select(db.ArtifactRow).order_by(db.ArtifactRow.created_at.desc())
         if type is not None:
             stmt = stmt.where(db.ArtifactRow.type == type.value)
-        # Catalog tab (no card_id) shows only user-saved items. A card_id filter
-        # is the reader's References strip, which lists every referenced artifact.
         if card_id is None:
             stmt = stmt.where(db.ArtifactRow.saved.is_(True))
         rows = (await session.execute(stmt)).scalars().all()
         entries = [r.to_entry() for r in rows]
+        if x_owner_id is not None:
+            owner_cards = set(
+                (await session.execute(
+                    select(db.CardRow.id).where(db.CardRow.owner_id == x_owner_id)
+                )).scalars().all()
+            )
+            entries = [e for e in entries if bool(set(e.source_card_ids) & owner_cards)]
     if card_id is not None:
         entries = [e for e in entries if card_id in e.source_card_ids]
     return entries[offset : offset + limit]

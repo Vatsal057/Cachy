@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../domain/models/card.dart';
+import '../../../core/widgets/adaptive_modal.dart';
 import '../services/card_actions.dart';
 import 'chat_screen.dart';
 
@@ -105,19 +106,31 @@ class _PrimaryActionBarState extends State<PrimaryActionBar> {
         .available(card)
         .where((s) => s.type != primaryType)
         .toList();
-    final chosen = await showModalBottomSheet<CardActionType>(
+    final scheme = Theme.of(context).colorScheme;
+    final chosen = await showAdaptiveModal<CardActionType>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final s in specs)
-              ListTile(
-                leading: PhosphorIcon(s.icon),
-                title: Text(s.label),
-                onTap: () => Navigator.pop(ctx, s.type),
-              ),
-          ],
+      builder: (ctx, dialog) => SafeArea(
+        top: false,
+        child: Container(
+          decoration: dialog
+              ? BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: scheme.outlineVariant),
+                )
+              : null,
+          padding: dialog ? const EdgeInsets.symmetric(vertical: 8) : null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final s in specs)
+                ListTile(
+                  leading: PhosphorIcon(s.icon),
+                  title: Text(s.label),
+                  onTap: () => Navigator.pop(ctx, s.type),
+                ),
+            ],
+          ),
         ),
       ),
     );

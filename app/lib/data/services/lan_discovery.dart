@@ -17,7 +17,7 @@ const _probe = 'CACHY_DISCOVER?';
 
 /// Discover a backend on the same network. `http://<ip>:<port>` or null.
 Future<String?> discoverBackend({
-  Duration timeout = const Duration(seconds: 2),
+  Duration timeout = const Duration(seconds: 3),
 }) async {
   RawDatagramSocket? socket;
   Timer? retry;
@@ -38,12 +38,27 @@ Future<String?> discoverBackend({
       }
     });
 
-    void sendProbe() => socket!
-        .send(_probe.codeUnits, InternetAddress('255.255.255.255'), _discoveryPort);
+    Future<void> sendProbe() async {
+      if (socket == null) return;
+      try {
+        socket!.send(_probe.codeUnits, InternetAddress('255.255.255.255'), _discoveryPort);
+        final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
+        for (final interface in interfaces) {
+          for (final addr in interface.addresses) {
+            final parts = addr.address.split('.');
+            if (parts.length == 4) {
+              parts[3] = '255';
+              final subnetBroadcast = parts.join('.');
+              socket!.send(_probe.codeUnits, InternetAddress(subnetBroadcast), _discoveryPort);
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     sendProbe();
     // Re-probe in case the first datagram is dropped (UDP is lossy).
-    retry = Timer.periodic(const Duration(milliseconds: 400), (_) {
+    retry = Timer.periodic(const Duration(milliseconds: 350), (_) {
       if (!completer.isCompleted) sendProbe();
     });
 

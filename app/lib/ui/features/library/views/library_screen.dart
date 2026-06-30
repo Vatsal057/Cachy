@@ -49,6 +49,7 @@ class _LibraryView extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = context.watch<LibraryViewModel>();
     final scheme = Theme.of(context).colorScheme;
+    final isDesktop = MediaQuery.sizeOf(context).width >= Insets.desktop;
 
     return DefaultTabController(
       length: 3,
@@ -86,32 +87,38 @@ class _LibraryView extends StatelessWidget {
             preferredSize: const Size.fromHeight(52),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(Insets.page, 0, Insets.page, 10),
-              child: Container(
-                height: 40,
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: TabBar(
-                  dividerColor: Colors.transparent,
-                  indicator: BoxDecoration(
-                    color: scheme.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1)),
-                    ],
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: isDesktop ? 360 : double.infinity),
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: TabBar(
+                      dividerColor: Colors.transparent,
+                      indicator: BoxDecoration(
+                        color: scheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1)),
+                        ],
+                      ),
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      indicatorPadding: const EdgeInsets.all(3),
+                      labelColor: scheme.onSurface,
+                      unselectedLabelColor: scheme.onSurfaceVariant,
+                      labelStyle: Brand.label(size: 12, weight: FontWeight.w700),
+                      unselectedLabelStyle: Brand.label(size: 12, weight: FontWeight.w500),
+                      tabs: const [
+                        Tab(text: 'CARDS'),
+                        Tab(text: 'CONCEPTS'),
+                        Tab(text: 'GRAPH'),
+                      ],
+                    ),
                   ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  indicatorPadding: const EdgeInsets.all(3),
-                  labelColor: scheme.onSurface,
-                  unselectedLabelColor: scheme.onSurfaceVariant,
-                  labelStyle: Brand.label(size: 12, weight: FontWeight.w700),
-                  unselectedLabelStyle: Brand.label(size: 12, weight: FontWeight.w500),
-                  tabs: const [
-                    Tab(text: 'CARDS'),
-                    Tab(text: 'CONCEPTS'),
-                    Tab(text: 'GRAPH'),
-                  ],
                 ),
               ),
             ),
@@ -136,11 +143,35 @@ class _CardsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = context.watch<LibraryViewModel>();
     final api = context.read<CardRepository>().api;
+    final scheme = Theme.of(context).colorScheme;
 
-    return RefreshIndicator(
-      color: Theme.of(context).colorScheme.primary,
+    final list = RefreshIndicator(
+      color: scheme.primary,
       onRefresh: vm.refresh,
       child: _body(context, vm, api),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < Insets.splitPane) return list;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: 420, child: list),
+            VerticalDivider(width: 1, color: scheme.outlineVariant),
+            Expanded(
+              child: vm.selectedCardId == null
+                  ? const _ReaderPaneEmpty()
+                  : ReaderScreen(
+                      key: ValueKey(vm.selectedCardId),
+                      cardId: vm.selectedCardId!,
+                      embedded: true,
+                      onClose: () => vm.selectCard(null),
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -215,32 +246,43 @@ class _CardsTab extends StatelessWidget {
 
   Widget _grid(
       BuildContext context, List<model.Card> cards, LibraryViewModel vm, dynamic api) {
-    final width = MediaQuery.of(context).size.width;
-    final cols = (width / 200).floor().clamp(2, 8);
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
-      physics: const AlwaysScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: cols,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-        childAspectRatio: 0.72,
-      ),
-      itemCount: cards.length + 1,
-      itemBuilder: (ctx, i) {
-        if (i == cards.length) {
-          return _CtaCard(onTap: () => showCaptureSheet(context));
-        }
-        final card = cards[i];
-        return CardTile(
-          card: card,
-          api: api,
-          onTap: () => Navigator.of(ctx).push(
-            MaterialPageRoute(
-              builder: (_) => ReaderScreen(cardId: card.cardId),
-            ),
+    // Available width, not the window's — this grid may be the narrow pane
+    // of a desktop split layout, not the full screen.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cols = (constraints.maxWidth / 200).floor().clamp(2, 8);
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
+          physics: const AlwaysScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 0.72,
           ),
-          onDelete: () => vm.delete(card.cardId),
+          itemCount: cards.length + 1,
+          itemBuilder: (ctx, i) {
+            if (i == cards.length) {
+              return _CtaCard(onTap: () => showCaptureSheet(context));
+            }
+            final card = cards[i];
+            return CardTile(
+              card: card,
+              api: api,
+              onTap: () {
+                if (MediaQuery.sizeOf(ctx).width >= Insets.splitPane) {
+                  vm.selectCard(card.cardId);
+                  return;
+                }
+                Navigator.of(ctx).push(
+                  MaterialPageRoute(
+                    builder: (_) => ReaderScreen(cardId: card.cardId),
+                  ),
+                );
+              },
+              onDelete: () => vm.delete(card.cardId),
+            );
+          },
         );
       },
     );
@@ -364,6 +406,33 @@ class _HighlightCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────── //
+// Reader pane placeholder — shown when no card is selected in split-pane mode
+// ──────────────────────────────────────────────────────────────────────────── //
+
+class _ReaderPaneEmpty extends StatelessWidget {
+  const _ReaderPaneEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PhosphorIcon(PhosphorIconsRegular.bookOpenText,
+              size: 36, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+          const SizedBox(height: 14),
+          Text(
+            'Select a card to read',
+            style: Brand.label(size: 11, color: scheme.onSurfaceVariant, weight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

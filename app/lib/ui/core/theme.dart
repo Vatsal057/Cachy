@@ -156,6 +156,13 @@ class Insets {
   static const block = 16.0;
   static const radius = 14.0;
   static const readingColumn = 680.0;
+
+  /// Below this: mobile bottom-pill nav. At/above: glass side rail.
+  static const desktop = 600.0;
+
+  /// At/above this: wide enough for a list+detail split pane (matches the
+  /// rail's "extended" threshold — already signals plenty of width).
+  static const splitPane = 1100.0;
 }
 
 /// Custom transition builder allowing swipe-right-to-go-back from ANYWHERE

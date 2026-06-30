@@ -59,6 +59,7 @@ class GraphEdge {
     required this.target,
     this.weight = 0.0,
     this.kind = 'semantic',
+    this.sharedTopics = const [],
   });
 
   final String source;
@@ -67,12 +68,17 @@ class GraphEdge {
 
   /// `"semantic"`, `"reference"`, or `"tag"`.
   final String kind;
+  final List<String> sharedTopics;
 
   factory GraphEdge.fromJson(Map<String, dynamic> json) => GraphEdge(
         source: (json['source'] as String?) ?? '',
         target: (json['target'] as String?) ?? '',
         weight: (json['weight'] as num?)?.toDouble() ?? 0.0,
         kind: (json['kind'] as String?) ?? 'semantic',
+        sharedTopics: (json['shared_topics'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
       );
 }
 

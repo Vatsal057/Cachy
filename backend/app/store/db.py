@@ -17,8 +17,8 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    inspect as sa_inspect,
     select,
-    text,
     update,
 )
 from sqlalchemy.ext.asyncio import (
@@ -85,7 +85,7 @@ class CollectionRow(Base):
     system_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
     owner_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class CardRow(Base):
@@ -125,9 +125,9 @@ class CardRow(Base):
     )
 
     schema_version: Mapped[str] = mapped_column(String, default=SCHEMA_VERSION)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utcnow, onupdate=_utcnow
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
     owner_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
@@ -192,9 +192,9 @@ class ArtifactRow(Base):
     saved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # On-demand LLM detail ("what is this"), filled via the Fetch info action.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utcnow, onupdate=_utcnow
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
     def to_entry(self) -> CatalogEntry:
@@ -223,9 +223,9 @@ class ConceptRow(Base):
     name_norm: Mapped[str] = mapped_column(String, index=True)
     source_card_ids: Mapped[list] = mapped_column(JSON, default=list)
     definition: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utcnow, onupdate=_utcnow
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
     def to_entry(self) -> ConceptEntry:
@@ -246,9 +246,9 @@ class JobRow(Base):
     state: Mapped[str] = mapped_column(String, default=JobState.QUEUED.value, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -259,10 +259,34 @@ _engine = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
+def _normalize_url(url: str) -> tuple[str, dict]:
+    """Convert connection URL to asyncpg format.
+
+    asyncpg rejects psycopg2-style query params (sslmode=); translate them to
+    connect_args instead. Returns (normalized_url, connect_args)."""
+    import re
+    if url.startswith("postgresql://") or url.startswith("postgres://"):
+        url = url.replace("://", "+asyncpg://", 1)
+    connect_args: dict = {}
+    if "sslmode=" in url:
+        import ssl
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ctx
+        url = re.sub(r"[?&]sslmode=[^&]*", "", url).rstrip("?").rstrip("&")
+    return url, connect_args
+
+
 def _ensure_engine():
     global _engine, _sessionmaker
     if _engine is None:
-        _engine = create_async_engine(get_settings().database_url, future=True)
+        url, connect_args = _normalize_url(get_settings().database_url)
+        _engine = create_async_engine(url, future=True, connect_args=connect_args)
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine, _sessionmaker
 
@@ -271,6 +295,21 @@ async def init_db() -> None:
     engine, _ = _ensure_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if "postgresql" in str(conn.engine.url):
+            for tbl, cols in {
+                "collections": ["created_at"],
+                "cards": ["created_at", "updated_at"],
+                "artifacts": ["created_at", "updated_at"],
+                "concepts": ["created_at", "updated_at"],
+                "jobs": ["created_at", "started_at", "finished_at"],
+            }.items():
+                for col in cols:
+                    try:
+                        await conn.exec_driver_sql(
+                            f"ALTER TABLE {tbl} ALTER COLUMN {col} TYPE TIMESTAMP WITH TIME ZONE USING {col} AT TIME ZONE 'UTC'"
+                        )
+                    except Exception:
+                        pass
         # Lightweight migration: backfill columns added after a table already
         # existed (create_all never ALTERs). HF deploys are ephemeral, but a
         # persisted dev DB needs these added so SELECTs don't break.
@@ -278,7 +317,7 @@ async def init_db() -> None:
             conn,
             "artifacts",
             {
-                "saved": "BOOLEAN DEFAULT 0",
+                "saved": "BOOLEAN DEFAULT FALSE",
                 "description": "TEXT",
             },
         )
@@ -309,13 +348,15 @@ async def init_db() -> None:
 
 
 async def _add_missing_columns(conn, table: str, columns: dict[str, str]) -> None:
-    rows = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
-    existing = {r[1] for r in rows.fetchall()}
+    try:
+        existing = await conn.run_sync(
+            lambda sync_conn: {col["name"] for col in sa_inspect(sync_conn).get_columns(table)}
+        )
+    except Exception:
+        return  # table not yet created; create_all handles it
     for name, ddl in columns.items():
         if name not in existing:
-            await conn.exec_driver_sql(
-                f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
-            )
+            await conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
 
 async def dispose_db() -> None:
@@ -347,7 +388,7 @@ async def find_card_by_url(
     if owner_id is not None:
         stmt = stmt.where(CardRow.owner_id == owner_id)
     res = await db.execute(stmt)
-    return res.scalar_one_or_none()
+    return res.scalars().first()
 
 
 def _norm_title(title: str) -> str:

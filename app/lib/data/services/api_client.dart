@@ -67,16 +67,32 @@ class ApiClient {
 
   /// Resolve the backend URL at launch. An explicit `CACHY_API_BASE` (a real
   /// deploy, e.g. Hugging Face) always wins and skips discovery. Otherwise try
-  /// LAN auto-connect for a backend on the same WiFi, falling back to the
-  /// emulator loopback.
-  static Future<String> resolveBaseUrl() async {
+  /// LAN auto-connect for a backend on the same WiFi, falling back to cached
+  /// preference or the emulator loopback.
+  static Future<String> resolveBaseUrl({LocalStore? store}) async {
     if (_defaultBaseUrl != _emulatorDefault) return _defaultBaseUrl;
-    return (await discoverBackend()) ?? _defaultBaseUrl;
+    final discovered = await discoverBackend();
+    if (discovered != null) {
+      if (store != null) unawaited(store.setApiBaseUrl(discovered));
+      return discovered;
+    }
+    return store?.apiBaseUrl ?? _defaultBaseUrl;
   }
 
-  final String baseUrl;
+  String baseUrl;
   final http.Client _client;
   final LocalStore? _store;
+
+  void setBaseUrl(String url) {
+    baseUrl = url.replaceAll(RegExp(r'/+$'), '');
+    if (_store != null) unawaited(_store.setApiBaseUrl(baseUrl));
+  }
+
+  Future<String?> discoverAndUpdateBaseUrl() async {
+    final discovered = await discoverBackend();
+    if (discovered != null) setBaseUrl(discovered);
+    return discovered;
+  }
 
   Map<String, String> get _ownerHeader {
     final name = _store?.userName;
@@ -146,7 +162,7 @@ class ApiClient {
   ) async {
     final resp = await _client.patch(
       _uri('/cards/$cardId'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'blocks': blocks}),
     );
     return Card.fromJson(_decodeMap(resp));
@@ -159,14 +175,14 @@ class ApiClient {
   ) async {
     final resp = await _client.patch(
       _uri('/cards/$cardId'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'action_items': actionItems}),
     );
     return Card.fromJson(_decodeMap(resp));
   }
 
   Future<void> deleteCard(String cardId) async {
-    final resp = await _client.delete(_uri('/cards/$cardId'));
+    final resp = await _client.delete(_uri('/cards/$cardId'), headers: _ownerHeader);
     if (resp.statusCode >= 400) {
       throw ApiException(resp.statusCode, resp.body);
     }
@@ -195,7 +211,7 @@ class ApiClient {
   Future<String> chat(String cardId, List<Map<String, String>> messages) async {
     final resp = await _client.post(
       _uri('/cards/$cardId/chat'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'messages': messages}),
     );
     return (_decodeMap(resp)['reply'] as String?) ?? '';
@@ -213,7 +229,7 @@ class ApiClient {
   Future<CollectionEntry> renameCollection(String id, String name) async {
     final resp = await _client.patch(
       _uri('/collections/$id'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'name': name}),
     );
     return CollectionEntry.fromJson(_decodeMap(resp));
@@ -231,7 +247,7 @@ class ApiClient {
   Future<void> moveCardToCollection(String cardId, String? collectionId) async {
     final resp = await _client.post(
       _uri('/collections/cards/$cardId/move'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'collection_id': collectionId}),
     );
     if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
@@ -250,12 +266,12 @@ class ApiClient {
       'type': ?type?.wire,
       'limit': limit,
       'offset': offset,
-    }));
+    }), headers: _ownerHeader);
     return _decodeList(resp).map(CatalogEntry.fromJson).toList();
   }
 
   Future<void> deleteCatalogEntry(String artifactId) async {
-    final resp = await _client.delete(_uri('/catalog/$artifactId'));
+    final resp = await _client.delete(_uri('/catalog/$artifactId'), headers: _ownerHeader);
     if (resp.statusCode >= 400) {
       throw ApiException(resp.statusCode, resp.body);
     }
@@ -263,20 +279,22 @@ class ApiClient {
 
   /// Save a referenced artifact into the catalog tab (long-press to save).
   Future<CatalogEntry> saveCatalogEntry(String artifactId) async {
-    final resp = await _client.post(_uri('/catalog/$artifactId/save'));
+    final resp = await _client.post(_uri('/catalog/$artifactId/save'), headers: _ownerHeader);
     return CatalogEntry.fromJson(_decodeMap(resp));
   }
 
   /// Generate + persist the on-demand LLM detail for an artifact (Fetch info).
   Future<CatalogEntry> fetchCatalogInfo(String artifactId) async {
-    final resp = await _client.post(_uri('/catalog/$artifactId/fetch-info'));
+    final resp = await _client.post(_uri('/catalog/$artifactId/fetch-info'), headers: _ownerHeader);
     return CatalogEntry.fromJson(_decodeMap(resp));
   }
 
   /// Artifacts a single card references (docs/12) — the reader "References" strip.
   Future<List<CatalogEntry>> cardArtifacts(String cardId, {int limit = 50}) async {
-    final resp =
-        await _client.get(_uri('/catalog', {'card_id': cardId, 'limit': limit}));
+    final resp = await _client.get(
+      _uri('/catalog', {'card_id': cardId, 'limit': limit}),
+      headers: _ownerHeader,
+    );
     return _decodeList(resp).map(CatalogEntry.fromJson).toList();
   }
 
@@ -288,22 +306,22 @@ class ApiClient {
     final resp = await _client.get(_uri('/concepts', {
       'card_id': ?cardId,
       'limit': limit,
-    }));
+    }), headers: _ownerHeader);
     return _decodeList(resp).map(ConceptEntry.fromJson).toList();
   }
 
   Future<ConceptDetail> getConcept(String conceptId) async {
-    final resp = await _client.get(_uri('/concepts/$conceptId'));
+    final resp = await _client.get(_uri('/concepts/$conceptId'), headers: _ownerHeader);
     return ConceptDetail.fromJson(_decodeMap(resp));
   }
 
   Future<ConceptEntry> defineConcept(String conceptId) async {
-    final resp = await _client.post(_uri('/concepts/$conceptId/define'));
+    final resp = await _client.post(_uri('/concepts/$conceptId/define'), headers: _ownerHeader);
     return ConceptEntry.fromJson(_decodeMap(resp));
   }
 
   Future<void> deleteConcept(String conceptId) async {
-    final resp = await _client.delete(_uri('/concepts/$conceptId'));
+    final resp = await _client.delete(_uri('/concepts/$conceptId'), headers: _ownerHeader);
     if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
   }
 
@@ -314,6 +332,7 @@ class ApiClient {
   Future<GraphData> graph({double threshold = 0.55, int topK = 4}) async {
     final resp = await _client.get(
       _uri('/graph', {'threshold': threshold, 'top_k': topK}),
+      headers: _ownerHeader,
     );
     return GraphData.fromJson(_decodeMap(resp));
   }
@@ -328,7 +347,7 @@ class ApiClient {
       List<Map<String, String>> messages) async {
     final resp = await _client.post(
       _uri('/library/chat'),
-      headers: const {'content-type': 'application/json'},
+      headers: {'content-type': 'application/json', ..._ownerHeader},
       body: jsonEncode({'messages': messages}),
     );
     final json = _decodeMap(resp);

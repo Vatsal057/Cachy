@@ -11,20 +11,21 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/adaptive_modal.dart';
 import '../../share/views/share_screen.dart';
 
-/// Opens the capture sheet as a modal bottom sheet.
+/// Opens the capture sheet: a bottom sheet on mobile, a centered dialog on
+/// desktop widths.
 Future<void> showCaptureSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
+  return showAdaptiveModal<void>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const _CaptureSheet(),
+    builder: (_, dialog) => _CaptureSheet(dialog: dialog),
   );
 }
 
 class _CaptureSheet extends StatefulWidget {
-  const _CaptureSheet();
+  const _CaptureSheet({required this.dialog});
+  final bool dialog;
 
   @override
   State<_CaptureSheet> createState() => _CaptureSheetState();
@@ -80,26 +81,33 @@ class _CaptureSheetState extends State<_CaptureSheet> {
       child: Container(
         decoration: BoxDecoration(
           color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(top: BorderSide(color: scheme.outlineVariant)),
+          borderRadius: widget.dialog
+              ? BorderRadius.circular(24)
+              : const BorderRadius.vertical(top: Radius.circular(24)),
+          border: widget.dialog
+              ? Border.all(color: scheme.outlineVariant)
+              : Border(top: BorderSide(color: scheme.outlineVariant)),
           boxShadow: Brand.softShadow(opacity: 0.16, blur: 28, y: -4),
         ),
-        padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 24),
+        padding: EdgeInsets.fromLTRB(
+            Insets.page, widget.dialog ? 24 : 12, Insets.page, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: scheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(4),
+            if (!widget.dialog) ...[
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+            ],
             Text('Capture anything', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 6),
             Text(

@@ -18,6 +18,7 @@ class LocalStore {
   static const _themeModeKey = 'theme_mode';
   static const _seenOnboardingKey = 'seen_onboarding';
   static const _userNameKey = 'user_name';
+  static const _apiBaseUrlKey = 'api_base_url';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
@@ -36,6 +37,9 @@ class LocalStore {
 
   String? get userName => _prefs.getString(_userNameKey);
   Future<void> setUserName(String name) => _prefs.setString(_userNameKey, name);
+
+  String? get apiBaseUrl => _prefs.getString(_apiBaseUrlKey);
+  Future<void> setApiBaseUrl(String url) => _prefs.setString(_apiBaseUrlKey, url);
 
   // --------------------------------------------------------------------- //
   // Card cache

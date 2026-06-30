@@ -1,0 +1,4 @@
+web_dist/**/*.ttf filter=lfs diff=lfs merge=lfs -text
+web_dist/**/*.otf filter=lfs diff=lfs merge=lfs -text
+web_dist/**/*.png filter=lfs diff=lfs merge=lfs -text
+web_dist/**/*.wasm filter=lfs diff=lfs merge=lfs -text

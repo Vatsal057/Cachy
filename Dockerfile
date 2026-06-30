@@ -1,13 +1,5 @@
-# Stage 1: Build Flutter web
-# Empty CACHY_API_BASE → relative URLs → same-origin API calls
-FROM ghcr.io/cirruslabs/flutter:3.29.3 AS flutter-build
-WORKDIR /build
-COPY app/pubspec.yaml app/pubspec.lock ./
-RUN flutter pub get
-COPY app/ .
-RUN flutter build web --release --dart-define=CACHY_API_BASE=
-
-# Stage 2: Python backend (Hugging Face Spaces Docker SDK, CPU-only, ephemeral FS)
+# Hugging Face Spaces (Docker SDK). CPU-only, ephemeral FS.
+# Flutter web is pre-built locally by deploy_hf.sh and committed to web_dist/.
 # For persistent storage: enable the HF Spaces persistent storage addon
 # and set DATABASE_URL + MEDIA_DIR to point at the mounted /data volume.
 FROM python:3.11-slim
@@ -23,10 +15,10 @@ COPY backend/pyproject.toml ./
 COPY backend/app ./app
 RUN pip install --no-cache-dir .
 
-# Flutter web output served as SPA fallback after all API routes
-COPY --from=flutter-build /build/build/web ./static
+# Flutter web output (pre-built by deploy_hf.sh, served as SPA after API routes)
+COPY web_dist ./static
 
-RUN mkdir -p /data/downloads
+RUN mkdir -p /data/downloads && chown -R 1000:1000 /data && chmod -R 777 /data
 
 ENV MEDIA_DIR=/data/downloads
 ENV DATABASE_URL=sqlite+aiosqlite:////data/cachy.db

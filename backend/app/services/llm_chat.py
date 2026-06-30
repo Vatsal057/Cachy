@@ -96,11 +96,36 @@ def answer(card: Card, history: list[dict]) -> str | None:
     context = card_context(card)
     messages = _messages(context, history)
     settings = get_settings()
+    if settings.cerebras_enabled:
+        result = _call_cerebras(messages)
+        if result is not None:
+            return result
     if settings.hf_enabled:
-        return _call_hf(messages)
+        result = _call_hf(messages)
+        if result is not None:
+            return result
     if settings.groq_llm_enabled:
         return _call_groq(messages)
     return None
+
+
+def _call_cerebras(messages: list[dict]) -> str | None:
+    settings = get_settings()
+    try:
+        from cerebras.cloud.sdk import Cerebras
+
+        client = Cerebras(api_key=settings.cerebras_api_key)
+        resp = client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=_MAX_TOKENS,
+        )
+        text = resp.choices[0].message.content if resp.choices else ""
+        return (text or "").strip() or None
+    except Exception as e:  # noqa: BLE001
+        log.warning("chat call (cerebras) failed: %s", e)
+        return None
 
 
 def _call_hf(messages: list[dict]) -> str | None:
