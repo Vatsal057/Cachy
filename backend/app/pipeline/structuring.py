@@ -3,11 +3,11 @@ this module then ALWAYS validates it before persisting. The guarantee — a card
 always renders something sane — comes from validation + paragraph fallback, never
 from trusting the model.
 
-Note generation runs in two stages, on two separate free-tier quota pools:
+Note generation runs in two stages, each on its own free-tier quota pool:
   1. Preprocess (Gemini Flash Lite, 500 RPD): dedupe + strip filler from the fat
      extraction bundle. Forgiving task; failure passes the raw bundle through.
-  2. Structure (Cerebras llama-3.3-70b, 60k TPM): the fat-tolerant primary. Groq
-     is the fallback when Cerebras is down.
+  2. Structure (Gemini 2.5 Flash primary -> Cerebras llama-3.3-70b -> Groq):
+     Gemini gets its own dedicated key since this stage runs on every card.
 No key? Bad JSON? Empty output? -> deterministic paragraph fallback."""
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import re
 
 from app.config import get_settings
 from app.models.artifact import Artifact, ArtifactType
+from app.services import llm_gemini
 from app.models.card import (
     ActionItem,
     ActionItems,
@@ -243,7 +244,7 @@ def _preprocess_bundle(bundle: str) -> str:
     try:
         from google import genai as google_genai
 
-        client = google_genai.Client(api_key=settings.gemini_api_key)
+        client = google_genai.Client(api_key=settings.gemini_jk)
         resp = client.models.generate_content(
             model=settings.gemini_preprocess_model,
             contents=_PREPROCESS_PROMPT.format(bundle=bundle),
@@ -267,6 +268,13 @@ def complete(prompt: str, *, max_tokens: int = 8192, temperature: float = 0.2) -
     Groq fallback. Shared by the structuring pass and the gated insight pass
     (docs/14). Any failure -> None; callers decide how to degrade."""
     settings = get_settings()
+    if settings.gemini_structuring_keys:
+        out = llm_gemini.complete_with_keys(
+            settings.gemini_structuring_keys, settings.gemini_llm_model, prompt
+        )
+        if out:
+            return out
+        log.info("llm: Gemini failed; falling back to Cerebras")
     if settings.cerebras_enabled:
         out = _call_cerebras(prompt, max_tokens, temperature)
         if out:

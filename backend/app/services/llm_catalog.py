@@ -1,7 +1,8 @@
 """On-demand catalog detail (Fetch info): a single text-only LLM call that
 describes a referenced artifact — what it is, what it's about, why it matters.
 
-Groq backend. Best-effort: any failure returns None and the caller leaves the
+Shares the structuring task's Gemini key chain (low-volume, on-demand call) ->
+Groq fallback. Best-effort: any failure returns None and the caller leaves the
 artifact's description untouched."""
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import logging
 
 from app.config import get_settings
 from app.models.artifact import Artifact, ArtifactType
+from app.services import llm_gemini
 
 log = logging.getLogger("services.llm_catalog")
 
@@ -36,8 +38,12 @@ def _name_line(title: str, creator: str | None, year: int | None) -> str:
 
 
 def _call_llm(prompt: str) -> str | None:
-    """Plain text completion via Groq."""
+    """Plain text completion: Gemini (structuring key chain) primary, Groq fallback."""
     settings = get_settings()
+    if settings.gemini_structuring_keys:
+        result = llm_gemini.complete_with_keys(settings.gemini_structuring_keys, settings.gemini_llm_model, prompt)
+        if result is not None:
+            return result
     if settings.groq_llm_enabled:
         return _call_groq(prompt)
     return None

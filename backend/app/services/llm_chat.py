@@ -1,7 +1,8 @@
 """Chat Q&A over a single card (docs/13).
 
 A grounded question-answering helper: the user asks about a card, the model
-answers using ONLY that card's structured content as context. Reuses the same
+answers using ONLY that card's structured content as context. Cerebras primary
+-> Groq fallback. No Gemini here — multi-turn chat would burn pool RPD fast.
 
 Stateless by design — the client holds the conversation and replays it on each
 turn; nothing is persisted server-side.

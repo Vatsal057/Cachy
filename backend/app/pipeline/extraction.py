@@ -312,7 +312,7 @@ def _vision_read_gemini(frames: list[str], prompt: str = _VISION_PROMPT) -> str:
     except Exception:
         return ""
 
-    client = google_genai.Client(api_key=settings.gemini_api_key)
+    client = google_genai.Client(api_key=settings.gemini_jk)
     try:
         contents: list = [prompt]
         for path in frames:
