@@ -36,9 +36,13 @@ def run_app() -> int:
     frontend_dir: Path = root_dir / "app"
 
     venv_uvicorn: Path = backend_dir / ".venv" / "bin" / "uvicorn"
+    uvicorn_bin = str(venv_uvicorn)
     if not venv_uvicorn.exists():
-        print(f"Error: Virtualenv uvicorn not found at {venv_uvicorn}. Please set up the backend venv.")
-        return 1
+        fallback = find_executable("uvicorn")
+        if fallback is None:
+            print(f"Error: uvicorn not found in virtualenv or PATH.")
+            return 1
+        uvicorn_bin = fallback
 
     flutter_bin: Optional[str] = find_executable("flutter")
     if flutter_bin is None:
@@ -46,7 +50,7 @@ def run_app() -> int:
         return 1
 
     backend_cmd: List[str] = [
-        str(venv_uvicorn),
+        uvicorn_bin,
         "app.main:app",
         "--reload",
         # Bind all interfaces so a phone on the same WiFi can reach the API after

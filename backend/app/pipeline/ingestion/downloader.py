@@ -210,7 +210,22 @@ def download_content(
                 log.info("download ok via rapidapi")
                 return DownloadResult(m_type, path_or_list, caption, "rapidapi")
 
-    # 3) yt-dlp — local fallback for videos/reels.
+    # 3) cobalt.tools — free public API, works for YouTube Shorts + Instagram.
+    #    Placed before yt-dlp because yt-dlp fails on HF (SSL restrictions).
+    cobalt = getattr(resolvers, "_download_cobalt", None)
+    if callable(cobalt):
+        log.debug("trying cobalt")
+        res = _safe_call("cobalt", lambda: cobalt(url, output_path))
+        if res:
+            if len(res) == 3:
+                m_type, path_or_list, caption = res
+            else:
+                path_or_list, caption = res
+                m_type = "video"
+            log.info("download ok via cobalt")
+            return DownloadResult(m_type, path_or_list, caption, "cobalt")
+
+    # 4) yt-dlp — local fallback for videos/reels.
     yt = getattr(resolvers, "_download_yt_dlp", None)
     if callable(yt):
         log.debug("trying yt-dlp")
@@ -222,7 +237,7 @@ def download_content(
             log.info("download ok via yt-dlp")
             return DownloadResult("video", path, caption, "yt-dlp")
 
-    # 4) Instaloader — local fallback for Instagram carousels/images.
+    # 5) Instaloader — local fallback for Instagram carousels/images.
     #    NOTE: resolvers._download_instaloader writes to a shared "temp_images"
     #    dir and is NOT concurrency-safe. Fine for single-worker dev; flagged for
     #    a later fix before running parallel workers (docs/02).

@@ -4,7 +4,9 @@ Mirrors api/catalog.py."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -26,11 +28,19 @@ async def list_concepts(
     card_id: str | None = None,
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> list[ConceptEntry]:
     async with db.session() as session:
         stmt = select(db.ConceptRow).order_by(db.ConceptRow.created_at.desc())
         rows = (await session.execute(stmt)).scalars().all()
         entries = [r.to_entry() for r in rows]
+        if x_owner_id is not None:
+            owner_cards = set(
+                (await session.execute(
+                    select(db.CardRow.id).where(db.CardRow.owner_id == x_owner_id)
+                )).scalars().all()
+            )
+            entries = [e for e in entries if bool(set(e.source_card_ids) & owner_cards)]
     if card_id is not None:
         entries = [e for e in entries if card_id in e.source_card_ids]
     else:
@@ -39,14 +49,23 @@ async def list_concepts(
 
 
 @router.get("/{concept_id}", response_model=ConceptDetail)
-async def get_concept(concept_id: str) -> ConceptDetail:
+async def get_concept(
+    concept_id: str,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> ConceptDetail:
     async with db.session() as session:
         row = await session.get(db.ConceptRow, concept_id)
         if row is None:
             raise HTTPException(status_code=404, detail="concept not found")
         entry = row.to_entry()
-        # Related = multi-reel concepts that co-occur in any of this concept's source cards.
         mine = set(entry.source_card_ids)
+        owner_cards: set[str] = set()
+        if x_owner_id is not None:
+            owner_cards = set(
+                (await session.execute(
+                    select(db.CardRow.id).where(db.CardRow.owner_id == x_owner_id)
+                )).scalars().all()
+            )
         all_rows = (await session.execute(select(db.ConceptRow))).scalars().all()
         related = [
             r.to_entry()
@@ -54,6 +73,7 @@ async def get_concept(concept_id: str) -> ConceptDetail:
             if r.id != concept_id
             and len(r.source_card_ids or []) > 1
             and bool(set(r.source_card_ids or []) & mine)
+            and (x_owner_id is None or bool(set(r.source_card_ids or []) & owner_cards))
         ]
     return ConceptDetail(entry=entry, related=related)
 

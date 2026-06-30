@@ -26,6 +26,7 @@ dependencies = [
     "google-genai>=0.5",
     "groq>=0.9",
     "huggingface_hub>=0.27",
+    "asyncpg>=0.29",
     # OCR is optional; pytesseract needs the tesseract binary present
     "pytesseract>=0.3.10",
     # image preprocessing for OCR (adaptive threshold + sharpen)

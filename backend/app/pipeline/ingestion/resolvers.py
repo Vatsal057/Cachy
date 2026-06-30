@@ -543,6 +543,60 @@ def _download_igreelsdl(
     return None
 
 
+def _download_cobalt(
+    url: str, output_path: Union[str, Path]
+) -> Optional[Tuple[str, Union[str, List[str]], str]]:
+    """Downloads video via cobalt.tools public API (YouTube, Instagram, TikTok, etc.)."""
+    target_path = Path(output_path)
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; Cachy/1.0)",
+    }
+    payload = {"url": url, "videoQuality": "720", "filenameStyle": "basic"}
+    try:
+        response = requests.post(
+            "https://api.cobalt.tools/", headers=headers, json=payload, timeout=20
+        )
+        if response.status_code != 200:
+            log.warning(f"[cobalt] API returned status {response.status_code}")
+            return None
+        res_json = response.json()
+        status = res_json.get("status")
+        if status == "error":
+            log.warning(f"[cobalt] API error: {res_json.get('error', {}).get('code', 'unknown')}")
+            return None
+        dl_url = None
+        if status in ("stream", "redirect", "tunnel"):
+            dl_url = res_json.get("url")
+        elif status == "picker":
+            for item in res_json.get("picker", []):
+                if item.get("type") == "video":
+                    dl_url = item.get("url")
+                    break
+            if not dl_url and res_json.get("picker"):
+                dl_url = res_json["picker"][0].get("url")
+        if not dl_url:
+            log.debug("[cobalt] No download URL in response")
+            return None
+        video_resp = requests.get(
+            dl_url, headers={"User-Agent": headers["User-Agent"]}, stream=True, timeout=60
+        )
+        if video_resp.status_code != 200:
+            log.warning(f"[cobalt] Stream returned status {video_resp.status_code}")
+            return None
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with target_path.open("wb") as f:
+            for chunk in video_resp.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        if target_path.exists() and target_path.stat().st_size > 0:
+            return "video", str(target_path), ""
+    except Exception as e:
+        log.warning(f"[cobalt] Helper failed for {url}: {e}")
+    return None
+
+
 def _download_rapidapi(
     url: str, output_path: Union[str, Path], api_key: str
 ) -> Optional[Tuple[str, Union[str, List[str]], str]]:

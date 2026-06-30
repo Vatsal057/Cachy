@@ -1,12 +1,14 @@
 // Contract tests for the schema mirror (docs/04). The block renderer's promise
 // is that unknown/malformed blocks never crash — these guard that invariant.
 
+import 'package:flutter/material.dart' hide Card, Step;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cachy/data/repositories/card_repository.dart';
 import 'package:cachy/domain/models/block.dart';
 import 'package:cachy/domain/models/card.dart';
 import 'package:cachy/domain/models/enums.dart';
+import 'package:cachy/ui/core/widgets/rich_text.dart';
 
 void main() {
   group('Block.fromJson', () {
@@ -143,6 +145,20 @@ void main() {
       });
       expect(card.actionItems.followed, isFalse);
       expect(card.actionItems.isPresent, isFalse);
+    });
+  });
+
+  group('RichInlineText', () {
+    testWidgets('renders bold wikilink without brackets', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: RichInlineText('Check out **[[THE TAINTED]]** now.'),
+          ),
+        ),
+      );
+      expect(find.textContaining('THE TAINTED'), findsOneWidget);
+      expect(find.textContaining('[[THE TAINTED]]'), findsNothing);
     });
   });
 }

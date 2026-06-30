@@ -53,8 +53,6 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const _kDesktop = 600.0;
-
   static const _screens = [
     LibraryScreen(),
     CatalogScreen(),
@@ -83,7 +81,7 @@ class _HomeShellState extends State<HomeShell> {
       child: Focus(
         autofocus: true,
         child: LayoutBuilder(
-          builder: (_, constraints) => constraints.maxWidth >= _kDesktop
+          builder: (_, constraints) => constraints.maxWidth >= Insets.desktop
               ? _desktopShell(context)
               : _mobileShell(context),
         ),

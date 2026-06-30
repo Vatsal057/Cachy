@@ -15,3 +15,7 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+## Mobile Backend Connection & Cloud Deployment
+
+For instructions on connecting physical mobile devices (Android/iOS) to local LAN backends or Hugging Face Spaces deployments, see [docs/MOBILE_CONNECTION_GUIDE.md](../docs/MOBILE_CONNECTION_GUIDE.md).

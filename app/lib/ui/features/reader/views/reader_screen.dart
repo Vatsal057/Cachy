@@ -34,8 +34,17 @@ import 'insight_section.dart';
 import 'primary_action_bar.dart';
 
 class ReaderScreen extends StatelessWidget {
-  const ReaderScreen({super.key, required this.cardId});
+  const ReaderScreen({super.key, required this.cardId, this.embedded = false, this.onClose});
   final String cardId;
+
+  /// True when rendered inline in the desktop split pane (Library, wide
+  /// layout) rather than pushed as its own route: drops the Scaffold,
+  /// SliverAppBar face/hero treatment, and Scaffold.bottomSheet in favor of
+  /// a compact header and an inline action bar.
+  final bool embedded;
+
+  /// Clears the pane selection. Only used when [embedded] is true.
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -44,13 +53,15 @@ class ReaderScreen extends StatelessWidget {
         repository: ctx.read<CardRepository>(),
         cardId: cardId,
       )..init(),
-      child: const _ReaderView(),
+      child: _ReaderView(embedded: embedded, onClose: onClose),
     );
   }
 }
 
 class _ReaderView extends StatelessWidget {
-  const _ReaderView();
+  const _ReaderView({required this.embedded, this.onClose});
+  final bool embedded;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -58,23 +69,20 @@ class _ReaderView extends StatelessWidget {
     final api = context.read<CardRepository>().api;
 
     if (vm.isLoading) {
-      return Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Theme.of(context).colorScheme.primary,
-          ),
+      final spinner = Center(
+        child: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
         ),
       );
+      return embedded ? spinner : Scaffold(body: spinner);
     }
     if (vm.error != null && vm.card == null) {
-      return Scaffold(
-        appBar: AppBar(),
-        body: ErrorState(
-          title: "Couldn't load this card",
-          message: 'It may still be processing, or the connection dropped.',
-          onRetry: vm.retry,
-        ),
+      final error = ErrorState(
+        title: "Couldn't load this card",
+        message: 'It may still be processing, or the connection dropped.',
+        onRetry: vm.retry,
       );
+      return embedded ? error : Scaffold(appBar: AppBar(), body: error);
     }
 
     final card = vm.card!;
@@ -100,17 +108,13 @@ class _ReaderView extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          _FaceAppBar(card: card, api: api, accent: accent),
-          SliverToBoxAdapter(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: Insets.readingColumn),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Insets.page, 22, Insets.page, 128),
-                  child: Column(
+    final content = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: Insets.readingColumn),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+              Insets.page, embedded ? 20 : 22, Insets.page, 128),
+          child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Slim pipeline status — visible while building
@@ -213,8 +217,23 @@ class _ReaderView extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+
+    if (embedded) {
+      return Column(
+        children: [
+          _EmbeddedHeader(card: card, accent: accent, onClose: onClose),
+          Expanded(child: SingleChildScrollView(child: content)),
+          if (card.isReady) PrimaryActionBar(card: card),
+        ],
+      );
+    }
+
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          _FaceAppBar(card: card, api: api, accent: accent),
+          SliverToBoxAdapter(child: content),
         ],
       ),
       bottomSheet: card.isReady ? PrimaryActionBar(card: card) : null,
@@ -242,6 +261,50 @@ class _ReaderView extends StatelessWidget {
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Link copied'), duration: Motion.medium),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Embedded header — desktop split-pane equivalent of the face app bar
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Compact pane header used instead of [_FaceAppBar] when the reader is
+/// embedded in the Library split pane: a close affordance plus the content
+/// type, no hero face takeover (there's no route transition to animate into).
+class _EmbeddedHeader extends StatelessWidget {
+  const _EmbeddedHeader({required this.card, required this.accent, this.onClose});
+  final model.Card card;
+  final ContentAccent accent;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Close',
+            icon: const PhosphorIcon(PhosphorIconsRegular.x),
+            onPressed: onClose,
+          ),
+          const SizedBox(width: 4),
+          PhosphorIcon(accent.icon, size: 15, color: accent.color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              card.base.contentType.label.toUpperCase(),
+              overflow: TextOverflow.ellipsis,
+              style: Brand.label(size: 11, color: scheme.onSurfaceVariant, weight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

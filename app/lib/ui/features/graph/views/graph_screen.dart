@@ -609,6 +609,7 @@ class _GraphScreenState extends State<GraphScreen>
       builder: (ctx) => _NodePreviewSheet(
         node: node,
         neighbors: neighborNodes,
+        edges: data.edges,
         onOpen: () {
           Navigator.pop(ctx);
           if (node.isCard) {
@@ -634,6 +635,15 @@ class _GraphScreenState extends State<GraphScreen>
             _alphaTarget = 0.0;
             if (!_ticker.isActive) _ticker.start();
           });
+        },
+        onSelectNeighbor: (nId) {
+          Navigator.pop(ctx);
+          setState(() => _selected = nId);
+          final p = _pos[nId];
+          if (p != null) {
+            setState(() => _pan = -p * _zoom);
+          }
+          _showNodePreview(nId);
         },
       ),
     );
@@ -954,14 +964,18 @@ class _NodePreviewSheet extends StatelessWidget {
   const _NodePreviewSheet({
     required this.node,
     required this.neighbors,
+    required this.edges,
     required this.onOpen,
     required this.onFocusLocal,
+    required this.onSelectNeighbor,
   });
 
   final GraphNode node;
   final List<GraphNode> neighbors;
+  final List<GraphEdge> edges;
   final VoidCallback onOpen;
   final VoidCallback onFocusLocal;
+  final ValueChanged<String> onSelectNeighbor;
 
   @override
   Widget build(BuildContext context) {
@@ -1050,45 +1064,93 @@ class _NodePreviewSheet extends StatelessWidget {
             const SizedBox(height: 16),
             if (neighbors.isNotEmpty) ...[
               Text(
-                'CONNECTED TO',
+                'CONNECTED TO (${neighbors.length})',
                 style: Brand.label(
                     size: 11,
                     weight: FontWeight.w700,
                     color: scheme.onSurfaceVariant),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: neighbors.take(8).map((n) {
-                  return Chip(
-                    avatar: PhosphorIcon(
-                      n.isCard
-                          ? PhosphorIconsRegular.article
-                          : n.isConcept
-                              ? PhosphorIconsRegular.lightbulb
-                              : PhosphorIconsRegular.shapes,
-                      size: 16,
+              const SizedBox(height: 10),
+              Column(
+                children: neighbors.map((n) {
+                  final edge = edges.where((e) =>
+                      (e.source == node.id && e.target == n.id) ||
+                      (e.source == n.id && e.target == node.id)).firstOrNull;
+                  final topics = edge?.sharedTopics ?? [];
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      onTap: () => onSelectNeighbor(n.id),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            PhosphorIcon(
+                              n.isCard
+                                  ? PhosphorIconsRegular.article
+                                  : n.isConcept
+                                      ? PhosphorIconsRegular.lightbulb
+                                      : PhosphorIconsRegular.shapes,
+                              size: 20,
+                              color: scheme.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    n.label,
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (topics.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        PhosphorIcon(
+                                          PhosphorIconsRegular.tag,
+                                          size: 12,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            topics.join(', '),
+                                            style: Brand.label(
+                                              size: 11,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            PhosphorIcon(
+                              PhosphorIconsRegular.caretRight,
+                              size: 16,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    label: Text(
-                      n.label.length > 30
-                          ? '${n.label.substring(0, 30)}…'
-                          : n.label,
-                      style: Brand.label(size: 11),
-                    ),
-                    visualDensity: VisualDensity.compact,
                   );
                 }).toList(),
               ),
-              if (neighbors.length > 8)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '+${neighbors.length - 8} more',
-                    style: Brand.label(
-                        size: 11, color: scheme.onSurfaceVariant),
-                  ),
-                ),
               const SizedBox(height: 16),
             ],
             Row(

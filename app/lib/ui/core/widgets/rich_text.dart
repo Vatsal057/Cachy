@@ -96,14 +96,16 @@ class _RichInlineTextState extends State<RichInlineText> {
       if (ref != null) {
         spans.add(_referenceSpan(ref, base, scope));
       } else if (m.group(2) != null || m.group(3) != null) {
-        spans.add(TextSpan(
-          text: m.group(2) ?? m.group(3),
-          style: base?.copyWith(fontWeight: FontWeight.w700),
+        spans.addAll(_spans(
+          m.group(2) ?? m.group(3)!,
+          base?.copyWith(fontWeight: FontWeight.w700),
+          scope,
         ));
       } else if (m.group(4) != null || m.group(5) != null) {
-        spans.add(TextSpan(
-          text: m.group(4) ?? m.group(5),
-          style: base?.copyWith(fontStyle: FontStyle.italic),
+        spans.addAll(_spans(
+          m.group(4) ?? m.group(5)!,
+          base?.copyWith(fontStyle: FontStyle.italic),
+          scope,
         ));
       } else if (m.group(6) != null) {
         spans.add(TextSpan(
@@ -122,25 +124,26 @@ class _RichInlineTextState extends State<RichInlineText> {
     return spans;
   }
 
-  /// A `[[Name]]` marker: resolves to artifact first, then concept, else bare name.
+  /// A `[[Name]]` marker: resolves to artifact first, then concept, else clean styled name.
   InlineSpan _referenceSpan(String label, TextStyle? base, ReferenceScope? scope) {
-    final entry = scope?.resolve(label);
+    final cleanLabel = label.replaceAll(RegExp(r'\*\*|__|`|\*|_'), '').trim();
+    final entry = scope?.resolve(cleanLabel);
     if (entry != null) {
       final recognizer = TapGestureRecognizer()..onTap = () => scope!.onTap(entry);
       _recognizers.add(recognizer);
-      return _linkSpan(label, base, recognizer);
+      return _linkSpan(cleanLabel, base, recognizer);
     }
-    final concept = scope?.resolveConcept(label);
+    final concept = scope?.resolveConcept(cleanLabel);
     if (concept != null && scope?.onTapConcept != null) {
       final recognizer = TapGestureRecognizer()
         ..onTap = () => scope!.onTapConcept!(concept);
       _recognizers.add(recognizer);
-      return _linkSpan(label, base, recognizer);
+      return _linkSpan(cleanLabel, base, recognizer);
     }
-    return TextSpan(text: label, style: base);
+    return _linkSpan(cleanLabel, base, null);
   }
 
-  InlineSpan _linkSpan(String label, TextStyle? base, TapGestureRecognizer recognizer) =>
+  InlineSpan _linkSpan(String label, TextStyle? base, TapGestureRecognizer? recognizer) =>
       TextSpan(
         text: label,
         style: base?.copyWith(

@@ -26,6 +26,17 @@ class CardRepository extends ChangeNotifier {
 
   ApiClient get api => _api;
 
+  void updateBaseUrl(String url) {
+    _api.setBaseUrl(url);
+    notifyListeners();
+  }
+
+  Future<String?> discoverServer() async {
+    final discovered = await _api.discoverAndUpdateBaseUrl();
+    notifyListeners();
+    return discovered;
+  }
+
   /// Submit a shared URL. On network failure the URL is queued locally and the
   /// caller is told it is pending (offline share queue, docs/06).
   Future<CreateCardResult> share(String url) async {
@@ -34,8 +45,10 @@ class CardRepository extends ChangeNotifier {
       await flushPendingShares();
       notifyListeners();
       return result;
-    } catch (_) {
-      await _store.enqueueShare(url);
+    } catch (e) {
+      if (e is! ApiException) {
+        await _store.enqueueShare(url);
+      }
       notifyListeners();
       rethrow;
     }
@@ -57,16 +70,13 @@ class CardRepository extends ChangeNotifier {
   }
 
   /// Library listing. Falls back to the local cache when the network is down so
-  /// previously-seen cards remain browsable offline. On success, silently
-  /// restores any locally-cached cards missing from the server (e.g. after HF restart).
+  /// previously-seen cards remain browsable offline.
   Future<List<Card>> list({CardState? state}) async {
     try {
       final cards = await _api.listCards(state: state, limit: 100);
       for (final c in cards) {
         await _store.cacheCard(c.cardId, _rawOf(c));
       }
-      // Fire-and-forget: restore phone-only cards back to server
-      _syncMissingToServer(cards);
       return cards;
     } catch (_) {
       final cached = _store.readAllCards().map(Card.fromJson).toList()
@@ -76,31 +86,6 @@ class CardRepository extends ChangeNotifier {
       return state == null
           ? cached
           : cached.where((c) => c.state == state).toList();
-    }
-  }
-
-  /// Restore locally-cached READY cards that the server doesn't have.
-  /// Runs silently in the background; errors are swallowed.
-  Future<void> _syncMissingToServer(List<Card> serverCards) async {
-    try {
-      final serverUrls = serverCards.map((c) => c.source.url).toSet();
-      final missing = _store
-          .readAllCards()
-          .map(Card.fromJson)
-          .where((c) =>
-              c.state == CardState.ready &&
-              !serverUrls.contains(c.source.url))
-          .toList();
-      if (missing.isEmpty) return;
-      await _api.importCards(missing.map(_rawOf).toList());
-      // Refresh cache with new server-assigned IDs
-      final refreshed = await _api.listCards(limit: 200);
-      for (final c in refreshed) {
-        await _store.cacheCard(c.cardId, _rawOf(c));
-      }
-      notifyListeners();
-    } catch (_) {
-      // Silent: will retry on next list() call
     }
   }
 
@@ -174,15 +159,13 @@ class CardRepository extends ChangeNotifier {
   }
 
   Future<void> delete(String cardId) async {
-    // Phone is source of truth: remove from cache first so the card is never
-    // re-pushed to the server by _syncMissingToServer after a restart.
     await _store.removeCard(cardId);
-    notifyListeners();
     try {
       await _api.deleteCard(cardId);
     } catch (_) {
       // Best-effort; card is already gone from local cache.
     }
+    notifyListeners();
   }
 
   Future<List<Card>> search(String query) => _api.search(query);

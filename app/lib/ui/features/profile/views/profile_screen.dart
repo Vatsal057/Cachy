@@ -28,6 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late Future<List<model.Card>> _cards;
   late Future<List<CatalogEntry>> _catalog;
   bool _exporting = false;
+  bool _discovering = false;
 
   @override
   void initState() {
@@ -40,6 +41,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final repo = context.watch<CardRepository>();
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('You')),
@@ -50,6 +52,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 28),
           _sectionLabel(theme, 'Appearance'),
           const _ThemePicker(),
+          const SizedBox(height: 24),
+          _sectionLabel(theme, 'Server Connection'),
+          _Tile(
+            icon: PhosphorIconsRegular.hardDrives,
+            title: 'Active Server endpoint',
+            subtitle: repo.api.baseUrl,
+            onTap: _editServerUrl,
+          ),
+          _Tile(
+            icon: PhosphorIconsRegular.broadcast,
+            title: _discovering ? 'Searching local WiFi…' : 'Discover LAN Server',
+            subtitle: 'Scan local network for a Cachy backend running ./start.py.',
+            onTap: _discovering ? null : _discoverServer,
+          ),
           const SizedBox(height: 24),
           _sectionLabel(theme, 'Library'),
           _Tile(
@@ -135,6 +151,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
 
+  Future<void> _discoverServer() async {
+    setState(() => _discovering = true);
+    final repo = context.read<CardRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final found = await repo.discoverServer();
+      if (mounted) {
+        if (found != null) {
+          messenger.showSnackBar(SnackBar(content: Text('Connected to backend at $found')));
+        } else {
+          messenger.showSnackBar(const SnackBar(content: Text('No server found on LAN')));
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _discovering = false);
+    }
+  }
+
+  Future<void> _editServerUrl() async {
+    final repo = context.read<CardRepository>();
+    final controller = TextEditingController(text: repo.api.baseUrl);
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Configure Server URL'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'http://192.168.1.5:8000',
+            labelText: 'Backend URL',
+          ),
+          keyboardType: TextInputType.url,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (url != null && url.isNotEmpty && mounted) {
+      repo.updateBaseUrl(url);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Server URL updated to $url')),
+      );
+    }
+  }
+
   Future<void> _exportVault() async {
     setState(() => _exporting = true);
     final messenger = ScaffoldMessenger.of(context);
@@ -173,8 +243,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Clear')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Clear')),
         ],
       ),
     );

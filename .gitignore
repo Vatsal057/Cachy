@@ -27,6 +27,7 @@ node_modules/
 build/
 dist/
 *.app/
+web_dist/
 
 # Environment
 .env

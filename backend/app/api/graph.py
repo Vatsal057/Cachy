@@ -27,13 +27,15 @@ import math
 import random
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from typing import Annotated
 
 from app.models.card import CardState
 from app.services import embeddings
 from app.store import db
+from app.store import media as media_store
 
 log = logging.getLogger("api.graph")
 
@@ -46,6 +48,13 @@ _TAG_BOOST_CAP = 0.15
 
 # Label propagation max iterations.
 _LP_MAX_ITERS = 30
+
+_GENERIC_TAGS = {
+    "video", "videos", "reel", "reels", "instagram", "tiktok", "youtube",
+    "short", "shorts", "clip", "clips", "post", "posts", "other", "general",
+    "untitled", "article", "content", "media", "watch",
+}
+
 
 
 # --- Schemas ---------------------------------------------------------------- #
@@ -67,6 +76,8 @@ class GraphEdge(BaseModel):
     target: str
     weight: float
     kind: Literal["semantic", "reference", "tag", "membership", "concept_ref"]
+    shared_topics: list[str] = []
+
 
 
 class GraphCluster(BaseModel):
@@ -85,40 +96,36 @@ class GraphResponse(BaseModel):
 
 
 class _GraphCache:
-    """Simple fingerprint-based cache. Invalidates when the data changes."""
+    """Per-owner fingerprint cache. Keyed by owner_id (empty string = no auth)."""
 
     def __init__(self) -> None:
-        self._fingerprint: str = ""
-        self._response: GraphResponse | None = None
+        self._store: dict[str, tuple[str, GraphResponse]] = {}
 
-    def get(self, fingerprint: str) -> GraphResponse | None:
-        if fingerprint == self._fingerprint and self._response is not None:
-            return self._response
+    def get(self, owner_id: str | None, fingerprint: str) -> GraphResponse | None:
+        entry = self._store.get(owner_id or "")
+        if entry is not None and entry[0] == fingerprint:
+            return entry[1]
         return None
 
-    def set(self, fingerprint: str, response: GraphResponse) -> None:
-        self._fingerprint = fingerprint
-        self._response = response
+    def set(self, owner_id: str | None, fingerprint: str, response: GraphResponse) -> None:
+        self._store[owner_id or ""] = (fingerprint, response)
 
     def invalidate(self) -> None:
-        self._fingerprint = ""
-        self._response = None
+        self._store.clear()
 
 
 _cache = _GraphCache()
 
 
-async def _data_fingerprint() -> str:
-    """Hash of card/artifact counts + latest update timestamps. Changes when any
-    card or artifact is created, updated, or deleted."""
+async def _data_fingerprint(owner_id: str | None) -> str:
+    """Hash of card/artifact counts + latest timestamps, scoped to owner."""
     async with db.session() as session:
-        card_agg = (
-            await session.execute(
-                select(func.count(), func.max(db.CardRow.updated_at)).where(
-                    db.CardRow.state == CardState.READY.value
-                )
-            )
-        ).one()
+        card_stmt = select(func.count(), func.max(db.CardRow.updated_at)).where(
+            db.CardRow.state == CardState.READY.value
+        )
+        if owner_id is not None:
+            card_stmt = card_stmt.where(db.CardRow.owner_id == owner_id)
+        card_agg = (await session.execute(card_stmt)).one()
         art_agg = (
             await session.execute(
                 select(func.count(), func.max(db.ArtifactRow.updated_at)).where(
@@ -132,7 +139,7 @@ async def _data_fingerprint() -> str:
         concept_count = (
             await session.execute(select(func.count(db.ConceptRow.id)))
         ).scalar() or 0
-    raw = f"{card_agg[0]}:{card_agg[1]}:{art_agg[0]}:{art_agg[1]}:{col_count}:{concept_count}"
+    raw = f"{owner_id}:{card_agg[0]}:{card_agg[1]}:{art_agg[0]}:{art_agg[1]}:{col_count}:{concept_count}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -152,9 +159,50 @@ def _pair_weight(
     base = 0.0
     if a_vec and b_vec:
         base = embeddings.cosine(a_vec, b_vec)
-    shared = len(a_tags & b_tags)
+    meaningful_a = a_tags - _GENERIC_TAGS
+    meaningful_b = b_tags - _GENERIC_TAGS
+    shared = len(meaningful_a & meaningful_b)
     boost = min(shared * _TAG_BOOST, _TAG_BOOST_CAP)
     return base + boost
+
+
+def _extract_shared_topics(
+    node_a: GraphNode | None,
+    node_b: GraphNode | None,
+    tags_a: set[str],
+    tags_b: set[str],
+    kind: str,
+) -> list[str]:
+    if kind == "reference":
+        return ["Saved in Catalog"]
+    if kind == "concept_ref":
+        if node_a and node_a.node_type == "concept":
+            return [node_a.label]
+        if node_b and node_b.node_type == "concept":
+            return [node_b.label]
+        return ["Shared concept"]
+
+    # For semantic or tag edges:
+    meaningful_shared = sorted((tags_a & tags_b) - _GENERIC_TAGS)
+    if meaningful_shared:
+        return meaningful_shared[:4]
+
+    # Fallback: find overlapping meaningful words from labels
+    if node_a and node_b:
+        words_a = {w.lower().strip(".,!?\"'()[]{}") for w in node_a.label.split()}
+        words_b = {w.lower().strip(".,!?\"'()[]{}") for w in node_b.label.split()}
+        stopwords = _GENERIC_TAGS | {
+            "about", "with", "from", "that", "this", "have", "will", "what", "how",
+            "why", "when", "where", "into", "over", "under", "more", "most", "some",
+            "their", "there", "then", "than", "make", "made", "like", "just", "best",
+            "and", "for", "the", "are", "was", "were", "been", "being", "your",
+        }
+        overlap = sorted({w for w in words_a & words_b if len(w) >= 4 and w not in stopwords})
+        if overlap:
+            return overlap[:4]
+
+    return ["Similar content"]
+
 
 
 # --- Label propagation clustering ------------------------------------------- #
@@ -254,12 +302,13 @@ def _cluster_labels(
 async def get_graph(
     threshold: float = Query(0.62, ge=0.0, le=1.0),
     top_k: int = Query(2, ge=1, le=12),
+    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> GraphResponse:
     """Build the multi-entity card + catalog similarity graph. Cached until the
     underlying data changes (card/artifact create/update/delete)."""
 
-    fingerprint = await _data_fingerprint()
-    cached = _cache.get(fingerprint)
+    fingerprint = await _data_fingerprint(x_owner_id)
+    cached = _cache.get(x_owner_id, fingerprint)
     if cached is not None:
         log.debug("graph cache hit (%s)", fingerprint[:8])
         return cached
@@ -269,20 +318,29 @@ async def get_graph(
     # ---- Fetch data -------------------------------------------------------- #
 
     async with db.session() as session:
-        card_rows = (
-            await session.execute(
-                select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
-            )
-        ).scalars().all()
-        artifact_rows = (
+        card_stmt = select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
+        if x_owner_id is not None:
+            card_stmt = card_stmt.where(db.CardRow.owner_id == x_owner_id)
+        card_rows = (await session.execute(card_stmt)).scalars().all()
+
+        user_card_ids = {r.id for r in card_rows}
+
+        all_artifact_rows = (
             await session.execute(
                 select(db.ArtifactRow).where(db.ArtifactRow.saved.is_(True))
             )
         ).scalars().all()
-        concept_rows = (
-            await session.execute(select(db.ConceptRow))
-        ).scalars().all()
-        concept_rows = [c for c in concept_rows if len(c.source_card_ids or []) > 1]
+        artifact_rows = [
+            a for a in all_artifact_rows
+            if x_owner_id is None or bool(set(a.source_card_ids or []) & user_card_ids)
+        ]
+
+        all_concept_rows = (await session.execute(select(db.ConceptRow))).scalars().all()
+        concept_rows = [
+            c for c in all_concept_rows
+            if len(c.source_card_ids or []) > 1
+            and (x_owner_id is None or bool(set(c.source_card_ids or []) & user_card_ids))
+        ]
 
     # ---- Build nodes ------------------------------------------------------- #
 
@@ -297,7 +355,7 @@ async def get_graph(
                 label=(r.one_liner or r.caption or "Untitled").strip()[:80],
                 node_type="card",
                 content_type=r.content_type or "other",
-                thumbnail=r.thumbnail,
+                thumbnail=media_store.to_media_url(r.thumbnail),
                 tags=list(r.tags or []),
             )
         )
@@ -333,7 +391,7 @@ async def get_graph(
 
     if not nodes:
         resp = GraphResponse(nodes=[], edges=[], clusters=[])
-        _cache.set(fingerprint, resp)
+        _cache.set(x_owner_id, fingerprint, resp)
         return resp
 
     # ---- Build edges ------------------------------------------------------- #
@@ -369,13 +427,18 @@ async def get_graph(
             kept.add(key)
             weights[key] = round(w, 4)
 
+    nodes_by_id = {n.id: n for n in nodes}
+
     for (s, t) in kept:
         w = weights[(s, t)]
         # Classify: if weight is purely from tags (no embedding), mark as "tag".
         a_vec, b_vec = vecs.get(s), vecs.get(t)
         has_semantic = bool(a_vec and b_vec and embeddings.cosine(a_vec, b_vec) > 0.1)
         kind: Literal["semantic", "reference", "tag"] = "semantic" if has_semantic else "tag"
-        edges.append(GraphEdge(source=s, target=t, weight=w, kind=kind))
+        topics = _extract_shared_topics(
+            nodes_by_id.get(s), nodes_by_id.get(t), tags.get(s, set()), tags.get(t, set()), kind
+        )
+        edges.append(GraphEdge(source=s, target=t, weight=w, kind=kind, shared_topics=topics))
         adj[s].append((t, w))
         adj[t].append((s, w))
 
@@ -383,8 +446,9 @@ async def get_graph(
     for a in artifact_rows:
         for card_id in (a.source_card_ids or []):
             if card_id in card_ids:
+                topics = _extract_shared_topics(nodes_by_id.get(a.id), nodes_by_id.get(card_id), set(), set(), "reference")
                 edges.append(
-                    GraphEdge(source=a.id, target=card_id, weight=1.0, kind="reference")
+                    GraphEdge(source=a.id, target=card_id, weight=1.0, kind="reference", shared_topics=topics)
                 )
                 adj[a.id].append((card_id, 1.0))
                 adj[card_id].append((a.id, 1.0))
@@ -393,8 +457,9 @@ async def get_graph(
     for c in concept_rows:
         for cid in (c.source_card_ids or []):
             if cid in card_ids:
+                topics = _extract_shared_topics(nodes_by_id.get(c.id), nodes_by_id.get(cid), set(), set(), "concept_ref")
                 edges.append(
-                    GraphEdge(source=c.id, target=cid, weight=0.9, kind="concept_ref")
+                    GraphEdge(source=c.id, target=cid, weight=0.9, kind="concept_ref", shared_topics=topics)
                 )
                 adj[c.id].append((cid, 0.9))
                 adj[cid].append((c.id, 0.9))
@@ -419,5 +484,5 @@ async def get_graph(
     cluster_meta = _cluster_labels(nodes, cluster_map)
 
     resp = GraphResponse(nodes=nodes, edges=edges, clusters=cluster_meta)
-    _cache.set(fingerprint, resp)
+    _cache.set(x_owner_id, fingerprint, resp)
     return resp

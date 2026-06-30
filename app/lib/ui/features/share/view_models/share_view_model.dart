@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/pipeline_event.dart';
 
 enum ShareStatus { idle, submitting, processing, ready, failed, queuedOffline }
@@ -61,9 +62,14 @@ class ShareViewModel extends ChangeNotifier {
       _watch(result.cardId);
       return _cardId;
     } catch (e) {
-      // Network down: repository has queued the share for later.
-      _status = ShareStatus.queuedOffline;
-      _error = '$e';
+      if (e is ApiException) {
+        _status = ShareStatus.failed;
+        _failureReason = e.message;
+      } else {
+        // Network down: repository has queued the share for later.
+        _status = ShareStatus.queuedOffline;
+        _error = '$e';
+      }
       notifyListeners();
       return null;
     }

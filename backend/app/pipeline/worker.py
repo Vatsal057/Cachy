@@ -135,6 +135,25 @@ async def _write_insight(session, card_id: str, insight) -> None:
     await session.commit()
 
 
+async def _upload_media_to_hf(extraction, card_id: str):
+    """Upload local thumbnail + keyframes to HF Dataset, returning updated extraction.
+
+    Falls back to local paths silently if HF media is not configured or upload fails."""
+    from dataclasses import replace as dc_replace
+
+    async def _upload(path: str | None) -> str | None:
+        if not path or path.startswith("http"):
+            return path
+        url = await asyncio.to_thread(media.upload_file, path, card_id)
+        if url:
+            media.remove_path(path)
+        return url or path
+
+    thumbnail = await _upload(extraction.thumbnail)
+    keyframes = [await _upload(kf) for kf in extraction.keyframes]
+    return dc_replace(extraction, thumbnail=thumbnail, keyframes=keyframes)
+
+
 async def _write_media_and_meta(
     session, card_id: str, extraction, caption: str, resolver: str,
     creator: str | None = None,
@@ -160,7 +179,11 @@ async def _write_media_and_meta(
 
 async def _persist_artifacts(session: Any, card_id: str, artifacts: list[Any]) -> None:
     """Aggregate referenced things into the global catalog (docs/12). Thumbnail
-    lookups run in parallel — each is best-effort and never blocks the card."""
+    lookups run in parallel — each is best-effort and never blocks the card.
+    Skips entirely if the card was deleted mid-pipeline."""
+    if await db.get_card_row(session, card_id) is None:
+        log.warning("card %s deleted mid-pipeline; skipping artifact persist", card_id)
+        return
     async def _resolve_thumb(art: Any) -> tuple[Any, str | None]:
         try:
             thumbnail = await asyncio.to_thread(
@@ -191,7 +214,11 @@ async def _persist_artifacts(session: Any, card_id: str, artifacts: list[Any]) -
 
 async def _persist_concepts(session: Any, card_id: str, concepts: list[str]) -> None:
     """Aggregate evergreen ideas into the global concept store. Best-effort and
-    isolated — a failure here never affects the card itself."""
+    isolated — a failure here never affects the card itself.
+    Skips entirely if the card was deleted mid-pipeline."""
+    if await db.get_card_row(session, card_id) is None:
+        log.warning("card %s deleted mid-pipeline; skipping concept persist", card_id)
+        return
     for name in concepts:
         try:
             await db.upsert_concept(session, card_id=card_id, name=name)
@@ -237,7 +264,11 @@ async def _fail(
     settings = get_settings()
     job.attempts += 1
     job.last_error = error[:1000]
-    dead = job.attempts >= settings.max_attempts
+    permanent = any(
+        x in error.lower()
+        for x in ("all resolvers failed", "unsupported url", "not found", "private", "does not exist")
+    )
+    dead = (job.attempts >= settings.max_attempts) or permanent
     if dead:
         job.state = JobState.DEAD.value
         job.finished_at = _utcnow()
@@ -345,6 +376,7 @@ async def _run_job(session, job: db.JobRow) -> None:
         heading = block.get("heading") or block.get("title") or f"section {i}"
         events.publish(card_id, "persisting", "processing", f"Adding {heading}...")
         await asyncio.sleep(0.4)
+    extraction = await _upload_media_to_hf(extraction, card_id)
     await _write_media_and_meta(
         session, card_id, extraction, download.caption or "", download.resolver,
         creator=download.author,
@@ -432,6 +464,22 @@ async def _run_job(session, job: db.JobRow) -> None:
 # Loop
 # --------------------------------------------------------------------------- #
 
+async def _force_job_dead(job_id: str) -> None:
+    """Last-resort: force a job to DEAD via a fresh session so it can never stay
+    stuck in PROCESSING when the main session is broken."""
+    try:
+        async with db.session() as s:
+            await s.execute(
+                update(db.JobRow)
+                .where(db.JobRow.id == job_id)
+                .values(state=JobState.DEAD.value, finished_at=_utcnow())
+            )
+            await s.commit()
+        log.warning("job %s: forced to DEAD state via recovery session", job_id)
+    except Exception:
+        log.error("job %s: could not force DEAD state; job will stay stuck in PROCESSING", job_id)
+
+
 async def run_worker_loop() -> None:
     settings = get_settings()
     log.info("worker loop started")
@@ -451,15 +499,24 @@ async def run_worker_loop() -> None:
                     )
                 except asyncio.TimeoutError as e:
                     await session.rollback()
-                    await _fail(
-                        session, card_id, job, FailureReason.TIMEOUT, f"job timed out: {e}"
-                    )
+                    try:
+                        await _fail(
+                            session, card_id, job, FailureReason.TIMEOUT, f"job timed out: {e}"
+                        )
+                    except Exception:
+                        await _force_job_dead(job_id)
                     events.publish(card_id, "failed", "failed", "Timed out",
                                    FailureReason.TIMEOUT.value)
                 except Exception as e:  # noqa: BLE001 — pipeline must never crash the loop
-                    await session.rollback()
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        log.warning("job %s: session rollback failed after error", job_id)
                     log.exception("job %s failed: %s", job_id, str(e))
-                    await _fail(session, card_id, job, FailureReason.UNAVAILABLE, str(e))
+                    try:
+                        await _fail(session, card_id, job, FailureReason.UNAVAILABLE, str(e))
+                    except Exception:
+                        await _force_job_dead(job_id)
         except Exception:  # noqa: BLE001
             log.exception("worker loop iteration error")
             await asyncio.sleep(settings.worker_poll_seconds)

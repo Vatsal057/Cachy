@@ -11,9 +11,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # storage
+    # storage — set DATABASE_URL=postgresql+asyncpg://... for Neon/persistent DB
     database_url: str = "sqlite+aiosqlite:///./cachy.db"
     media_dir: str = "./downloads"
+    # HF Dataset repo for persistent media (thumbnails + keyframes).
+    # Create a public dataset repo e.g. "yourname/cachy-media". Reuses hf_api_key.
+    hf_media_repo: str = "Vatxzz/cachy-media"
 
     # transcription
     whisper_backend: str = "groq"  # none | groq
@@ -68,6 +71,10 @@ class Settings(BaseSettings):
     discard_source_video: bool = True
 
     @property
+    def hf_media_enabled(self) -> bool:
+        return bool(self.hf_media_repo and self.hf_api_key)
+
+    @property
     def groq_enabled(self) -> bool:
         return self.whisper_backend == "groq" and bool(self.groq_api_key.strip())
 
@@ -77,7 +84,9 @@ class Settings(BaseSettings):
 
     @property
     def groq_llm_enabled(self) -> bool:
-        return self.llm_backend == "groq" and bool(self.groq_api_key.strip())
+        # Groq is usable whenever the key is present — both as primary (llm_backend=groq)
+        # and as fallback when the primary backend (HF) fails.
+        return bool(self.groq_api_key.strip())
 
     @property
     def cerebras_enabled(self) -> bool:
