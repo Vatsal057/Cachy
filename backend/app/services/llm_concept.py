@@ -1,8 +1,7 @@
 """On-demand concept definition: a single text-only LLM call that explains
 what an evergreen idea is — in plain prose, grounded in general knowledge.
 
-Mirrors llm_catalog.py. HF→Groq fallback, max_tokens≈160. Best-effort:
-any failure returns None and the caller leaves the definition untouched."""
+Groq backend. Best-effort: any failure returns None."""
 
 from __future__ import annotations
 
@@ -23,35 +22,9 @@ Plain prose only — no markdown, no headings, no bullet points, no preamble."""
 
 def _call_llm(prompt: str) -> str | None:
     settings = get_settings()
-    if settings.hf_enabled:
-        out = _call_hf(prompt)
-        if out:
-            return out
-        if settings.groq_api_key.strip():
-            return _call_groq(prompt)
-        return None
     if settings.groq_llm_enabled:
         return _call_groq(prompt)
     return None
-
-
-def _call_hf(prompt: str) -> str | None:
-    settings = get_settings()
-    try:
-        from huggingface_hub import InferenceClient
-
-        client = InferenceClient(api_key=settings.hf_api_key)
-        resp = client.chat_completion(
-            model=settings.hf_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=160,
-        )
-        text = resp.choices[0].message.content if resp.choices else ""
-        return (text or "").strip()
-    except Exception as e:
-        log.warning("concept define (huggingface) failed: %s", e)
-        return None
 
 
 def _call_groq(prompt: str) -> str | None:

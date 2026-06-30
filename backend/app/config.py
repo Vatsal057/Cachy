@@ -23,14 +23,10 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_whisper_model: str = "whisper-large-v3-turbo"
 
-    # structuring LLM — note generation: Cerebras primary (60k TPM, reliable 70b
-    # JSON), Groq fallback. HF stays for the other services (catalog/chat/concept/
-    # embeddings) but is no longer in the note-generation path.
+    # structuring LLM — Cerebras primary (60k TPM), Groq fallback.
     cerebras_api_key: str = ""
     cerebras_llm_model: str = "gpt-oss-120b"
-    llm_backend: str = "huggingface"  # huggingface | groq | none (legacy services)
-    hf_api_key: str = ""
-    hf_model: str = "Qwen/Qwen2.5-72B-Instruct"
+    hf_api_key: str = ""  # used for embeddings + HF media storage only
     groq_llm_model: str = "llama-3.3-70b-versatile"  # structuring fallback
 
     # bundle preprocessor (Gemini 3.x Flash Lite — 500 RPD / 250k TPM, separate
@@ -79,13 +75,7 @@ class Settings(BaseSettings):
         return self.whisper_backend == "groq" and bool(self.groq_api_key.strip())
 
     @property
-    def hf_enabled(self) -> bool:
-        return self.llm_backend == "huggingface" and bool(self.hf_api_key.strip())
-
-    @property
     def groq_llm_enabled(self) -> bool:
-        # Groq is usable whenever the key is present — both as primary (llm_backend=groq)
-        # and as fallback when the primary backend (HF) fails.
         return bool(self.groq_api_key.strip())
 
     @property

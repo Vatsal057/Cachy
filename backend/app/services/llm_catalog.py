@@ -1,10 +1,8 @@
 """On-demand catalog detail (Fetch info): a single text-only LLM call that
 describes a referenced artifact — what it is, what it's about, why it matters.
 
-Reuses the same selectable backend as structuring (HuggingFace, then Groq
-fallback). Best-effort: any failure returns None and the caller leaves the
-artifact's description untouched. Never invents external facts beyond what a
-general-knowledge model already holds; the prompt asks for a concise overview."""
+Groq backend. Best-effort: any failure returns None and the caller leaves the
+artifact's description untouched."""
 
 from __future__ import annotations
 
@@ -38,38 +36,11 @@ def _name_line(title: str, creator: str | None, year: int | None) -> str:
 
 
 def _call_llm(prompt: str) -> str | None:
-    """Plain text completion via the configured backend (HF, then Groq fallback).
-    Unlike structuring's call, this sends the prompt verbatim (freeform prose)."""
+    """Plain text completion via Groq."""
     settings = get_settings()
-    if settings.hf_enabled:
-        out = _call_hf(prompt)
-        if out:
-            return out
-        if settings.groq_api_key.strip():
-            return _call_groq(prompt)
-        return None
     if settings.groq_llm_enabled:
         return _call_groq(prompt)
     return None
-
-
-def _call_hf(prompt: str) -> str | None:
-    settings = get_settings()
-    try:
-        from huggingface_hub import InferenceClient
-
-        client = InferenceClient(api_key=settings.hf_api_key)
-        resp = client.chat_completion(
-            model=settings.hf_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=512,
-        )
-        text = resp.choices[0].message.content if resp.choices else ""
-        return (text or "").strip()
-    except Exception as e:
-        log.warning("catalog describe (huggingface) failed: %s", e)
-        return None
 
 
 def _call_groq(prompt: str) -> str | None:
