@@ -1,13 +1,15 @@
 """On-demand concept definition: a single text-only LLM call that explains
 what an evergreen idea is — in plain prose, grounded in general knowledge.
 
-Groq backend. Best-effort: any failure returns None."""
+Shares the structuring task's Gemini key (low-volume, on-demand call) -> Groq
+fallback. Best-effort: any failure returns None."""
 
 from __future__ import annotations
 
 import logging
 
 from app.config import get_settings
+from app.services import llm_gemini
 
 log = logging.getLogger("services.llm_concept")
 
@@ -22,6 +24,12 @@ Plain prose only — no markdown, no headings, no bullet points, no preamble."""
 
 def _call_llm(prompt: str) -> str | None:
     settings = get_settings()
+    if settings.gemini_structuring_keys:
+        result = llm_gemini.complete_with_keys(
+            settings.gemini_structuring_keys, settings.gemini_llm_model, prompt
+        )
+        if result is not None:
+            return result
     if settings.groq_llm_enabled:
         return _call_groq(prompt)
     return None

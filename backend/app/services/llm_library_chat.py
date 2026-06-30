@@ -6,7 +6,8 @@ which cards were used. Builds on the single-card grounding (services/llm_chat):
 
 - retrieval  : semantic (embeddings) when available, else full-text keywords.
 - grounding  : reuses llm_chat.card_context to flatten each card to plain text.
-- generation : reuses the same selectable HF/Groq backend as structuring/chat.
+- generation : Cerebras primary -> Groq fallback. No Gemini — multi-turn chat
+               would burn pool RPD fast.
 
 Stateless, like single-card chat — the client replays the conversation each turn.
 """

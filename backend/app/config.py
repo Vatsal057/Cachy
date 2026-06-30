@@ -29,16 +29,30 @@ class Settings(BaseSettings):
     hf_api_key: str = ""  # used for embeddings + HF media storage only
     groq_llm_model: str = "llama-3.3-70b-versatile"  # structuring fallback
 
+    # Gemini — 7 Google accounts, named keys (not generic GEMINI_API_KEY*).
+    # Slot 1: preprocess (bundle cleanup) + vision (OCR/frame reads).
+    gemini_jk: str = ""
+    # Slot 2: structuring/insight primary (every saved card) + concept define +
+    # catalog describe. Falls back to Cerebras (structuring only) -> Groq.
+    gemini_kva: str = ""
+    # Slots 3-7: spare-account pool, fallback behind gemini_kva when it's
+    # quota-exhausted. gemini-2.5-flash free tier is ~20 requests/day per key.
+    gemini_vpn: str = ""
+    gemini_vva: str = ""
+    gemini_vv: str = ""
+    gemini_d08: str = ""
+    gemini_dvu: str = ""
+    gemini_llm_model: str = "gemini-2.5-flash"
+
     # bundle preprocessor (Gemini 3.x Flash Lite — 500 RPD / 250k TPM, separate
     # quota pool): dedupe + strip filler on the fat bundle before structuring.
-    # Reuses gemini_api_key. Failure -> raw bundle passed through (never blocks).
+    # Reuses gemini_jk. Failure -> raw bundle passed through (never blocks).
     gemini_preprocess_model: str = "gemini-flash-lite-latest"
 
     # vision reader for stylized carousel slides (free Groq tier; reuses groq_api_key)
     groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     # Gemini vision (generous free tier: 1M TPM / 1500 req/day)
-    gemini_api_key: str = ""
     gemini_vision_model: str = "gemini-2.0-flash-lite"
 
     # NVIDIA NVLM vision (OpenAI-compatible; free credits at integrate.api.nvidia.com)
@@ -85,7 +99,23 @@ class Settings(BaseSettings):
 
     @property
     def gemini_preprocess_enabled(self) -> bool:
-        return bool(self.gemini_api_key.strip())
+        return bool(self.gemini_jk.strip())
+
+    @property
+    def gemini_key_pool(self) -> list[str]:
+        return [
+            k.strip()
+            for k in (self.gemini_vpn, self.gemini_vva, self.gemini_vv, self.gemini_d08, self.gemini_dvu)
+            if k.strip()
+        ]
+
+    @property
+    def gemini_structuring_keys(self) -> list[str]:
+        """Dedicated structuring key first, then the spare-account pool as deeper
+        fallback. Shared by structuring, concept define, and catalog describe —
+        they're combined onto one key chain rather than each burning their own."""
+        dedicated = [self.gemini_kva.strip()] if self.gemini_kva.strip() else []
+        return dedicated + self.gemini_key_pool
 
     @property
     def groq_vision_enabled(self) -> bool:
@@ -94,7 +124,7 @@ class Settings(BaseSettings):
 
     @property
     def gemini_vision_enabled(self) -> bool:
-        return bool(self.gemini_api_key.strip())
+        return bool(self.gemini_jk.strip())
 
     @property
     def nvidia_vision_enabled(self) -> bool:
