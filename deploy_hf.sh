@@ -15,9 +15,12 @@ cd ..
 rm -rf web_dist
 cp -r app/build/web web_dist
 
-# 3. Stage files:
-#    - plain git add for tracked dirs (gitignore still protects .env / .venv)
-#    - unstage then re-add web_dist so git-lfs picks up binaries correctly
+# 3. Create detached deployment commit so main stays clean
+BRANCH=$(git branch --show-current)
+trap 'git checkout --quiet "$BRANCH" 2>/dev/null || true' EXIT
+
+git checkout --detach --quiet
+
 git add backend/ Dockerfile README.md
 git rm -r --cached web_dist/ 2>/dev/null || true
 git add -f web_dist/
@@ -26,8 +29,8 @@ git diff --cached --quiet && echo "Nothing to deploy." && exit 0
 
 git commit -m "$MSG"
 
-# Push ONLY to HF (GitHub stays free of built assets)
-git push hf main
+# Push ONLY to HF using detached HEAD (GitHub stays free of built assets)
+git push --force hf HEAD:main
 
 echo ""
 echo "Deployed → https://vatxzz-cachy.hf.space"
