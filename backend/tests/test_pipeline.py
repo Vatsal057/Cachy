@@ -28,8 +28,6 @@ async def _make_card_and_job(url: str) -> tuple[str, str]:
 
 @pytest.fixture
 def stub_pipeline(monkeypatch):
-    # Frames land under work_dir (a media_root subdir), mirroring real extraction —
-    # so to_card() maps them to served /media URLs (docs/05).
     async def fake_download(url, config=None):
         return DownloadResult("video", "/tmp/fake.mp4", "A nice caption", "yt-dlp")
 
@@ -45,9 +43,12 @@ def stub_pipeline(monkeypatch):
             had_ocr=False,
         )
 
+    def fake_upload(local_path, card_id):
+        return f"https://huggingface.co/datasets/test/resolve/main/media/{card_id}/{os.path.basename(local_path)}"
+
     monkeypatch.setattr(worker, "download_content_async", fake_download)
     monkeypatch.setattr(worker, "extract_async", fake_extract)
-    # don't actually delete /tmp/fake.mp4
+    monkeypatch.setattr(worker.media, "upload_file", fake_upload)
     monkeypatch.setattr(worker.media, "remove_path", lambda *a, **k: None)
 
 
@@ -65,7 +66,7 @@ async def test_job_reaches_ready_with_sane_card(database, stub_pipeline):
     assert card.base.one_liner  # always present
     assert card.base.tldr
     assert card.blocks  # fallback paragraph at minimum
-    assert card.media.thumbnail == f"/media/card_{card_id}/frame_001.jpg"
+    assert card.media.thumbnail == f"https://huggingface.co/datasets/test/resolve/main/media/{card_id}/frame_001.jpg"
     assert card.source.resolver == "yt-dlp"
     assert card.meta.extraction.transcript is True
 

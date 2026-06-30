@@ -136,22 +136,17 @@ async def _write_insight(session, card_id: str, insight) -> None:
 
 
 async def _upload_media_to_hf(extraction, card_id: str):
-    """Upload local thumbnail + keyframes to HF Dataset, returning updated extraction.
-
-    Falls back to local paths silently if HF media is not configured or upload fails."""
+    """Upload only the thumbnail to HF Dataset — the one frame the app ever
+    displays. Other extracted keyframes were just OCR/vision scratch input;
+    they're discarded with the rest of the job's scratch dir, never persisted."""
     from dataclasses import replace as dc_replace
 
-    async def _upload(path: str | None) -> str | None:
-        if not path or path.startswith("http"):
-            return path
-        url = await asyncio.to_thread(media.upload_file, path, card_id)
-        if url:
-            media.remove_path(path)
-        return url or path
-
-    thumbnail = await _upload(extraction.thumbnail)
-    keyframes = [await _upload(kf) for kf in extraction.keyframes]
-    return dc_replace(extraction, thumbnail=thumbnail, keyframes=keyframes)
+    thumbnail = extraction.thumbnail
+    if thumbnail and not thumbnail.startswith("http"):
+        url = await asyncio.to_thread(media.upload_file, thumbnail, card_id)
+        media.remove_path(thumbnail)  # always delete local copy; None url = no thumbnail
+        thumbnail = url
+    return dc_replace(extraction, thumbnail=thumbnail, keyframes=[])
 
 
 async def _write_media_and_meta(
@@ -308,7 +303,7 @@ async def _run_job(session, job: db.JobRow) -> None:
     log.info("%s Step 1/6 ingest: resolving + downloading media", tag)
     try:
         cfg = DownloaderConfig(
-            output_dir=media.media_root(),
+            output_dir=media.job_dir_for_card(card_id),
             cookies_path=get_settings().cookies_path or None,
         )
         download = await download_content_async(url, cfg)
@@ -377,6 +372,7 @@ async def _run_job(session, job: db.JobRow) -> None:
         events.publish(card_id, "persisting", "processing", f"Adding {heading}...")
         await asyncio.sleep(0.4)
     extraction = await _upload_media_to_hf(extraction, card_id)
+    media.remove_path(media.job_dir_for_card(card_id))  # nuke scratch dir
     await _write_media_and_meta(
         session, card_id, extraction, download.caption or "", download.resolver,
         creator=download.author,
@@ -448,10 +444,6 @@ async def _run_job(session, job: db.JobRow) -> None:
         await session.rollback()
         log.warning("%s Step 6/6 index: embedding failed (search degrades to "
                     "full-text): %s", tag, str(e), exc_info=True)
-
-    # Optionally discard the source video, keep keyframes+thumbnail (docs/11)
-    if get_settings().discard_source_video and download.media_type == "video":
-        media.remove_path(str(download.data))
 
     await _finish_ready(session, card_id, job)
     events.publish(card_id, "done", "ready", "Card ready")

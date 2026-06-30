@@ -118,12 +118,13 @@ def _download_vidssave(
                 if _is_valid_video_link(first_url):
                     log.debug(f"[vidssave] Got direct link: {first_url[:60] if first_url else ''}...")
                     video_response = requests.get(
-                        first_url, stream=True, headers={"user-agent": headers["user-agent"]}, timeout=60
+                        first_url, stream=True, headers={"user-agent": headers["user-agent"]},
+                        timeout=(10, 60),  # (connect, per-chunk read)
                     )
                     if video_response.status_code == 200:
                         target_path.parent.mkdir(parents=True, exist_ok=True)
                         with target_path.open("wb") as f:
-                            for chunk in video_response.iter_content(chunk_size=8192):
+                            for chunk in video_response.iter_content(chunk_size=65536):
                                 if chunk:
                                     f.write(chunk)
                         if target_path.exists() and target_path.stat().st_size > 0:
@@ -133,7 +134,6 @@ def _download_vidssave(
                 else:
                     log.debug("[vidssave] Link points to images, saving as image carousel.")
                     saved_paths = []
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
                     base_stem = target_path.stem
                     for idx, res_dict in enumerate(resources, 1):
                         img_url = res_dict.get("download_url")
@@ -141,15 +141,16 @@ def _download_vidssave(
                             continue
                         img_path = target_path.parent / f"{base_stem}_{idx}.jpg"
                         try:
+                            # stream=False: timeout applies to entire body; eliminates
+                            # infinite hang when CDN stalls mid-transfer.
                             img_resp = requests.get(
-                                img_url, stream=True, headers={"user-agent": headers["user-agent"]}, timeout=30
+                                img_url, headers={"user-agent": headers["user-agent"]},
+                                timeout=(10, 20),
                             )
-                            if img_resp.status_code == 200:
-                                with img_path.open("wb") as f:
-                                    for chunk in img_resp.iter_content(chunk_size=8192):
-                                        if chunk:
-                                            f.write(chunk)
-                                if img_path.exists() and img_path.stat().st_size > 0:
+                            if img_resp.status_code == 200 and img_resp.content:
+                                img_path.parent.mkdir(parents=True, exist_ok=True)
+                                img_path.write_bytes(img_resp.content)
+                                if img_path.stat().st_size > 0:
                                     saved_paths.append(str(img_path))
                         except Exception as img_err:
                             log.warning(f"[vidssave] Failed to download carousel image {idx}: {img_err}")

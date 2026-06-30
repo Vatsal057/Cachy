@@ -235,27 +235,22 @@ Bundle:
 
 def _preprocess_bundle(bundle: str) -> str:
     """Gemini Flash Lite (500 RPD, separate pool): dedupe + strip filler before the
-    main structuring call. Pure optimization — any failure passes the raw bundle
-    through, so Cerebras (60k TPM) still handles the fat bundle fine."""
+    main structuring call. Tries the dedicated key, then the spare-account pool on
+    quota errors. Pure optimization — any/all failure passes the raw bundle through,
+    so Cerebras (60k TPM) still handles the fat bundle fine."""
     settings = get_settings()
-    if not settings.gemini_preprocess_enabled:
+    keys = settings.gemini_vision_keys
+    if not keys:
         return bundle
     log.info("preprocess: cleaning bundle with Gemini (%s)", settings.gemini_preprocess_model)
-    try:
-        from google import genai as google_genai
-
-        client = google_genai.Client(api_key=settings.gemini_jk)
-        resp = client.models.generate_content(
-            model=settings.gemini_preprocess_model,
-            contents=_PREPROCESS_PROMPT.format(bundle=bundle),
-        )
-        cleaned = (resp.text or "").strip()
-        if cleaned:
-            log.info("preprocess: done (%d → %d chars)", len(bundle), len(cleaned))
-        return cleaned or bundle
-    except Exception as e:
-        log.warning("bundle preprocess (gemini) failed: %s; using raw bundle", e)
-        return bundle
+    cleaned = llm_gemini.complete_with_keys(
+        keys, settings.gemini_preprocess_model, _PREPROCESS_PROMPT.format(bundle=bundle)
+    )
+    if cleaned:
+        log.info("preprocess: done (%d → %d chars)", len(bundle), len(cleaned))
+        return cleaned
+    log.warning("bundle preprocess (gemini) failed on all keys; using raw bundle")
+    return bundle
 
 
 
