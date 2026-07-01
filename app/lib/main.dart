@@ -4,6 +4,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'data/repositories/card_repository.dart';
 import 'data/services/api_client.dart';
@@ -24,6 +26,7 @@ import 'ui/features/share/views/share_screen.dart';
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  await _setupDesktopWindow();
   final store = await LocalStore.open();
   final highlightStore = await HighlightStore.open();
   final api = ApiClient(baseUrl: await ApiClient.resolveBaseUrl(store: store), store: store);
@@ -35,6 +38,32 @@ Future<void> main() async {
     appController: appController,
     highlightStore: highlightStore,
   ));
+}
+
+/// Configure the native desktop window (size, minimum size, title) before the
+/// app renders. Desktop-only and platform-guarded: Android/Web skip this path
+/// entirely. `Platform` from dart:io is only referenced after the `kIsWeb`
+/// guard so web compilation stays safe. Failures are logged and swallowed so
+/// the app still launches with default OS window behavior.
+Future<void> _setupDesktopWindow() async {
+  if (kIsWeb) return;
+  if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+  try {
+    await windowManager.ensureInitialized();
+    const WindowOptions windowOptions = WindowOptions(
+      size: Size(1200, 800),
+      minimumSize: Size(800, 600),
+      center: true,
+      title: 'Cachy',
+      titleBarStyle: TitleBarStyle.normal,
+    );
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  } catch (e) {
+    debugPrint('Desktop window setup failed: $e');
+  }
 }
 
 class CachyApp extends StatefulWidget {

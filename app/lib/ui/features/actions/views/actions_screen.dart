@@ -11,6 +11,7 @@ import '../../../../domain/models/card.dart' as model;
 import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/spot_art.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/actions_view_model.dart';
@@ -65,7 +66,8 @@ class _ActionsViewState extends State<_ActionsView> {
 
     return RefreshIndicator(
       onRefresh: () => vm.load(showSpinner: false),
-      child: CustomScrollView(
+      child: ResponsiveCenter(
+        child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           // ── Editorial Header ────────────────────────────────────────── //
@@ -157,6 +159,7 @@ class _ActionsViewState extends State<_ActionsView> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 96)),
         ],
+      ),
       ),
     );
   }

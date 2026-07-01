@@ -19,6 +19,7 @@ class LocalStore {
   static const _seenOnboardingKey = 'seen_onboarding';
   static const _userNameKey = 'user_name';
   static const _apiBaseUrlKey = 'api_base_url';
+  static const _splitPaneFractionKey = 'split_pane_fraction';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
@@ -40,6 +41,13 @@ class LocalStore {
 
   String? get apiBaseUrl => _prefs.getString(_apiBaseUrlKey);
   Future<void> setApiBaseUrl(String url) => _prefs.setString(_apiBaseUrlKey, url);
+
+  /// Split-pane divider position as a fraction of available width.
+  /// Defaults to ~0.35 (≈420/1200).
+  double get splitPaneFraction =>
+      _prefs.getDouble(_splitPaneFractionKey) ?? 0.35;
+  Future<void> setSplitPaneFraction(double v) =>
+      _prefs.setDouble(_splitPaneFractionKey, v);
 
   // --------------------------------------------------------------------- //
   // Card cache

@@ -12,8 +12,8 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/spot_art.dart';
-import '../../../core/widgets/stat_strip.dart';
 import '../view_models/catalog_view_model.dart';
 import 'catalog_detail_screen.dart';
 
@@ -36,23 +36,10 @@ class _CatalogView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<CatalogViewModel>();
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('Catalog'),
-        bottom: vm.availableTypes.isEmpty
-            ? null
-            : PreferredSize(
-                preferredSize: const Size.fromHeight(50),
-                child: _FilterBar(
-                  types: vm.availableTypes,
-                  selected: vm.filter,
-                  onSelect: vm.setFilter,
-                ),
-              ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: vm.refresh,
+    // No AppBar — this widget is a tab inside LibraryScreen which owns the bar.
+    return RefreshIndicator(
+      onRefresh: vm.refresh,
+      child: ResponsiveCenter(
         child: _body(context, vm),
       ),
     );
@@ -82,16 +69,13 @@ class _CatalogView extends StatelessWidget {
       case CatalogStatus.ready:
         final sections = vm.sections;
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 96),
+          padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
           physics: const AlwaysScrollableScrollPhysics(),
           itemCount: sections.length + 2,
           itemBuilder: (ctx, i) {
             if (i == 0) {
-              return StatStrip(stats: [
-                Stat(value: '${vm.entryCount}', label: 'Entries', emphasize: true),
-                Stat(value: '${vm.typeCount}', label: 'Types'),
-                Stat(value: '${vm.referencedCardCount}', label: 'From cards'),
-              ]);
+              // Compact inline header: filter chips + small stats
+              return _CatalogHeader(vm: vm);
             }
             if (i == sections.length + 1) {
               return const Padding(
@@ -103,6 +87,100 @@ class _CatalogView extends StatelessWidget {
           },
         );
     }
+  }
+}
+
+/// Compact header row: inline stats + filter chips, no double app bar.
+class _CatalogHeader extends StatelessWidget {
+  const _CatalogHeader({required this.vm});
+  final CatalogViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Compact stats row
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: [
+              _StatChip(value: '${vm.entryCount}', label: 'entries'),
+              const SizedBox(width: 8),
+              _StatChip(value: '${vm.typeCount}', label: 'types'),
+              const SizedBox(width: 8),
+              _StatChip(
+                  value: '${vm.referencedCardCount}', label: 'from cards'),
+            ],
+          ),
+        ),
+        // Filter chips
+        if (vm.availableTypes.isNotEmpty)
+          SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: const Text('All'),
+                    selected: vm.filter == null,
+                    onSelected: (_) => vm.setFilter(null),
+                  ),
+                ),
+                for (final type in vm.availableTypes)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(type.sectionLabel),
+                      selected: vm.filter == type,
+                      onSelected: (_) => vm.setFilter(type),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  const _StatChip({required this.value, required this.label});
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$value ',
+              style: Brand.label(
+                  size: 13, color: scheme.onSurface, weight: FontWeight.w700),
+            ),
+            TextSpan(
+              text: label,
+              style: Brand.label(
+                  size: 11,
+                  color: scheme.onSurfaceVariant,
+                  weight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -124,20 +202,25 @@ class _Section extends StatelessWidget {
             style: Brand.label(size: 12, color: theme.colorScheme.onSurface, weight: FontWeight.w700),
           ),
         ),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: (MediaQuery.of(context).size.width / 150).floor().clamp(3, 6),
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: 0.58,
-          ),
-          itemCount: section.entries.length,
-          itemBuilder: (ctx, i) => _ArtifactTile(
-            entry: section.entries[i],
-            onDelete: () => vm.delete(section.entries[i].id),
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cols = (constraints.maxWidth / 130).floor().clamp(3, 6);
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cols,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.58,
+              ),
+              itemCount: section.entries.length,
+              itemBuilder: (ctx, i) => _ArtifactTile(
+                entry: section.entries[i],
+                onDelete: () => vm.delete(section.entries[i].id),
+              ),
+            );
+          },
         ),
       ],
     );
@@ -261,47 +344,6 @@ class _Placeholder extends StatelessWidget {
           size: 32,
           color: theme.colorScheme.onSurfaceVariant,
         ),
-      ),
-    );
-  }
-}
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.types,
-    required this.selected,
-    required this.onSelect,
-  });
-  final List<ArtifactType> types;
-  final ArtifactType? selected;
-  final ValueChanged<ArtifactType?> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 50,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: const Text('All'),
-              selected: selected == null,
-              onSelected: (_) => onSelect(null),
-            ),
-          ),
-          for (final type in types)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(type.sectionLabel),
-                selected: selected == type,
-                onSelected: (_) => onSelect(type),
-              ),
-            ),
-        ],
       ),
     );
   }

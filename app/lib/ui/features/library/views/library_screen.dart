@@ -6,7 +6,11 @@
 /// dedicated screen. Tap a tile → reader via a shared-element face transition.
 library;
 
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
@@ -14,31 +18,34 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/highlight_store.dart';
 import '../../../../domain/models/card.dart' as model;
 import '../../../../domain/models/highlight.dart';
+import '../../../core/app_controller.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/adaptive_modal.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
+import '../../../core/widgets/selection_action_bar.dart';
+import '../../../core/widgets/split_pane.dart';
 import '../../../core/widgets/spot_art.dart';
 import '../../capture/views/capture_sheet.dart';
+import '../../catalog/views/catalog_screen.dart';
 import '../../concepts/views/concepts_screen.dart';
-import '../../graph/views/graph_screen.dart';
 import '../../library/views/library_chat_screen.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
 import '../view_models/library_view_model.dart';
 import 'card_tile.dart';
+import 'grid_navigation.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (ctx) =>
-          LibraryViewModel(repository: ctx.read<CardRepository>())..load(),
-      child: const _LibraryView(),
-    );
+    // LibraryViewModel is provided by HomeShell so the shell can also watch
+    // selection state for the mobile nav slot. No provider needed here.
+    return const _LibraryView();
   }
 }
 
@@ -115,7 +122,7 @@ class _LibraryView extends StatelessWidget {
                       tabs: const [
                         Tab(text: 'CARDS'),
                         Tab(text: 'CONCEPTS'),
-                        Tab(text: 'GRAPH'),
+                        Tab(text: 'CATALOG'),
                       ],
                     ),
                   ),
@@ -128,7 +135,7 @@ class _LibraryView extends StatelessWidget {
           children: [
             _CardsTab(),
             ConceptsScreen(),
-            GraphScreen(showAppBar: false),
+            CatalogScreen(),
           ],
         ),
       ),
@@ -136,8 +143,52 @@ class _LibraryView extends StatelessWidget {
   }
 }
 
-class _CardsTab extends StatelessWidget {
+class _CardsTab extends StatefulWidget {
   const _CardsTab();
+
+  @override
+  State<_CardsTab> createState() => _CardsTabState();
+}
+
+class _CardsTabState extends State<_CardsTab> {
+  late double _fraction;
+
+  /// Focus nodes for each grid tile (cards + CTA tile at the end).
+  final List<FocusNode> _focusNodes = [];
+
+  /// The grid index that most recently received keyboard focus.
+  int _lastFocusedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fraction = context.read<AppController>().splitPaneFraction;
+  }
+
+  /// Grows or shrinks [_focusNodes] to exactly [count] nodes.
+  /// New nodes are equipped with a listener that updates [_lastFocusedIndex].
+  void _ensureFocusNodes(int count) {
+    while (_focusNodes.length < count) {
+      final index = _focusNodes.length;
+      final node = FocusNode();
+      // Track which node is focused so arrow-key navigation knows where to start.
+      node.addListener(() {
+        if (node.hasFocus) _lastFocusedIndex = index;
+      });
+      _focusNodes.add(node);
+    }
+    while (_focusNodes.length > count) {
+      _focusNodes.removeLast().dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final node in _focusNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,16 +202,22 @@ class _CardsTab extends StatelessWidget {
       child: _body(context, vm, api),
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < Insets.splitPane) return list;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(width: 420, child: list),
-            VerticalDivider(width: 1, color: scheme.outlineVariant),
-            Expanded(
-              child: vm.selectedCardId == null
+    final content = CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          final vm = context.read<LibraryViewModel>();
+          if (vm.selectionActive) vm.clearSelection();
+        },
+      },
+      child: Focus(
+        autofocus: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < Insets.splitPane) return list;
+            return SplitPane(
+              fraction: _fraction,
+              list: list,
+              detail: vm.selectedCardId == null
                   ? const _ReaderPaneEmpty()
                   : ReaderScreen(
                       key: ValueKey(vm.selectedCardId),
@@ -168,11 +225,83 @@ class _CardsTab extends StatelessWidget {
                       embedded: true,
                       onClose: () => vm.selectCard(null),
                     ),
-            ),
-          ],
-        );
-      },
+              onFractionChanged: (f) {
+                setState(() => _fraction = f);
+                context.read<AppController>().setSplitPaneFraction(f);
+              },
+            );
+          },
+        ),
+      ),
     );
+
+    if (!vm.selectionActive) return content;
+
+    // On desktop/wide viewports, float the bar inside the content area.
+    // On mobile the shell's bottomNavigationBar slot handles it instead
+    // (avoids overlapping the FAB and nav bar).
+    final isDesktop = MediaQuery.sizeOf(context).width >= Insets.desktop;
+    if (!isDesktop) return content;
+
+    // Desktop: overlay the action bar at the bottom of the content area.
+    return Stack(
+      children: [
+        content,
+        Positioned(
+          left: 24,
+          right: 24,
+          bottom: 24,
+          child: SelectionActionBar(
+            selectedCount: vm.selectedCount,
+            onClose: () => context.read<LibraryViewModel>().clearSelection(),
+            onMoveToFolder: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Move to Folder coming soon')),
+              );
+            },
+            onDeleteSelected: () => _confirmBulkDelete(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmBulkDelete(BuildContext context) async {
+    final vm = context.read<LibraryViewModel>();
+    final count = vm.selectedCount;
+    final ok = await showAdaptiveModal<bool>(
+      context: context,
+      builder: (ctx, dialog) => AlertDialog(
+        title: Text('Delete $count ${count == 1 ? 'card' : 'cards'}?'),
+        content: const Text(
+            'This removes the cards and their media. This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await context.read<LibraryViewModel>().bulkDelete();
+      // If bulkDelete surfaced an error (vm.error != null), show it.
+      if (context.mounted) {
+        final error = context.read<LibraryViewModel>().error;
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Delete failed: $error')),
+          );
+        }
+      }
+    }
   }
 
   Widget _body(BuildContext context, LibraryViewModel vm, dynamic api) {
@@ -251,38 +380,115 @@ class _CardsTab extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final cols = (constraints.maxWidth / 200).floor().clamp(2, 8);
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
-          physics: const AlwaysScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: 0.72,
-          ),
-          itemCount: cards.length + 1,
-          itemBuilder: (ctx, i) {
-            if (i == cards.length) {
-              return _CtaCard(onTap: () => showCaptureSheet(context));
-            }
-            final card = cards[i];
-            return CardTile(
-              card: card,
-              api: api,
-              onTap: () {
-                if (MediaQuery.sizeOf(ctx).width >= Insets.splitPane) {
-                  vm.selectCard(card.cardId);
-                  return;
-                }
-                Navigator.of(ctx).push(
-                  MaterialPageRoute(
-                    builder: (_) => ReaderScreen(cardId: card.cardId),
-                  ),
-                );
-              },
-              onDelete: () => vm.delete(card.cardId),
-            );
+
+        // Sync focus node pool to the current tile count (cards + CTA).
+        _ensureFocusNodes(cards.length + 1);
+
+        return Shortcuts(
+          shortcuts: {
+            LogicalKeySet(LogicalKeyboardKey.arrowUp):
+                const _GridMoveIntent(GridDirection.up),
+            LogicalKeySet(LogicalKeyboardKey.arrowDown):
+                const _GridMoveIntent(GridDirection.down),
+            LogicalKeySet(LogicalKeyboardKey.arrowLeft):
+                const _GridMoveIntent(GridDirection.left),
+            LogicalKeySet(LogicalKeyboardKey.arrowRight):
+                const _GridMoveIntent(GridDirection.right),
           },
+          child: Actions(
+            actions: {
+              _GridMoveIntent: CallbackAction<_GridMoveIntent>(
+                onInvoke: (intent) {
+                  final current =
+                      _lastFocusedIndex.clamp(0, cards.length);
+                  final next = nextGridIndex(
+                    columnCount: cols,
+                    itemCount: cards.length + 1,
+                    currentIndex: current,
+                    direction: intent.direction,
+                  );
+                  if (next >= 0 && next < _focusNodes.length) {
+                    _focusNodes[next].requestFocus();
+                  }
+                  _lastFocusedIndex = next;
+                  return null;
+                },
+              ),
+            },
+            child: FocusTraversalGroup(
+              policy: OrderedTraversalPolicy(),
+              child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
+                physics: const AlwaysScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisSpacing: 14,
+                  crossAxisSpacing: 14,
+                  childAspectRatio: 0.72,
+                ),
+                itemCount: cards.length + 1,
+                itemBuilder: (ctx, i) {
+                  if (i == cards.length) {
+                    return _CtaCard(onTap: () => showCaptureSheet(context));
+                  }
+                  final card = cards[i];
+                  final isDesktopPlatform = !kIsWeb &&
+                      (Platform.isMacOS ||
+                          Platform.isWindows ||
+                          Platform.isLinux);
+                  return CardTile(
+                    focusNode: _focusNodes[i],
+                    card: card,
+                    api: api,
+                    selected: vm.isSelected(card.cardId),
+                    onEnterSelectionMode: () =>
+                        vm.enterSelectionMode(card.cardId),
+                    onSelectToggle: () => vm.toggleSelection(card.cardId),
+                    onRangeSelect: () => vm.selectRange(card.cardId),
+                    onTap: () {
+                      // Desktop: check keyboard modifiers for selection
+                      if (isDesktopPlatform && vm.selectionActive) {
+                        vm.toggleSelection(card.cardId);
+                        return;
+                      }
+                      if (isDesktopPlatform &&
+                          HardwareKeyboard.instance.isControlPressed) {
+                        vm.toggleSelection(card.cardId);
+                        return;
+                      }
+                      if (isDesktopPlatform &&
+                          HardwareKeyboard.instance.isMetaPressed) {
+                        vm.toggleSelection(card.cardId);
+                        return;
+                      }
+                      if (isDesktopPlatform &&
+                          HardwareKeyboard.instance.isShiftPressed) {
+                        vm.selectRange(card.cardId);
+                        return;
+                      }
+                      // Mobile: if in selection mode, tap = toggle
+                      if (!isDesktopPlatform && vm.selectionMode) {
+                        vm.toggleSelection(card.cardId);
+                        return;
+                      }
+                      // Normal open behavior
+                      if (MediaQuery.sizeOf(ctx).width >= Insets.splitPane) {
+                        vm.selectCard(card.cardId);
+                        return;
+                      }
+                      Navigator.of(ctx).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ReaderScreen(cardId: card.cardId),
+                        ),
+                      );
+                    },
+                    onDelete: () => vm.delete(card.cardId),
+                  );
+                },
+              ),
+            ),
+          ),
         );
       },
     );
@@ -534,4 +740,18 @@ class _TagBar extends StatelessWidget {
       ),
     );
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────── //
+// Grid keyboard navigation intent — used by Shortcuts + Actions to move focus
+// ──────────────────────────────────────────────────────────────────────────── //
+
+/// Intent fired by the arrow-key [Shortcuts] binding around the library grid.
+/// The [Actions] handler resolves the target index via [nextGridIndex] and
+/// requests focus on the corresponding [FocusNode].
+class _GridMoveIntent extends Intent {
+  const _GridMoveIntent(this.direction);
+
+  /// The direction the user wants to move focus.
+  final GridDirection direction;
 }

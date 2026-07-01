@@ -9,16 +9,20 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:provider/provider.dart';
 
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
-import '../features/catalog/views/catalog_screen.dart';
 import '../features/collections/views/collections_screen.dart';
+import '../features/graph/views/graph_screen.dart';
+import '../features/library/view_models/library_view_model.dart';
 import '../features/library/views/library_screen.dart';
 import '../features/profile/views/profile_screen.dart';
 import 'brand.dart';
 import 'theme.dart';
+import 'widgets/adaptive_modal.dart';
 import 'widgets/glass.dart';
+import 'widgets/selection_action_bar.dart';
 
 // ── Shared nav definitions ─────────────────────────────────────────────────── //
 
@@ -35,9 +39,9 @@ class _NavDef {
 
 const _navItems = [
   _NavDef(icon: PhosphorIconsRegular.house,      activeIcon: PhosphorIconsFill.house,      label: 'HOME'),
-  _NavDef(icon: PhosphorIconsRegular.books,      activeIcon: PhosphorIconsFill.books,      label: 'LIBRARY'),
   _NavDef(icon: PhosphorIconsRegular.folder,     activeIcon: PhosphorIconsFill.folder,     label: 'FOLDERS'),
   _NavDef(icon: PhosphorIconsRegular.listChecks, activeIcon: PhosphorIconsFill.listChecks, label: 'TO-DO'),
+  _NavDef(icon: PhosphorIconsRegular.graph,      activeIcon: PhosphorIconsFill.graph,      label: 'GRAPH'),
   _NavDef(icon: PhosphorIconsRegular.user,       activeIcon: PhosphorIconsFill.user,       label: 'YOU'),
 ];
 
@@ -54,15 +58,23 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
   static const _screens = [
-    LibraryScreen(),
-    CatalogScreen(),
-    CollectionsScreen(),
-    ActionsScreen(),
-    ProfileScreen(),
+    LibraryScreen(),     // 0 — HOME
+    CollectionsScreen(), // 1 — FOLDERS
+    ActionsScreen(),     // 2 — TO-DO
+    GraphScreen(),       // 3 — GRAPH
+    ProfileScreen(),     // 4 — YOU
   ];
 
   @override
   Widget build(BuildContext context) {
+    return ChangeNotifierProvider<LibraryViewModel>(
+      create: (ctx) =>
+          LibraryViewModel(repository: ctx.read())..load(),
+      child: _buildShell(context),
+    );
+  }
+
+  Widget _buildShell(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () => showCaptureSheet(context),
@@ -80,16 +92,26 @@ class _HomeShellState extends State<HomeShell> {
       },
       child: Focus(
         autofocus: true,
-        child: LayoutBuilder(
-          builder: (_, constraints) => constraints.maxWidth >= Insets.desktop
-              ? _desktopShell(context)
-              : _mobileShell(context),
+        // Builder gives _mobileShell / _desktopShell a context that is a
+        // descendant of the ChangeNotifierProvider<LibraryViewModel> created
+        // in build(), so context.watch<LibraryViewModel>() works correctly.
+        child: Builder(
+          builder: (innerCtx) => LayoutBuilder(
+            builder: (_, constraints) => constraints.maxWidth >= Insets.desktop
+                ? _desktopShell(innerCtx)
+                : _mobileShell(innerCtx),
+          ),
         ),
       ),
     );
   }
 
   Widget _mobileShell(BuildContext context) {
+    // On mobile, when the library has an active card selection, replace the
+    // FAB and bottom nav with the SelectionActionBar so nothing overlaps.
+    final vm = context.watch<LibraryViewModel>();
+    final selecting = _index == 0 && vm.selectionActive;
+
     return Scaffold(
       extendBody: true,
       body: Stack(
@@ -99,11 +121,53 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: _CaptureButton(
-        onTap: () => showCaptureSheet(context),
-      ),
-      bottomNavigationBar: _GlassNav(index: _index, onSelect: _select),
+      floatingActionButton: selecting
+          ? null
+          : _CaptureButton(onTap: () => showCaptureSheet(context)),
+      bottomNavigationBar: selecting
+          ? _SelectionNavSlot(
+              vm: vm,
+              onConfirmDelete: () => _confirmBulkDelete(context, vm),
+            )
+          : _GlassNav(index: _index, onSelect: _select),
     );
+  }
+
+  Future<void> _confirmBulkDelete(
+      BuildContext context, LibraryViewModel vm) async {
+    final count = vm.selectedCount;
+    final ok = await showAdaptiveModal<bool>(
+      context: context,
+      builder: (ctx, dialog) => AlertDialog(
+        title: Text('Delete $count ${count == 1 ? 'card' : 'cards'}?'),
+        content: const Text(
+            'This removes the cards and their media. This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await vm.bulkDelete();
+      if (context.mounted) {
+        final error = context.read<LibraryViewModel>().error;
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Delete failed: $error')),
+          );
+        }
+      }
+    }
   }
 
   Widget _desktopShell(BuildContext context) {
@@ -191,15 +255,26 @@ class _GlassRail extends StatelessWidget {
                 weight: FontWeight.w500,
                 letterSpacing: 0.7,
               ),
+              useIndicator: true,
+              indicatorColor: scheme.primary.withValues(alpha: 0.10),
               leading: Padding(
                 padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
-                child: _CaptureButton(onTap: onCapture),
+                child: Tooltip(
+                  message: 'New capture (⌘N)',
+                  child: _CaptureButton(onTap: onCapture),
+                ),
               ),
               destinations: [
                 for (final item in _navItems)
                   NavigationRailDestination(
-                    icon: PhosphorIcon(item.icon, size: 22),
-                    selectedIcon: PhosphorIcon(item.activeIcon, size: 22),
+                    icon: Tooltip(
+                      message: item.label,
+                      child: PhosphorIcon(item.icon, size: 22),
+                    ),
+                    selectedIcon: Tooltip(
+                      message: item.label,
+                      child: PhosphorIcon(item.activeIcon, size: 22),
+                    ),
                     label: Text(item.label),
                   ),
               ],
@@ -291,43 +366,75 @@ class _NavBtn extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = selected ? scheme.primary : scheme.onSurfaceVariant;
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedScale(
-              scale: selected ? 1.10 : 1.0,
-              duration: Motion.fast,
-              curve: Motion.spring,
-              child: PhosphorIcon(
-                selected ? def.activeIcon : def.icon,
-                size: 22,
-                color: color,
+    return Tooltip(
+      message: def.label,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedScale(
+                scale: selected ? 1.10 : 1.0,
+                duration: Motion.fast,
+                curve: Motion.spring,
+                child: PhosphorIcon(
+                  selected ? def.activeIcon : def.icon,
+                  size: 22,
+                  color: color,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              def.label,
-              style: Brand.label(
-                size: 9,
-                color: color,
-                weight: selected ? FontWeight.w700 : FontWeight.w500,
-                letterSpacing: 0.7,
+              const SizedBox(height: 4),
+              Text(
+                def.label,
+                style: Brand.label(
+                  size: 9,
+                  color: color,
+                  weight: selected ? FontWeight.w700 : FontWeight.w500,
+                  letterSpacing: 0.7,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ── Capture button (shared: FAB on mobile, rail leading on desktop) ─────────── //
+// ── Selection nav slot — replaces the pill nav on mobile during selection ─── //
+
+/// Fills the same visual slot as [_GlassNav] but shows [SelectionActionBar]
+/// instead. Using `bottomNavigationBar` ensures it sits above the system
+/// navigation area automatically and nothing overlaps the FAB slot (which is
+/// also hidden during selection).
+class _SelectionNavSlot extends StatelessWidget {
+  const _SelectionNavSlot({
+    required this.vm,
+    required this.onConfirmDelete,
+  });
+  final LibraryViewModel vm;
+  final VoidCallback onConfirmDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomPad + 12),
+      child: SelectionActionBar(
+        selectedCount: vm.selectedCount,
+        onClose: vm.clearSelection,
+        onMoveToFolder: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Move to Folder coming soon')),
+        ),
+        onDeleteSelected: onConfirmDelete,
+      ),
+    );
+  }
+}
 
 class _CaptureButton extends StatefulWidget {
   const _CaptureButton({required this.onTap});
