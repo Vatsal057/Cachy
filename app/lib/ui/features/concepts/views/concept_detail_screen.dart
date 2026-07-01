@@ -11,6 +11,7 @@ import '../../../../domain/models/card.dart' as model;
 import '../../../../domain/models/concept.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../library/views/library_chat_screen.dart';
 import '../../reader/views/reader_screen.dart';
 
@@ -127,7 +128,8 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
           ),
         ),
       ),
-      body: ListView(
+      body: ResponsiveCenter(
+        child: ListView(
         padding:
             const EdgeInsets.fromLTRB(Insets.page, 4, Insets.page, 32),
         children: [
@@ -238,6 +240,7 @@ class _ConceptDetailScreenState extends State<ConceptDetailScreen> {
             ),
           ],
         ],
+      ),
       ),
     );
   }

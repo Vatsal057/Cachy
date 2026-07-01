@@ -14,6 +14,7 @@ import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../reader/views/reader_screen.dart';
 import '../services/artifact_lookup.dart';
 
@@ -108,7 +109,8 @@ class _CatalogDetailScreenState extends State<CatalogDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(_entry.type.sectionLabel)),
-      body: ListView(
+      body: ResponsiveCenter(
+        child: ListView(
         padding: const EdgeInsets.fromLTRB(Insets.page, 12, Insets.page, 40),
         children: [
           Row(
@@ -250,6 +252,7 @@ class _CatalogDetailScreenState extends State<CatalogDetailScreen> {
             ),
           ],
         ],
+      ),
       ),
     );
   }

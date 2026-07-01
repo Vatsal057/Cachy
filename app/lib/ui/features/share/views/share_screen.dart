@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../../core/widgets/processing_glyph.dart';
 import '../../reader/views/reader_screen.dart';
@@ -75,7 +76,7 @@ class _ShareViewState extends State<_ShareView> {
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: _content(context, vm),
+              child: ResponsiveCenter(child: _content(context, vm)),
             ),
           ),
         ),
@@ -87,13 +88,15 @@ class _ShareViewState extends State<_ShareView> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(Insets.page),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _UrlChip(url: widget.sharedUrl),
-              const SizedBox(height: 24),
-              Expanded(child: _content(context, vm)),
-            ],
+          child: ResponsiveCenter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _UrlChip(url: widget.sharedUrl),
+                const SizedBox(height: 24),
+                Expanded(child: _content(context, vm)),
+              ],
+            ),
           ),
         ),
       ),

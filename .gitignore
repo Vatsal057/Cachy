@@ -17,12 +17,13 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
-
+windows/
+macos/
 # Dependencies
 node_modules/
 .flutter-plugins
 .flutter-plugins-dependencies
-
+.kiro
 # Build
 build/
 dist/
@@ -33,6 +34,8 @@ web_dist/
 .env
 .env.local
 .env.*.local
+.env.bak
+*.bak
 
 # Temp
 demo/

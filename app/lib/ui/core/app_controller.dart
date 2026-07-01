@@ -20,6 +20,8 @@ class AppController extends ChangeNotifier {
   String? get userName => _store.userName;
   bool get hasUserName => (_store.userName ?? '').isNotEmpty;
 
+  double get splitPaneFraction => _store.splitPaneFraction;
+
   Future<void> setUserName(String name) async {
     await _store.setUserName(name.trim());
     notifyListeners();
@@ -33,6 +35,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> completeOnboarding() => _store.setSeenOnboarding(true);
+
+  Future<void> setSplitPaneFraction(double fraction) async {
+    final clamped = fraction.clamp(0.25, 0.5);
+    await _store.setSplitPaneFraction(clamped);
+    notifyListeners();
+  }
 
   static ThemeMode _decode(String v) => switch (v) {
         'light' => ThemeMode.light,

@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/spot_art.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -57,80 +58,98 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              // Top Bar: Logo + Skip
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _LogoBadge(),
-                    TextButton(
-                      onPressed: widget.onDone,
-                      child: Text('Skip', style: TextStyle(color: scheme.onSurfaceVariant)),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: PageView(
-                  controller: _page,
-                  onPageChanged: (i) => setState(() => _index = i),
-                  children: const [
-                    _PageHook(),
-                    _PageStructure(),
-                    _PageLibrary(),
-                  ],
-                ),
-              ),
-              // Bottom Controls
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < 3; i++)
-                          AnimatedContainer(
-                            duration: Motion.fast,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: i == _index ? 24 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: i == _index ? scheme.primary : scheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _next,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ResponsiveCenter(
+            child: Column(
+              children: [
+                // Top Bar: Logo + Skip
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _LogoBadge(),
+                      TextButton(
+                        onPressed: widget.onDone,
+                        child: Text(
+                          'Skip',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
                       ),
-                      child: Row(
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: PageView(
+                    controller: _page,
+                    onPageChanged: (i) => setState(() => _index = i),
+                    children: const [
+                      _PageHook(),
+                      _PageStructure(),
+                      _PageLibrary(),
+                    ],
+                  ),
+                ),
+                // Bottom Controls
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
-                            isLast ? 'Enter Cachy' : 'Continue',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                          ),
-                          if (isLast) ...[
-                            const SizedBox(width: 8),
-                            const PhosphorIcon(PhosphorIconsRegular.arrowRight, size: 18),
-                          ],
+                          for (var i = 0; i < 3; i++)
+                            AnimatedContainer(
+                              duration: Motion.fast,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: i == _index ? 24 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: i == _index
+                                    ? scheme.primary
+                                    : scheme.outlineVariant,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        onPressed: _next,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              isLast ? 'Enter Cachy' : 'Continue',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (isLast) ...[
+                              const SizedBox(width: 8),
+                              const PhosphorIcon(
+                                PhosphorIconsRegular.arrowRight,
+                                size: 18,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -158,13 +177,14 @@ class _LogoBadge extends StatelessWidget {
               ),
             ],
           ),
-          child: PhosphorIcon(PhosphorIconsRegular.lightning, color: scheme.onPrimary, size: 20),
+          child: PhosphorIcon(
+            PhosphorIconsRegular.lightning,
+            color: scheme.onPrimary,
+            size: 20,
+          ),
         ),
         const SizedBox(width: 10),
-        Text(
-          'Cachy',
-          style: Brand.wordmarkStyle(20, color: scheme.onSurface),
-        ),
+        Text('Cachy', style: Brand.wordmarkStyle(20, color: scheme.onSurface)),
       ],
     );
   }
@@ -216,7 +236,10 @@ class _PageHook extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 24),
-          const _FloatingPill(icon: PhosphorIconsRegular.link, label: 'ANY SOURCE · ANY FORMAT'),
+          const _FloatingPill(
+            icon: PhosphorIconsRegular.link,
+            label: 'ANY SOURCE · ANY FORMAT',
+          ),
           const SizedBox(height: 32),
           RichText(
             textAlign: TextAlign.center,
@@ -246,7 +269,10 @@ class _PageHook extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          CaptureSpot(color: scheme.primary.withValues(alpha: 0.75), size: const Size(120, 88)),
+          CaptureSpot(
+            color: scheme.primary.withValues(alpha: 0.75),
+            size: const Size(120, 88),
+          ),
           const SizedBox(height: 32),
           Text(
             'Videos, articles, newsletters, Wikipedia — paste any link and Cachy distills the key takeaways into a browsable card.',
@@ -274,7 +300,10 @@ class _PageStructure extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          StructureSpot(color: scheme.primary.withValues(alpha: 0.75), size: const Size(120, 88)),
+          StructureSpot(
+            color: scheme.primary.withValues(alpha: 0.75),
+            size: const Size(120, 88),
+          ),
           const SizedBox(height: 24),
           RichText(
             textAlign: TextAlign.center,
@@ -288,7 +317,10 @@ class _PageStructure extends StatelessWidget {
               ),
               children: [
                 const TextSpan(text: 'Every Source,\n'),
-                TextSpan(text: 'Structured.', style: TextStyle(color: scheme.primary)),
+                TextSpan(
+                  text: 'Structured.',
+                  style: TextStyle(color: scheme.primary),
+                ),
               ],
             ),
           ),
@@ -296,7 +328,9 @@ class _PageStructure extends StatelessWidget {
           Text(
             'Videos, articles, threads — any content becomes clean, scannable action cards.',
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 24),
           // Feature Showcase Card
@@ -353,7 +387,11 @@ class _PageStructure extends StatelessWidget {
 }
 
 class _FeatureRow extends StatelessWidget {
-  const _FeatureRow({required this.icon, required this.title, required this.subtitle});
+  const _FeatureRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
   final PhosphorIconData icon;
   final String title;
   final String subtitle;
@@ -377,9 +415,18 @@ class _FeatureRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
             ],
           ),
         ),
@@ -399,9 +446,15 @@ class _SmallTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: active ? scheme.primary.withValues(alpha: 0.12) : scheme.surfaceContainerHighest,
+        color: active
+            ? scheme.primary.withValues(alpha: 0.12)
+            : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: active ? scheme.primary.withValues(alpha: 0.4) : scheme.outlineVariant),
+        border: Border.all(
+          color: active
+              ? scheme.primary.withValues(alpha: 0.4)
+              : scheme.outlineVariant,
+        ),
       ),
       child: Text(
         text,
@@ -427,7 +480,10 @@ class _PageLibrary extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          GraphSpot(color: scheme.primary.withValues(alpha: 0.75), size: const Size(124, 92)),
+          GraphSpot(
+            color: scheme.primary.withValues(alpha: 0.75),
+            size: const Size(124, 92),
+          ),
           const SizedBox(height: 24),
           RichText(
             textAlign: TextAlign.center,
@@ -441,7 +497,10 @@ class _PageLibrary extends StatelessWidget {
               ),
               children: [
                 const TextSpan(text: 'Personal Web\n'),
-                TextSpan(text: 'Of Action.', style: TextStyle(color: scheme.primary)),
+                TextSpan(
+                  text: 'Of Action.',
+                  style: TextStyle(color: scheme.primary),
+                ),
               ],
             ),
           ),
@@ -449,7 +508,9 @@ class _PageLibrary extends StatelessWidget {
           Text(
             'Everything you keep is searchable and linked forever.',
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 24),
           // Vault Preview Card
@@ -467,23 +528,48 @@ class _PageLibrary extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('My Cachy Vault', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      const Text(
+                        'My Cachy Vault',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
                       Row(
                         children: [
-                          PhosphorIcon(PhosphorIconsFill.bookmark, size: 14, color: scheme.primary),
+                          PhosphorIcon(
+                            PhosphorIconsFill.bookmark,
+                            size: 14,
+                            color: scheme.primary,
+                          ),
                           const SizedBox(width: 4),
-                          Text('18 cards', style: Brand.label(size: 11, color: scheme.primary)),
+                          Text(
+                            '18 cards',
+                            style: Brand.label(size: 11, color: scheme.primary),
+                          ),
                         ],
                       ),
                     ],
                   ),
                 ),
                 Divider(height: 1, color: scheme.outlineVariant),
-                const _VaultRow(title: 'Crispy Chili Oil Eggs', tag: 'Recipe', time: 'Today'),
+                const _VaultRow(
+                  title: 'Crispy Chili Oil Eggs',
+                  tag: 'Recipe',
+                  time: 'Today',
+                ),
                 Divider(height: 1, color: scheme.outlineVariant),
-                const _VaultRow(title: 'Hidden Tokyo Speakeasy', tag: 'Travel', time: 'Yesterday'),
+                const _VaultRow(
+                  title: 'Hidden Tokyo Speakeasy',
+                  tag: 'Travel',
+                  time: 'Yesterday',
+                ),
                 Divider(height: 1, color: scheme.outlineVariant),
-                const _VaultRow(title: 'Zone 2 Cardio Protocols', tag: 'Fitness', time: '3d ago'),
+                const _VaultRow(
+                  title: 'Zone 2 Cardio Protocols',
+                  tag: 'Fitness',
+                  time: '3d ago',
+                ),
               ],
             ),
           ),
@@ -511,9 +597,21 @@ class _VaultRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 3),
-                Text(time, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -523,7 +621,10 @@ class _VaultRow extends StatelessWidget {
               color: scheme.primaryContainer.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Text(tag, style: Brand.label(size: 9, color: scheme.primary)),
+            child: Text(
+              tag,
+              style: Brand.label(size: 9, color: scheme.primary),
+            ),
           ),
         ],
       ),

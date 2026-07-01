@@ -15,6 +15,7 @@ import '../../../../domain/models/card.dart' as model;
 import '../../../core/app_controller.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/stat_strip.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -45,7 +46,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('You')),
-      body: ListView(
+      body: ResponsiveCenter(
+        child: ListView(
         padding: const EdgeInsets.all(Insets.page),
         children: [
           _header(theme),
@@ -94,6 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: '1.0.0',
           ),
         ],
+      ),
       ),
     );
   }
