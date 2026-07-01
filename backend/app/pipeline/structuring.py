@@ -34,6 +34,13 @@ from pydantic import TypeAdapter, ValidationError
 
 log = logging.getLogger("pipeline.structuring")
 
+# Backstop cap on the text fed to the preprocess + structure calls, so a
+# pathological input (e.g. a 30-minute transcription) can't blow up tokens. Set
+# above the sum of the extraction section caps, so normal short-form reels and
+# typical articles fall well under it — it never trims real content, it only
+# bounds extreme outliers.
+_MAX_BUNDLE_CHARS = 28000
+
 _block_adapter: TypeAdapter[Block] = TypeAdapter(Block)
 
 # Required fields per block type — a block missing these is dropped (docs/04).
@@ -282,8 +289,9 @@ def complete(prompt: str, *, max_tokens: int = 8192, temperature: float = 0.2) -
 
 def _call_llm(bundle: str) -> str | None:
     """Structuring (pass 1): preprocess the bundle, then format + complete the card prompt."""
+    bundle = bundle[:_MAX_BUNDLE_CHARS]  # backstop cap — bound worst-case input tokens
     cleaned = _preprocess_bundle(bundle)
-    return complete(_PROMPT.format(vocab=_VOCAB_SPEC, bundle=cleaned))
+    return complete(_PROMPT.format(vocab=_VOCAB_SPEC, bundle=cleaned[:_MAX_BUNDLE_CHARS]))
 
 
 def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | None:

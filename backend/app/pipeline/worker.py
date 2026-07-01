@@ -396,21 +396,12 @@ async def _run_job(session, job: db.JobRow) -> None:
                 await _write_insight(session, card_id, insight)
                 rh = insight.rabbit_hole
                 log.info(
-                    "%s Step 4b deep-analysis OK | threads=%d topic_map=%s "
+                    "%s Step 4b deep-analysis OK | threads=%d quiz=%d "
                     "deep_research=%s", tag,
                     len(rh.questions) + len(rh.adjacent_topics) + len(rh.advanced_concepts),
-                    "yes" if insight.topic_map else "no",
+                    len(insight.quiz.questions),
                     "yes" if insight.deep_research_prompt else "no",
                 )
-                # Hybrid backstop: promote topic-map center + nodes into concepts
-                # for free (they're already extracted by the insight pass).
-                if insight.topic_map:
-                    tm = insight.topic_map
-                    extra = [tm.center] + list(tm.nodes)
-                    structured.concepts = list({
-                        *structured.concepts,
-                        *[n.strip().lower() for n in extra if n.strip()],
-                    })
             else:
                 log.info("%s Step 4b deep-analysis: no usable layer produced", tag)
         except Exception as e:  # noqa: BLE001 — insight is non-critical to the card

@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.5"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections
+SCHEMA_VERSION = "1.6"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections; 1.6: insight quiz (topic_map dropped)
 
 
 # --------------------------------------------------------------------------- #
@@ -224,9 +224,9 @@ class ActionItems(BaseModel):
 # sub-section is independently optional — emit only what the content warrants.
 #
 # Everything here is ACTIONABLE, never a passive list: rabbit-hole threads are
-# tappable doorways into grounded chat, the topic map orients, and the research
-# prompt is paste-ready. (Earlier Claims / What's-Missing sections were removed —
-# read-only analysis with nothing to do.)
+# tappable doorways into the rabbit-hole explorer, the quiz turns the card into
+# active recall, and the research prompt is paste-ready. (The old topic map was
+# read-only orientation with nothing to do — dropped in schema 1.6.)
 # --------------------------------------------------------------------------- #
 
 class RabbitHole(BaseModel):
@@ -241,13 +241,42 @@ class RabbitHole(BaseModel):
 
 
 class TopicMap(BaseModel):
-    """A single-hop concept map: one center idea + a few connected satellites."""
+    """Deprecated (schema 1.6): retained only so old stored cards still
+    deserialize. No longer generated or rendered."""
     center: str
     nodes: list[str] = Field(default_factory=list)  # satellite labels
 
 
+class QuizQuestion(BaseModel):
+    """One multiple-choice question for active recall (docs/14). `options` holds
+    the choices; `answer_index` points at the correct one; `explanation` is the
+    one-line 'why' revealed after answering."""
+    question: str
+    options: list[str] = Field(default_factory=list)
+    answer_index: int = 0
+    explanation: str = ""
+
+    def is_valid(self) -> bool:
+        return bool(
+            self.question.strip()
+            and 2 <= len(self.options) <= 4
+            and 0 <= self.answer_index < len(self.options)
+        )
+
+
+class Quiz(BaseModel):
+    """A short 'test yourself' set generated from the card — turns passive
+    reading into active recall. Empty when the content doesn't warrant one."""
+    questions: list[QuizQuestion] = Field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not self.questions
+
+
 class Insight(BaseModel):
     rabbit_hole: RabbitHole = Field(default_factory=RabbitHole)
+    quiz: Quiz = Field(default_factory=Quiz)
+    # Deprecated (schema 1.6): kept for backward-compatible deserialization only.
     topic_map: Optional[TopicMap] = None
     # A ready-to-paste deep-research prompt for an external LLM (docs/14).
     deep_research_prompt: Optional[str] = None
@@ -257,7 +286,8 @@ class Insight(BaseModel):
         and clients use to decide whether to attach/render the layer at all."""
         return bool(
             not self.rabbit_hole.is_empty()
-            or self.topic_map or self.deep_research_prompt
+            or not self.quiz.is_empty()
+            or self.deep_research_prompt
         )
 
 

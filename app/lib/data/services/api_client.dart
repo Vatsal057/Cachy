@@ -13,6 +13,7 @@ import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
 import '../../domain/models/concept.dart';
 import '../../domain/models/enums.dart';
+import '../../domain/models/feed.dart';
 import '../../domain/models/graph.dart';
 import 'lan_discovery.dart';
 import '../../domain/models/pipeline_event.dart';
@@ -435,6 +436,36 @@ class ApiClient {
   Future<List<Map<String, String>>> libraryChatHistory() async {
     final resp = await _client.get(_uri('/library/chat'), headers: _ownerHeader);
     return _decodeMessages(_decodeMap(resp)['messages']);
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Knowledge Feed + Connections (serendipity)
+  // ------------------------------------------------------------------------- //
+
+  /// The reel-style knowledge feed: a shuffled stream of moments built from the
+  /// owner's cards. Owner-scoped.
+  Future<List<FeedItem>> feed({int limit = 40}) async {
+    final resp = await _client.get(
+      _uri('/feed', {'limit': limit}),
+      headers: _ownerHeader,
+    );
+    return ((_decodeMap(resp)['items'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(FeedItem.fromJson)
+        .toList();
+  }
+
+  /// Surprising links between the owner's cards. [refresh] spends a little more
+  /// LLM budget to surface fresh connections.
+  Future<List<Connection>> connections({int limit = 12, bool refresh = false}) async {
+    final resp = await _client.get(
+      _uri('/connections', {'limit': limit, if (refresh) 'refresh': true}),
+      headers: _ownerHeader,
+    );
+    return ((_decodeMap(resp)['connections'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(Connection.fromJson)
+        .toList();
   }
 
 

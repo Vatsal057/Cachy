@@ -11,6 +11,7 @@ import '../../domain/models/card.dart';
 import '../../domain/models/collection.dart';
 import '../../domain/models/concept.dart';
 import '../../domain/models/enums.dart';
+import '../../domain/models/feed.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
 import '../services/api_client.dart';
@@ -258,6 +259,15 @@ class CardRepository extends ChangeNotifier {
   Future<List<Map<String, String>>> libraryChatHistory() =>
       _api.libraryChatHistory();
 
+  // ---- Knowledge Feed + Connections --------------------------------------- //
+
+  /// The reel-style knowledge feed assembled from the owner's cards.
+  Future<List<FeedItem>> feed({int limit = 40}) => _api.feed(limit: limit);
+
+  /// Surprising connections between the owner's cards (serendipity engine).
+  Future<List<Connection>> connections({int limit = 12, bool refresh = false}) =>
+      _api.connections(limit: limit, refresh: refresh);
+
   // ---- Concepts ------------------------------------------------------------ //
 
   /// All deduplicated concepts in the library.
@@ -321,12 +331,15 @@ class CardRepository extends ChangeNotifier {
                   'adjacent_topics': card.insight!.rabbitHole.adjacentTopics,
                   'advanced_concepts': card.insight!.rabbitHole.advancedConcepts,
                 },
-                'topic_map': card.insight!.topicMap == null
-                    ? null
-                    : {
-                        'center': card.insight!.topicMap!.center,
-                        'nodes': card.insight!.topicMap!.nodes,
-                      },
+                'quiz': [
+                  for (final q in card.insight!.quiz.questions)
+                    {
+                      'question': q.question,
+                      'options': q.options,
+                      'answer_index': q.answerIndex,
+                      'explanation': q.explanation,
+                    },
+                ],
                 'deep_research_prompt': card.insight!.deepResearchPrompt,
               },
         'collection_id': card.collectionId,

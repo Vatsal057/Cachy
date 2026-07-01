@@ -124,25 +124,24 @@ class ActionItems {
 class Insight {
   const Insight({
     this.rabbitHole = const RabbitHole(),
-    this.topicMap,
+    this.quiz = const Quiz(),
     this.deepResearchPrompt,
   });
 
   final RabbitHole rabbitHole;
-  final TopicMap? topicMap;
+  final Quiz quiz;
   final String? deepResearchPrompt;
 
   bool get hasDeepResearch =>
       deepResearchPrompt != null && deepResearchPrompt!.trim().isNotEmpty;
-  bool get hasContent => !rabbitHole.isEmpty || topicMap != null || hasDeepResearch;
+  bool get hasQuiz => !quiz.isEmpty;
+  bool get hasContent => !rabbitHole.isEmpty || hasQuiz || hasDeepResearch;
 
   factory Insight.fromJson(Map<String, dynamic> json) => Insight(
         rabbitHole: RabbitHole.fromJson(
           (json['rabbit_hole'] as Map<String, dynamic>?) ?? const {},
         ),
-        topicMap: json['topic_map'] is Map<String, dynamic>
-            ? TopicMap.fromJson(json['topic_map'] as Map<String, dynamic>)
-            : null,
+        quiz: Quiz.fromJson((json['quiz'] as List?) ?? const []),
         deepResearchPrompt: json['deep_research_prompt'] as String?,
       );
 }
@@ -172,17 +171,48 @@ class RabbitHole {
   }
 }
 
-class TopicMap {
-  const TopicMap({required this.center, this.nodes = const []});
+class Quiz {
+  const Quiz({this.questions = const []});
 
-  final String center;
-  final List<String> nodes;
+  final List<QuizQuestion> questions;
 
-  factory TopicMap.fromJson(Map<String, dynamic> json) => TopicMap(
-        center: (json['center'] as String?) ?? '',
-        nodes: ((json['nodes'] as List?) ?? const [])
+  bool get isEmpty => questions.isEmpty;
+
+  factory Quiz.fromJson(List<dynamic> json) => Quiz(
+        questions: json
+            .whereType<Map<String, dynamic>>()
+            .map(QuizQuestion.fromJson)
+            .where((q) => q.isValid)
+            .toList(),
+      );
+}
+
+class QuizQuestion {
+  const QuizQuestion({
+    required this.question,
+    this.options = const [],
+    this.answerIndex = 0,
+    this.explanation = '',
+  });
+
+  final String question;
+  final List<String> options;
+  final int answerIndex;
+  final String explanation;
+
+  bool get isValid =>
+      question.trim().isNotEmpty &&
+      options.length >= 2 &&
+      answerIndex >= 0 &&
+      answerIndex < options.length;
+
+  factory QuizQuestion.fromJson(Map<String, dynamic> json) => QuizQuestion(
+        question: (json['question'] as String?) ?? '',
+        options: ((json['options'] as List?) ?? const [])
             .map((e) => e.toString())
             .toList(),
+        answerIndex: (json['answer_index'] as num?)?.toInt() ?? 0,
+        explanation: (json['explanation'] as String?) ?? '',
       );
 }
 
