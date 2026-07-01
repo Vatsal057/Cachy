@@ -14,10 +14,16 @@ class ProcessingGlyph extends StatefulWidget {
     super.key,
     this.size = 132,
     this.icon = PhosphorIconsRegular.sparkle,
+    this.badgeColor,
   });
 
   final double size;
   final PhosphorIconData icon;
+
+  /// Overrides the badge fill (defaults to the theme's primary color). Lets the
+  /// glyph carry the detected source platform's brand color, so the "sending"
+  /// moment previews *what* is being fetched, not just a generic spark.
+  final Color? badgeColor;
 
   @override
   State<ProcessingGlyph> createState() => _ProcessingGlyphState();
@@ -41,6 +47,11 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final ringColor = widget.badgeColor ?? scheme.primary;
+    final badgeFill = widget.badgeColor ?? scheme.primary;
+    final onBadge = ThemeData.estimateBrightnessForColor(badgeFill) == Brightness.dark
+        ? Colors.white
+        : Brand.ink;
     final badge = widget.size * 0.42;
     return SizedBox(
       width: widget.size,
@@ -53,12 +64,12 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
             children: [
               // Rippling halo rings, each offset in phase so they radiate steadily.
               for (var i = 0; i < _ringCount; i++)
-                _ring(scheme, (_c.value + i / _ringCount) % 1.0, badge),
+                _ring(ringColor, (_c.value + i / _ringCount) % 1.0, badge),
               child!,
             ],
           );
         },
-        // Center badge: a rounded square that breathes gently.
+        // Center badge: a circle that breathes gently, carrying the source icon.
         child: TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
           duration: const Duration(milliseconds: 600),
@@ -71,11 +82,11 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
                 width: badge,
                 height: badge,
                 decoration: BoxDecoration(
-                  color: scheme.primary,
-                  borderRadius: BorderRadius.circular(badge * 0.3),
+                  color: badgeFill,
+                  shape: BoxShape.circle,
                   boxShadow: Brand.softShadow(opacity: 0.22, blur: 22, y: 6),
                 ),
-                child: PhosphorIcon(widget.icon, size: badge * 0.5, color: scheme.onPrimary),
+                child: PhosphorIcon(widget.icon, size: badge * 0.5, color: onBadge),
               ),
             );
           },
@@ -84,7 +95,7 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
     );
   }
 
-  Widget _ring(ColorScheme scheme, double t, double base) {
+  Widget _ring(Color color, double t, double base) {
     final diameter = base * (1.0 + t * 1.4);
     final opacity = (1.0 - t) * 0.35;
     return Container(
@@ -93,7 +104,7 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: scheme.primary.withValues(alpha: opacity),
+          color: color.withValues(alpha: opacity),
           width: 1.4,
         ),
       ),

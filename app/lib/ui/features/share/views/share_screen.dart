@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../core/brand.dart';
+import '../../../core/source_platform.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/pipeline_progress.dart';
@@ -107,15 +108,19 @@ class _ShareViewState extends State<_ShareView> {
     final theme = Theme.of(context);
     switch (vm.status) {
       case ShareStatus.submitting:
+        final source = SourcePlatform.detect(widget.sharedUrl);
         return _Centered(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ProcessingGlyph(size: 132),
+              ProcessingGlyph(size: 132, icon: source.icon, badgeColor: source.color),
               const SizedBox(height: 20),
               Text('Sending to Cachy…', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
-              Text('INGESTING VIDEO STREAM', style: Brand.label(size: 11, color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                '${source.label.toUpperCase()} · ${source.ingestingLabel}',
+                style: Brand.label(size: 11, color: theme.colorScheme.onSurfaceVariant),
+              ),
             ],
           ),
         );
@@ -158,6 +163,7 @@ class _ShareViewState extends State<_ShareView> {
       case ShareStatus.idle:
       case ShareStatus.processing:
         final progress = PipelineProgress.calculateProgress(vm.stage);
+        final source = SourcePlatform.detect(widget.sharedUrl);
         return Center(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
@@ -200,7 +206,7 @@ class _ShareViewState extends State<_ShareView> {
                         height: 68,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                          color: source.color.withValues(alpha: 0.12),
                         ),
                         child: Center(
                           child: Container(
@@ -208,15 +214,22 @@ class _ShareViewState extends State<_ShareView> {
                             height: 48,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: theme.colorScheme.primary,
+                              color: source.color,
                               boxShadow: [
                                 BoxShadow(
-                                  color: theme.colorScheme.primary.withValues(alpha: 0.45),
+                                  color: source.color.withValues(alpha: 0.45),
                                   blurRadius: 28,
                                 ),
                               ],
                             ),
-                            child: PhosphorIcon(PhosphorIconsRegular.sparkle, color: theme.colorScheme.onPrimary, size: 24),
+                            child: PhosphorIcon(
+                              source.icon,
+                              color: ThemeData.estimateBrightnessForColor(source.color) ==
+                                      Brightness.dark
+                                  ? Colors.white
+                                  : Brand.ink,
+                              size: 24,
+                            ),
                           ),
                         ),
                       ),
@@ -231,7 +244,7 @@ class _ShareViewState extends State<_ShareView> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'This usually takes under 30 seconds',
+                  'From ${source.label} · usually under 30 seconds',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -510,6 +523,7 @@ class _UrlChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final source = SourcePlatform.detect(url);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -518,7 +532,7 @@ class _UrlChip extends StatelessWidget {
       ),
       child: Row(
         children: [
-          PhosphorIcon(PhosphorIconsRegular.link, size: 18, color: scheme.onSurfaceVariant),
+          PhosphorIcon(source.icon, size: 18, color: source.color),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -526,6 +540,11 @@ class _UrlChip extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            source.label,
+            style: Brand.label(size: 10, color: scheme.onSurfaceVariant, weight: FontWeight.w600),
           ),
         ],
       ),
