@@ -31,7 +31,7 @@ import '../../../core/widgets/spot_art.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../catalog/views/catalog_screen.dart';
 import '../../concepts/views/concepts_screen.dart';
-import '../../feed/views/knowledge_feed_screen.dart';
+import '../../graph/views/graph_screen.dart';
 import '../../library/views/library_chat_screen.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
@@ -76,10 +76,10 @@ class _LibraryView extends StatelessWidget {
                 ),
               ),
             IconButton(
-              tooltip: 'Feed',
-              icon: const PhosphorIcon(PhosphorIconsRegular.cardsThree),
+              tooltip: 'Graph',
+              icon: const PhosphorIcon(PhosphorIconsRegular.graph),
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const KnowledgeFeedScreen()),
+                MaterialPageRoute(builder: (_) => const GraphScreen()),
               ),
             ),
             IconButton(

@@ -14,7 +14,7 @@ import 'package:provider/provider.dart';
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
 import '../features/collections/views/collections_screen.dart';
-import '../features/graph/views/graph_screen.dart';
+import '../features/feed/views/knowledge_feed_screen.dart';
 import '../features/library/view_models/library_view_model.dart';
 import '../features/library/views/library_screen.dart';
 import '../features/profile/views/profile_screen.dart';
@@ -41,7 +41,7 @@ const _navItems = [
   _NavDef(icon: PhosphorIconsRegular.house,      activeIcon: PhosphorIconsFill.house,      label: 'HOME'),
   _NavDef(icon: PhosphorIconsRegular.folder,     activeIcon: PhosphorIconsFill.folder,     label: 'FOLDERS'),
   _NavDef(icon: PhosphorIconsRegular.listChecks, activeIcon: PhosphorIconsFill.listChecks, label: 'TO-DO'),
-  _NavDef(icon: PhosphorIconsRegular.graph,      activeIcon: PhosphorIconsFill.graph,      label: 'GRAPH'),
+  _NavDef(icon: PhosphorIconsRegular.cardsThree, activeIcon: PhosphorIconsFill.cardsThree, label: 'FEED'),
   _NavDef(icon: PhosphorIconsRegular.user,       activeIcon: PhosphorIconsFill.user,       label: 'YOU'),
 ];
 
@@ -61,7 +61,7 @@ class _HomeShellState extends State<HomeShell> {
     LibraryScreen(),     // 0 — HOME
     CollectionsScreen(), // 1 — FOLDERS
     ActionsScreen(),     // 2 — TO-DO
-    GraphScreen(),       // 3 — GRAPH
+    KnowledgeFeedScreen(inShell: true), // 3 — FEED
     ProfileScreen(),     // 4 — YOU
   ];
 

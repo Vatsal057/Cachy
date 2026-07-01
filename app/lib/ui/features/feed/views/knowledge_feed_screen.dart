@@ -8,7 +8,9 @@
 /// not a filing cabinet.
 library;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
@@ -26,20 +28,25 @@ import '../../reader/views/reader_screen.dart';
 import '../view_models/knowledge_feed_view_model.dart';
 
 class KnowledgeFeedScreen extends StatelessWidget {
-  const KnowledgeFeedScreen({super.key});
+  const KnowledgeFeedScreen({super.key, this.inShell = false});
+
+  /// True when hosted as a bottom-nav tab (vs pushed as its own route): hides the
+  /// close button and pads content clear of the floating nav bar.
+  final bool inShell;
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (ctx) =>
           KnowledgeFeedViewModel(repository: ctx.read<CardRepository>())..load(),
-      child: const _FeedView(),
+      child: _FeedView(inShell: inShell),
     );
   }
 }
 
 class _FeedView extends StatefulWidget {
-  const _FeedView();
+  const _FeedView({this.inShell = false});
+  final bool inShell;
 
   @override
   State<_FeedView> createState() => _FeedViewState();
@@ -47,31 +54,80 @@ class _FeedView extends StatefulWidget {
 
 class _FeedViewState extends State<_FeedView> {
   final _controller = PageController();
+  final _focusNode = FocusNode(debugLabel: 'KnowledgeFeed');
   int _page = 0;
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
+
+  void _goTo(int page, int total) {
+    final target = page.clamp(0, total - 1);
+    if (target == _page || !_controller.hasClients) return;
+    _controller.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _next(int total) => _goTo(_page + 1, total);
+  void _prev(int total) => _goTo(_page - 1, total);
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<KnowledgeFeedViewModel>();
     final scheme = Theme.of(context).colorScheme;
+    final total = vm.items.length;
+    // Show explicit prev/next controls on pointer-first (wide / web) layouts.
+    final showControls = total > 1 &&
+        MediaQuery.sizeOf(context).width >= Insets.desktop;
 
     return Scaffold(
       backgroundColor: scheme.surface,
-      body: Stack(
-        children: [
-          _content(context, vm),
-          _TopBar(
-            index: _page,
-            total: vm.items.length,
-            onClose: () => Navigator.of(context).maybePop(),
-            onRefresh: vm.loading ? null : vm.refresh,
+      // Keyboard navigation (arrows / page keys) for web + desktop. Focus is
+      // grabbed on hover so keys work without an explicit click, and autofocus
+      // only when pushed as its own route (not as a background shell tab).
+      body: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.arrowDown): () => _next(total),
+          const SingleActivator(LogicalKeyboardKey.arrowUp): () => _prev(total),
+          const SingleActivator(LogicalKeyboardKey.pageDown): () => _next(total),
+          const SingleActivator(LogicalKeyboardKey.pageUp): () => _prev(total),
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () => _next(total),
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _prev(total),
+        },
+        child: Focus(
+          focusNode: _focusNode,
+          autofocus: !widget.inShell,
+          child: MouseRegion(
+            onEnter: (_) {
+              if (!_focusNode.hasFocus) _focusNode.requestFocus();
+            },
+            child: Stack(
+              children: [
+                _content(context, vm),
+                _TopBar(
+                  index: _page,
+                  total: total,
+                  showClose: !widget.inShell,
+                  onClose: () => Navigator.of(context).maybePop(),
+                  onRefresh: vm.loading ? null : vm.refresh,
+                ),
+                if (showControls)
+                  _NavButtons(
+                    canPrev: _page > 0,
+                    canNext: _page < total - 1,
+                    onPrev: () => _prev(total),
+                    onNext: () => _next(total),
+                  ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -101,14 +157,106 @@ class _FeedViewState extends State<_FeedView> {
       );
     }
 
-    return PageView.builder(
-      controller: _controller,
-      scrollDirection: Axis.vertical,
-      itemCount: vm.items.length,
-      onPageChanged: (i) => setState(() => _page = i),
-      itemBuilder: (ctx, i) => _MomentPage(
-        item: vm.items[i],
-        showSwipeHint: i == 0 && vm.items.length > 1,
+    // Enable click-drag + trackpad paging in the browser (Flutter disables mouse
+    // drag on scrollables by default), on top of the native touch swipe + wheel.
+    return ScrollConfiguration(
+      behavior: const _FeedScrollBehavior(),
+      child: PageView.builder(
+        controller: _controller,
+        scrollDirection: Axis.vertical,
+        itemCount: vm.items.length,
+        onPageChanged: (i) => setState(() => _page = i),
+        itemBuilder: (ctx, i) => _MomentPage(
+          item: vm.items[i],
+          showSwipeHint: i == 0 && vm.items.length > 1,
+          bottomInset: widget.inShell ? 84 : 0,
+        ),
+      ),
+    );
+  }
+}
+
+/// Lets the vertical feed be dragged with a mouse / trackpad in the browser —
+/// Flutter excludes those pointer kinds from drag-scrolling by default. Touch
+/// swipe and scroll-wheel/trackpad paging keep working alongside this.
+class _FeedScrollBehavior extends MaterialScrollBehavior {
+  const _FeedScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => PointerDeviceKind.values.toSet();
+}
+
+/// On-screen previous/next controls, shown on pointer-first (web / desktop)
+/// layouts so mouse users have an obvious affordance beyond swiping.
+class _NavButtons extends StatelessWidget {
+  const _NavButtons({
+    required this.canPrev,
+    required this.canNext,
+    required this.onPrev,
+    required this.onNext,
+  });
+  final bool canPrev;
+  final bool canNext;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 16,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NavButton(
+              icon: PhosphorIconsRegular.caretUp,
+              tooltip: 'Previous',
+              onTap: canPrev ? onPrev : null,
+            ),
+            const SizedBox(height: 12),
+            _NavButton(
+              icon: PhosphorIconsRegular.caretDown,
+              tooltip: 'Next',
+              onTap: canNext ? onNext : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavButton extends StatelessWidget {
+  const _NavButton({required this.icon, required this.onTap, required this.tooltip});
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onTap != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: scheme.surfaceContainerHighest.withValues(alpha: enabled ? 0.9 : 0.35),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: PhosphorIcon(
+              icon,
+              size: 20,
+              color: enabled
+                  ? scheme.onSurface
+                  : scheme.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -120,11 +268,13 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.index,
     required this.total,
+    required this.showClose,
     required this.onClose,
     required this.onRefresh,
   });
   final int index;
   final int total;
+  final bool showClose;
   final VoidCallback onClose;
   final VoidCallback? onRefresh;
 
@@ -136,11 +286,14 @@ class _TopBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
           children: [
-            IconButton(
-              onPressed: onClose,
-              icon: const PhosphorIcon(PhosphorIconsRegular.x),
-              tooltip: 'Close',
-            ),
+            if (showClose)
+              IconButton(
+                onPressed: onClose,
+                icon: const PhosphorIcon(PhosphorIconsRegular.x),
+                tooltip: 'Close',
+              )
+            else
+              const SizedBox(width: 48),
             const Spacer(),
             if (total > 0)
               Text('${index + 1} / $total',
@@ -162,9 +315,12 @@ class _TopBar extends StatelessWidget {
 // ── One moment (a single full-screen page) ──────────────────────────────── //
 
 class _MomentPage extends StatelessWidget {
-  const _MomentPage({required this.item, this.showSwipeHint = false});
+  const _MomentPage({required this.item, this.showSwipeHint = false, this.bottomInset = 0});
   final FeedItem item;
   final bool showSwipeHint;
+
+  /// Extra bottom padding to clear the floating nav bar when hosted as a tab.
+  final double bottomInset;
 
   @override
   Widget build(BuildContext context) {
@@ -185,20 +341,36 @@ class _MomentPage extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 64, 28, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _Eyebrow(item: item, accent: accent),
-              Expanded(child: _MomentBody(item: item, accent: accent)),
-              _SourceFooter(item: item, accent: accent),
-              if (showSwipeHint) ...[
-                const SizedBox(height: 10),
-                const Center(child: _SwipeHint()),
-              ],
-            ],
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Constrain the content to a centered reading column so it doesn't
+            // stretch edge-to-edge on a wide browser window (the gradient stays
+            // full-bleed behind it). Full width on narrow / mobile layouts.
+            final width = constraints.maxWidth > Insets.readingColumn
+                ? Insets.readingColumn
+                : constraints.maxWidth;
+            return Center(
+              child: SizedBox(
+                width: width,
+                height: constraints.maxHeight,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(28, 64, 28, 28 + bottomInset),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Eyebrow(item: item, accent: accent),
+                      Expanded(child: _MomentBody(item: item, accent: accent)),
+                      _SourceFooter(item: item, accent: accent),
+                      if (showSwipeHint) ...[
+                        const SizedBox(height: 10),
+                        const Center(child: _SwipeHint()),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
