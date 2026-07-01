@@ -16,7 +16,6 @@ import logging
 
 from app.models.card import (
     Insight,
-    Quiz,
     QuizQuestion,
     RabbitHole,
 )
@@ -31,7 +30,7 @@ _MAX = {
     "quiz": 4,
 }
 
-_PROMPT = """You are a sharp analyst. You are given a knowledge card distilled from a
+_SYSTEM_PROMPT = """You are a sharp analyst. You are given a knowledge card distilled from a
 short-form video on an idea-rich topic. Produce a DEEP ANALYSIS layer — the
 scaffolding a curious person would use to go FURTHER than the video, and to test
 whether they actually got it. Everything must be something the reader can act on.
@@ -69,11 +68,6 @@ Rules:
   go far beyond this video. Plain text, ~150-300 words, no markdown headers. Omit it
   (use null) only if the topic does not reward independent research.
 - Output strict JSON. No commentary.
-
-Card:
----
-{card}
----
 """
 
 
@@ -117,11 +111,11 @@ def _str_list(raw, cap: int) -> list[str]:
     return out
 
 
-def _parse_quiz(raw, cap: int) -> Quiz:
+def _parse_quiz(raw, cap: int) -> list[QuizQuestion]:
     """Validate the quiz array. Drops any malformed question; keeps at most `cap`
     valid ones. Options are cleaned + deduped and the answer index is bounds-checked."""
     if not isinstance(raw, list):
-        return Quiz()
+        return []
     out: list[QuizQuestion] = []
     for item in raw:
         if not isinstance(item, dict):
@@ -141,7 +135,7 @@ def _parse_quiz(raw, cap: int) -> Quiz:
             out.append(q)
         if len(out) >= cap:
             break
-    return Quiz(questions=out)
+    return out
 
 
 def _validate(raw_text: str) -> Insight | None:
@@ -187,7 +181,9 @@ def analyze(one_liner: str, tldr: str, body: str, tags: list[str]) -> Insight | 
     card = _card_digest(one_liner, tldr, body, tags)
     if not card:
         return None
-    raw = complete(_PROMPT.format(card=card), max_tokens=4096)
+    # Static instructions ride as a cached system prompt; only the per-card digest
+    # varies as the user content.
+    raw = complete(f"Card:\n---\n{card}\n---", system=_SYSTEM_PROMPT, max_tokens=4096)
     if not raw:
         log.info("insight: no LLM output -> skipping insight layer")
         return None

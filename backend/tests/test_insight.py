@@ -26,8 +26,8 @@ def test_quiz_parsed_and_bounds_checked():
     )
     result = insight._validate(raw)
     assert result is not None
-    assert len(result.quiz.questions) == 1
-    q = result.quiz.questions[0]
+    assert len(result.quiz) == 1
+    q = result.quiz[0]
     assert q.answer_index == 0
     assert len(q.options) == 3
 
@@ -48,7 +48,7 @@ def test_malformed_quiz_questions_are_dropped():
     )
     result = insight._validate(raw)
     assert result is not None
-    assert [q.question for q in result.quiz.questions] == ["Pick a fruit"]
+    assert [q.question for q in result.quiz] == ["Pick a fruit"]
 
 
 def test_quiz_capped():
@@ -58,7 +58,7 @@ def test_quiz_capped():
     ]
     result = insight._validate(_raw(quiz=many))
     assert result is not None
-    assert len(result.quiz.questions) == insight._MAX["quiz"]
+    assert len(result.quiz) == insight._MAX["quiz"]
 
 
 def test_quiz_only_still_produces_layer():
@@ -69,7 +69,7 @@ def test_quiz_only_still_produces_layer():
     result = insight._validate(raw)
     assert result is not None
     assert result.rabbit_hole.is_empty()
-    assert not result.quiz.is_empty()
+    assert result.quiz
 
 
 def test_empty_everything_yields_no_layer():
@@ -83,3 +83,25 @@ def test_topic_map_is_ignored_now():
         _raw(topic_map={"center": "x", "nodes": ["a", "b"]}, quiz=[], rabbit_hole={})
     )
     assert result is None
+
+
+def test_quiz_serializes_as_a_bare_list():
+    """The client + feed consume `quiz` as a plain list — Insight must serialize it
+    that way, not as a wrapped {"questions": [...]} object."""
+    from app.models.card import Insight
+
+    ins = Insight(**{"quiz": [{"question": "q", "options": ["a", "b"], "answer_index": 0}]})
+    dumped = ins.model_dump()
+    assert isinstance(dumped["quiz"], list)
+    assert dumped["quiz"][0]["question"] == "q"
+
+
+def test_legacy_wrapped_quiz_is_coerced():
+    """Rows stored under the old {"questions": [...]} shape still load without error."""
+    from app.models.card import Insight
+
+    ins = Insight(**{"quiz": {"questions": [
+        {"question": "q", "options": ["a", "b"], "answer_index": 1}
+    ]}})
+    assert isinstance(ins.model_dump()["quiz"], list)
+    assert len(ins.quiz) == 1

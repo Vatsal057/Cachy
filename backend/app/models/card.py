@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 SCHEMA_VERSION = "1.6"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections; 1.6: insight quiz (topic_map dropped)
 
@@ -264,29 +264,31 @@ class QuizQuestion(BaseModel):
         )
 
 
-class Quiz(BaseModel):
-    """A short 'test yourself' set generated from the card — turns passive
-    reading into active recall. Empty when the content doesn't warrant one."""
-    questions: list[QuizQuestion] = Field(default_factory=list)
-
-    def is_empty(self) -> bool:
-        return not self.questions
-
-
 class Insight(BaseModel):
     rabbit_hole: RabbitHole = Field(default_factory=RabbitHole)
-    quiz: Quiz = Field(default_factory=Quiz)
+    # A short "test yourself" set generated from the card — active recall. Serialized
+    # as a plain list of questions (the client + feed consume a bare list).
+    quiz: list[QuizQuestion] = Field(default_factory=list)
     # Deprecated (schema 1.6): kept for backward-compatible deserialization only.
     topic_map: Optional[TopicMap] = None
     # A ready-to-paste deep-research prompt for an external LLM (docs/14).
     deep_research_prompt: Optional[str] = None
+
+    @field_validator("quiz", mode="before")
+    @classmethod
+    def _coerce_quiz(cls, value):
+        """Tolerate the legacy wrapped shape ({"questions": [...]}) that older
+        rows may have stored, normalising it to a plain list."""
+        if isinstance(value, dict):
+            return value.get("questions", [])
+        return value
 
     def has_content(self) -> bool:
         """True when at least one sub-section is non-empty — the gate the worker
         and clients use to decide whether to attach/render the layer at all."""
         return bool(
             not self.rabbit_hole.is_empty()
-            or not self.quiz.is_empty()
+            or self.quiz
             or self.deep_research_prompt
         )
 

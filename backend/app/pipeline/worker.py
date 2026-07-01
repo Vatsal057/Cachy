@@ -399,7 +399,7 @@ async def _run_job(session, job: db.JobRow) -> None:
                     "%s Step 4b deep-analysis OK | threads=%d quiz=%d "
                     "deep_research=%s", tag,
                     len(rh.questions) + len(rh.adjacent_topics) + len(rh.advanced_concepts),
-                    len(insight.quiz.questions),
+                    len(insight.quiz),
                     "yes" if insight.deep_research_prompt else "no",
                 )
             else:
