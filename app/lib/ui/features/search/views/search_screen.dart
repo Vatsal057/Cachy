@@ -47,7 +47,7 @@ class _SearchScreenState extends State<SearchScreen> {
     super.didChangeDependencies();
     if (_hooks != null) return;
     _bus = context.read<AgentBus>();
-    final hooks = SearchAgentHooks(run: _runAgentQuery);
+    final hooks = SearchAgentHooks(run: _runAgentQuery, filter: _applyAgentFilter);
     _hooks = hooks;
     _bus!.attachSearch(hooks);
   }
@@ -58,6 +58,15 @@ class _SearchScreenState extends State<SearchScreen> {
     _query = query.trim();
     setState(() {});
     if (_query.isNotEmpty) _run();
+  }
+
+  /// Narrow the current results to the first available content type — shows the
+  /// filter bar working during a demo.
+  void _applyAgentFilter() {
+    if (!mounted) return;
+    final types = _presentTypes;
+    if (types.isEmpty) return;
+    setState(() => _filter = types.first);
   }
 
   void _onChanged(String value) {

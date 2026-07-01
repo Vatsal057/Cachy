@@ -28,14 +28,26 @@ router = APIRouter(prefix="/presenter", tags=["presenter"])
 # Views the browser knows how to navigate to (mirrors the app's nav targets).
 _VIEWS = {
     "library", "feed", "graph", "search",
-    "collections", "actions", "profile", "catalog", "concepts",
+    "collections", "actions", "profile", "catalog", "concepts", "connections",
 }
 
 # Action verbs the Flutter agent knows how to execute (mirrors AgentAction).
 _ACTIONS = {
-    "navigate", "create_card", "search", "open_card",
-    "graph_focus", "graph_open", "graph_wander", "graph_reset",
-    "feed_next", "feed_prev", "wait",
+    "navigate", "wait", "create_card", "search", "search_filter", "open_card",
+    "reader_toggle",
+    "graph_focus", "graph_open", "graph_wander", "graph_reset", "graph_cluster",
+    "graph_concepts",
+    "feed_next", "feed_prev", "feed_shuffle",
+    "open_concept", "define_concept",
+    "create_collection", "move_card",
+    "follow_actions", "toggle_action_item",
+    "card_chat", "library_chat", "rabbit_hole", "open_connections",
+}
+
+# Actions that carry a free-text "query" argument.
+_QUERY_ACTIONS = {
+    "search", "open_card", "graph_focus", "graph_open",
+    "open_concept", "define_concept", "card_chat", "library_chat", "rabbit_hole",
 }
 
 # Compact, accurate project brief so answers stay grounded without shipping the
@@ -72,22 +84,35 @@ You reply with an ordered list of "beats". Each beat has:
 
 An action is an object with a "do" field and optional args:
   - {{"do":"navigate","view":"<view>"}}  — view is one of: library, feed, graph,
-    search, collections, actions, profile, catalog, concepts.
+    search, collections, actions, profile, catalog, concepts, connections.
   - {{"do":"search","query":"<text>"}}   — open search and run a query.
+  - {{"do":"search_filter"}}  — narrow current results by content type.
   - {{"do":"open_card","query":"<text>"}} — open the best-matching saved card.
+  - {{"do":"reader_toggle"}}  — tick a checklist item / step in the open card.
   - {{"do":"graph_focus","query":"<text>"}} — on the graph, zoom into the node
     best matching the text and show its neighborhood. Use "" to auto-pick a hub.
   - {{"do":"graph_open","query":"<text>"}}  — open a graph node's card/concept.
-  - {{"do":"graph_wander"}}  — bring the graph physics alive.
-  - {{"do":"graph_reset"}}   — recenter the graph.
-  - {{"do":"feed_next"}} / {{"do":"feed_prev"}} — move through the feed.
+  - {{"do":"graph_wander"}} / {{"do":"graph_reset"}} — animate / recenter physics.
+  - {{"do":"graph_cluster"}}  — filter the graph to one community cluster.
+  - {{"do":"graph_concepts"}} — toggle the concept hub nodes.
+  - {{"do":"feed_next"}} / {{"do":"feed_prev"}} / {{"do":"feed_shuffle"}} — drive the feed.
+  - {{"do":"open_concept","query":"<text>"}} — open a concept's detail.
+  - {{"do":"define_concept","query":"<text>"}} — generate + show a concept definition.
+  - {{"do":"create_collection","name":"<folder>"}} — make a folder.
+  - {{"do":"move_card"}}  — move the current card into a folder.
+  - {{"do":"follow_actions"}} / {{"do":"toggle_action_item"}} — drive the Actions hub.
+  - {{"do":"card_chat","query":"<question>"}}  — ask the current card a question.
+  - {{"do":"library_chat","query":"<question>"}} — ask across the whole library.
+  - {{"do":"rabbit_hole","query":"<topic>"}} — explore a thread from the current card.
+  - {{"do":"open_connections"}} — show serendipitous cross-card links.
   - {{"do":"create_card","url":"<url>"}} — ONLY if the audience gave a real URL.
   - {{"do":"wait","ms":<n>}} — pause briefly.
 
 Guidance: keep it to 1-3 beats. Prefer performing the relevant feature over
-talking about it (e.g. a question about the graph -> navigate to graph then
-graph_focus). Never invent a URL for create_card. If the question is purely
-conceptual, a single beat with just "say" is fine.
+talking about it (a question about the graph -> navigate to graph then
+graph_focus; about deeper exploration -> rabbit_hole; about a term -> define_concept).
+Never invent a URL for create_card. If the question is purely conceptual, a single
+beat with just "say" is fine.
 
 Reply with ONLY a JSON object, no other text:
 {{"steps":[{{"say":"...","action":{{"do":"..."}}}},{{"say":"...","action":null}}]}}
@@ -122,8 +147,10 @@ def _clean_action(raw: Any) -> dict[str, Any] | None:
         if view not in _VIEWS:
             return None
         action["view"] = view
-    if verb in {"search", "open_card", "graph_focus", "graph_open"}:
+    if verb in _QUERY_ACTIONS:
         action["query"] = str(raw.get("query", "")).strip()
+    if verb == "create_collection":
+        action["name"] = str(raw.get("name", "")).strip()
     if verb == "create_card":
         url = str(raw.get("url", "")).strip()
         if not url.startswith("http"):

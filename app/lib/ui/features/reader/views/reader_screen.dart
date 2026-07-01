@@ -29,6 +29,7 @@ import '../../../core/widgets/pipeline_progress.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
 import '../../concepts/views/concept_detail_screen.dart';
+import '../../presenter/agent_bus.dart';
 import '../view_models/reader_view_model.dart';
 import 'insight_section.dart';
 import 'primary_action_bar.dart';
@@ -53,9 +54,87 @@ class ReaderScreen extends StatelessWidget {
         repository: ctx.read<CardRepository>(),
         cardId: cardId,
       )..init(),
-      child: _ReaderView(embedded: embedded, onClose: onClose),
+      child: _ReaderAgentBridge(
+        child: _ReaderView(embedded: embedded, onClose: onClose),
+      ),
     );
   }
+}
+
+/// Bridges the mounted reader to the presenter agent: while a reader is on
+/// screen, the agent can toggle a checklist item or step live to show cards are
+/// interactive. Attaches on mount, detaches on unmount (AgentBus lifecycle).
+class _ReaderAgentBridge extends StatefulWidget {
+  const _ReaderAgentBridge({required this.child});
+  final Widget child;
+
+  @override
+  State<_ReaderAgentBridge> createState() => _ReaderAgentBridgeState();
+}
+
+class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
+  AgentBus? _bus;
+  ReaderAgentHooks? _hooks;
+  ReaderViewModel? _vm;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _vm = context.read<ReaderViewModel>();
+    if (_hooks != null) return;
+    _bus = context.read<AgentBus>();
+    final hooks = ReaderAgentHooks(
+      isReady: () => _vm?.card != null,
+      toggleCheck: _toggleCheck,
+      toggleStep: _toggleStep,
+    );
+    _hooks = hooks;
+    _bus!.attachReader(hooks);
+  }
+
+  Future<bool> _toggleCheck() async {
+    final card = _vm?.card;
+    if (card == null) return false;
+    for (final b in card.rawBlocks) {
+      if (b['type'] == 'checklist') {
+        final id = b['id'] as String?;
+        final items = (b['items'] as List?) ?? const [];
+        if (id != null && items.isNotEmpty) {
+          final checked = (items.first as Map)['checked'] == true;
+          await _vm!.toggleChecklistItem(id, 0, !checked);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _toggleStep() async {
+    final card = _vm?.card;
+    if (card == null) return false;
+    for (final b in card.rawBlocks) {
+      if (b['type'] == 'step_list') {
+        final id = b['id'] as String?;
+        final steps = (b['steps'] as List?) ?? const [];
+        if (id != null && steps.isNotEmpty) {
+          final checked = (steps.first as Map)['checked'] == true;
+          await _vm!.toggleStep(id, 0, !checked);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  @override
+  void dispose() {
+    final h = _hooks;
+    if (h != null) _bus?.detachReader(h);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _ReaderView extends StatelessWidget {
