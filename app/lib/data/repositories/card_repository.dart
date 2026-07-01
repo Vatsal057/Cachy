@@ -171,9 +171,25 @@ class CardRepository extends ChangeNotifier {
   Future<List<Card>> search(String query) => _api.search(query);
 
   /// Grounded chat over one card (docs/13). Network-only; the conversation is
-  /// held in the view model and replayed each turn.
+  /// held in the view model and replayed each turn. Persisted server-side per
+  /// owner (docs/14).
   Future<String> chat(String cardId, List<Map<String, String>> messages) =>
       _api.chat(cardId, messages);
+
+  /// Restore the saved chat for a card (docs/14), owner-scoped.
+  Future<List<Map<String, String>>> chatHistory(String cardId) =>
+      _api.chatHistory(cardId);
+
+  /// Explore one thread of the rabbit hole (docs/14). Network-only; the
+  /// exploration trail is held in the view model and replayed each turn.
+  /// Persisted server-side per owner, keyed by [root].
+  Future<RabbitHoleStep> exploreRabbitHole(
+          String cardId, String topic, List<String> trail, String root) =>
+      _api.exploreRabbitHole(cardId, topic, trail, root);
+
+  /// Restore the saved rabbit-hole trail for a card + [root] topic (docs/14).
+  Future<List<RabbitHoleStep>> rabbitHoleHistory(String cardId, String root) =>
+      _api.rabbitHoleHistory(cardId, root);
 
   /// The aggregated artifact catalog (docs/12). Network-only for now — these
   /// are remote-thumbnail entries with no offline-render requirement.
@@ -234,8 +250,13 @@ class CardRepository extends ChangeNotifier {
       _api.graph(threshold: threshold, topK: topK);
 
   /// Cross-card grounded Q&A (docs/09). Network-only; history held client-side.
+  /// Persisted server-side per owner (docs/14).
   Future<LibraryChatResult> libraryChat(List<Map<String, String>> messages) =>
       _api.libraryChat(messages);
+
+  /// Restore the saved library chat (docs/14), owner-scoped.
+  Future<List<Map<String, String>>> libraryChatHistory() =>
+      _api.libraryChatHistory();
 
   // ---- Concepts ------------------------------------------------------------ //
 

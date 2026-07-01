@@ -238,6 +238,35 @@ class ConceptRow(Base):
         )
 
 
+class ConversationRow(Base):
+    """A persisted AI-generated conversation log, scoped to an owner (docs/14).
+
+    Preserves text that used to be stateless: single-card chat, rabbit-hole
+    explorations, and library chat. Isolation is by `owner_id` (the name entered
+    at onboarding, carried on the X-Owner-Id header) so one user never sees
+    another's generations. Uniquely keyed by (owner_id, kind, card_id, thread):
+      - chat:         card_id set, thread NULL
+      - rabbit_hole:  card_id set, thread = the root topic the journey started from
+      - library_chat: card_id NULL, thread NULL
+    """
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # "chat" | "rabbit_hole" | "library_chat"
+    kind: Mapped[str] = mapped_column(String, index=True)
+    card_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Rabbit-hole root topic; NULL for chat / library_chat.
+    thread: Mapped[str | None] = mapped_column(String, nullable=True)
+    # chat: [{role, content}]; rabbit_hole: [{topic, explanation, threads}].
+    payload: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 class JobRow(Base):
     __tablename__ = "jobs"
 
@@ -650,6 +679,9 @@ async def cleanup_after_card_deletion(
     db: AsyncSession, card_id: str
 ) -> None:
     """Clean up orphaned collections, concepts, and catalog artifacts after a card is deleted."""
+    # 0. Drop persisted AI conversations (chat + rabbit hole) for this card.
+    await delete_card_conversations(db, card_id)
+
     # 1. Clean up concepts referencing this card
     concepts = (await db.execute(select(ConceptRow))).scalars().all()
     for concept in concepts:
@@ -688,6 +720,72 @@ async def cleanup_after_card_deletion(
         )
         if (count_res.scalar_one() or 0) == 0:
             await db.delete(col)
+
+
+# --------------------------------------------------------------------------- #
+# Conversations — persisted AI text, owner-scoped (docs/14)
+# --------------------------------------------------------------------------- #
+
+async def get_conversation(
+    db: AsyncSession,
+    *,
+    owner_id: str | None,
+    kind: str,
+    card_id: str | None = None,
+    thread: str | None = None,
+) -> ConversationRow | None:
+    """Fetch the stored conversation for this owner + key, or None. NULL keys
+    match with IS NULL so the anonymous (no-name) owner is handled too."""
+    stmt = select(ConversationRow).where(
+        ConversationRow.owner_id.is_(None) if owner_id is None
+        else ConversationRow.owner_id == owner_id,
+        ConversationRow.kind == kind,
+        ConversationRow.card_id.is_(None) if card_id is None
+        else ConversationRow.card_id == card_id,
+        ConversationRow.thread.is_(None) if thread is None
+        else ConversationRow.thread == thread,
+    )
+    res = await db.execute(stmt)
+    return res.scalars().first()
+
+
+async def save_conversation(
+    db: AsyncSession,
+    *,
+    owner_id: str | None,
+    kind: str,
+    payload: list,
+    card_id: str | None = None,
+    thread: str | None = None,
+) -> ConversationRow:
+    """Upsert the conversation log for this owner + key. Replaces the payload
+    wholesale — callers pass the full, current message/step list."""
+    row = await get_conversation(
+        db, owner_id=owner_id, kind=kind, card_id=card_id, thread=thread
+    )
+    if row is None:
+        row = ConversationRow(
+            owner_id=owner_id,
+            kind=kind,
+            card_id=card_id,
+            thread=thread,
+            payload=payload,
+        )
+        db.add(row)
+    else:
+        row.payload = payload
+        flag_modified(row, "payload")
+    await db.commit()
+    return row
+
+
+async def delete_card_conversations(db: AsyncSession, card_id: str) -> None:
+    """Drop all persisted conversations tied to a card (called on card delete)."""
+    from sqlalchemy import delete as sa_delete
+
+    await db.execute(
+        sa_delete(ConversationRow).where(ConversationRow.card_id == card_id)
+    )
 
 
 async def reset_orphaned_processing_jobs(db: AsyncSession) -> int:

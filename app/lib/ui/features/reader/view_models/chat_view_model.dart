@@ -29,16 +29,35 @@ class ChatViewModel extends ChangeNotifier {
   bool _busy = false;
   bool get busy => _busy;
 
+  bool _loading = false;
+  bool get loading => _loading;
+
   String? _error;
   String? get error => _error;
 
   bool get isEmpty => _messages.isEmpty;
 
-  /// Fire an opening question on entry (rabbit-hole tap → grounded chat). Runs
-  /// after the first frame so the screen is already mounted when the reply lands.
-  void seed(String? text) {
-    if (text == null || text.trim().isEmpty) return;
-    Future.microtask(() => send(text));
+  /// Load the saved conversation on entry, then fire an opening question only if
+  /// there's nothing to restore (rabbit-hole/ask tap → grounded chat). Prior
+  /// turns are owner-scoped and preserved server-side (docs/14).
+  void bootstrap({String? seed}) {
+    Future.microtask(() async {
+      _loading = true;
+      notifyListeners();
+      try {
+        final saved = await _repository.chatHistory(cardId);
+        _messages.addAll(saved.map(
+          (m) => ChatMessage(role: m['role'] ?? '', content: m['content'] ?? ''),
+        ));
+      } catch (_) {
+        // Best-effort restore; a fresh conversation is fine.
+      }
+      _loading = false;
+      notifyListeners();
+      if (_messages.isEmpty && seed != null && seed.trim().isNotEmpty) {
+        send(seed);
+      }
+    });
   }
 
   Future<void> send(String text) async {

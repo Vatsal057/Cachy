@@ -50,6 +50,19 @@ class LibraryChatResult {
   final List<LibrarySource> sources;
 }
 
+/// One step down the rabbit hole (docs/14): the tapped [topic], its
+/// [explanation], and the fresh [threads] that branch onward from it.
+class RabbitHoleStep {
+  const RabbitHoleStep({
+    required this.topic,
+    required this.explanation,
+    required this.threads,
+  });
+  final String topic;
+  final String explanation;
+  final List<String> threads;
+}
+
 class ApiClient {
   ApiClient({String? baseUrl, http.Client? client, LocalStore? store})
       : baseUrl = (baseUrl ?? _defaultBaseUrl).replaceAll(RegExp(r'/+$'), ''),
@@ -206,8 +219,9 @@ class ApiClient {
     return _decodeList(resp).map(Card.fromJson).toList();
   }
 
-  /// Grounded Q&A over one card (docs/13). Stateless: send the full history each
-  /// turn as [{'role','content'}]; returns the assistant's reply text.
+  /// Grounded Q&A over one card (docs/13). Send the full history each turn as
+  /// [{'role','content'}]; returns the assistant's reply text. The conversation
+  /// is persisted server-side per owner (docs/14).
   Future<String> chat(String cardId, List<Map<String, String>> messages) async {
     final resp = await _client.post(
       _uri('/cards/$cardId/chat'),
@@ -215,6 +229,58 @@ class ApiClient {
       body: jsonEncode({'messages': messages}),
     );
     return (_decodeMap(resp)['reply'] as String?) ?? '';
+  }
+
+  /// Restore this owner's saved chat for a card (docs/14) as
+  /// [{'role','content'}] maps, oldest → newest. Empty when none saved.
+  Future<List<Map<String, String>>> chatHistory(String cardId) async {
+    final resp = await _client.get(_uri('/cards/$cardId/chat'), headers: _ownerHeader);
+    return _decodeMessages(_decodeMap(resp)['messages']);
+  }
+
+  /// Explore one thread of the rabbit hole (docs/14). Unlike [chat], this is not
+  /// confined to the card: it returns an [explanation] drawn from general
+  /// knowledge plus fresh follow-on [threads]. Send the [trail] of threads
+  /// already explored plus the [root] topic; the exploration is persisted
+  /// server-side per owner, keyed by root.
+  Future<RabbitHoleStep> exploreRabbitHole(
+    String cardId,
+    String topic,
+    List<String> trail,
+    String root,
+  ) async {
+    final resp = await _client.post(
+      _uri('/cards/$cardId/rabbithole'),
+      headers: {'content-type': 'application/json', ..._ownerHeader},
+      body: jsonEncode({'topic': topic, 'trail': trail, 'root': root}),
+    );
+    final json = _decodeMap(resp);
+    return RabbitHoleStep(
+      topic: topic,
+      explanation: (json['explanation'] as String?) ?? '',
+      threads: ((json['threads'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+    );
+  }
+
+  /// Restore this owner's saved rabbit-hole trail for a card + [root] topic
+  /// (docs/14), oldest → deepest. Empty when none saved.
+  Future<List<RabbitHoleStep>> rabbitHoleHistory(String cardId, String root) async {
+    final resp = await _client.get(
+      _uri('/cards/$cardId/rabbithole', {'root': root}),
+      headers: _ownerHeader,
+    );
+    return ((_decodeMap(resp)['steps'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map((s) => RabbitHoleStep(
+              topic: (s['topic'] as String?) ?? '',
+              explanation: (s['explanation'] as String?) ?? '',
+              threads: ((s['threads'] as List?) ?? const [])
+                  .map((e) => e.toString())
+                  .toList(),
+            ))
+        .toList();
   }
 
   // ------------------------------------------------------------------------- //
@@ -364,6 +430,13 @@ class ApiClient {
     );
   }
 
+  /// Restore this owner's saved library chat (docs/14) as [{'role','content'}]
+  /// maps, oldest → newest. Empty when none saved.
+  Future<List<Map<String, String>>> libraryChatHistory() async {
+    final resp = await _client.get(_uri('/library/chat'), headers: _ownerHeader);
+    return _decodeMessages(_decodeMap(resp)['messages']);
+  }
+
 
   // ------------------------------------------------------------------------- //
   // SSE pipeline stream — GET /cards/{id}/stream
@@ -424,6 +497,18 @@ class ApiClient {
     final decoded = jsonDecode(utf8.decode(resp.bodyBytes));
     if (decoded is Map<String, dynamic>) return decoded;
     throw ApiException(resp.statusCode, 'expected object, got ${decoded.runtimeType}');
+  }
+
+  /// Normalise a decoded `messages` array into role/content string maps.
+  List<Map<String, String>> _decodeMessages(Object? raw) {
+    return ((raw as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map((m) => {
+              'role': (m['role'] as String?) ?? '',
+              'content': (m['content'] as String?) ?? '',
+            })
+        .where((m) => m['content']!.isNotEmpty)
+        .toList();
   }
 
   List<Map<String, dynamic>> _decodeList(http.Response resp) {

@@ -32,7 +32,7 @@ class ChatScreen extends StatelessWidget {
       create: (ctx) => ChatViewModel(
         repository: ctx.read<CardRepository>(),
         cardId: cardId,
-      )..seed(seed),
+      )..bootstrap(seed: seed),
       child: _ChatView(title: title),
     );
   }
@@ -111,6 +111,9 @@ class _ChatViewState extends State<_ChatView> {
   }
 
   Widget _messages(BuildContext context, ChatViewModel vm) {
+    if (vm.loading && vm.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (vm.isEmpty) {
       return Center(
         child: Padding(

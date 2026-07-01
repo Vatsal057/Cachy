@@ -18,7 +18,7 @@ from app.api.graph import invalidate_graph_cache
 from app.models.card import Card, CardState
 from app.models.job import JobState
 from app.pipeline.ingestion.source import platform_for_url
-from app.services import cache, events, llm_chat
+from app.services import cache, events, llm_chat, llm_rabbithole
 from app.store import db, media
 
 log = logging.getLogger("api.cards")
@@ -64,6 +64,39 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+
+
+class ChatHistoryResponse(BaseModel):
+    # Restored conversation, oldest → newest.
+    messages: list[ChatMessage]
+
+
+class RabbitHoleRequest(BaseModel):
+    # The thread the reader just tapped (a question / topic / concept).
+    topic: str
+    # Ordered breadcrumb of threads already explored this session (topic excluded).
+    trail: list[str] = []
+    # The root topic that started this exploration (persistence key). Defaults to
+    # `topic` on the first hop.
+    root: str | None = None
+
+
+class RabbitHoleResponse(BaseModel):
+    # A concise explanation of the topic, free to draw on general knowledge.
+    explanation: str
+    # Fresh follow-on threads that branch from the explanation.
+    threads: list[str]
+
+
+class RabbitHoleStep(BaseModel):
+    topic: str
+    explanation: str
+    threads: list[str]
+
+
+class RabbitHoleHistoryResponse(BaseModel):
+    # Restored trail, oldest → deepest.
+    steps: list[RabbitHoleStep]
 
 
 def _platform_for(url: str) -> str | None:
@@ -237,10 +270,14 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
 
 
 @router.post("/{card_id}/chat", response_model=ChatResponse)
-async def chat_card(card_id: str, req: ChatRequest) -> ChatResponse:
-    """Grounded Q&A over one card (docs/13). Stateless: the client replays the
-    conversation each turn; nothing is stored. The model answers from the card's
-    structured content only."""
+async def chat_card(
+    card_id: str,
+    req: ChatRequest,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> ChatResponse:
+    """Grounded Q&A over one card (docs/13). The conversation is PERSISTED per
+    owner (docs/14): the reply is generated from the card's structured content,
+    then the full turn is saved so reopening the card restores the thread."""
     if not req.messages or req.messages[-1].role != "user":
         raise HTTPException(status_code=422, detail="last message must be from user")
 
@@ -258,7 +295,119 @@ async def chat_card(card_id: str, req: ChatRequest) -> ChatResponse:
         raise HTTPException(
             status_code=503, detail="chat is unavailable (no LLM backend configured)"
         )
+    # Persist the full conversation (history + this reply), owner-scoped.
+    async with db.session() as session:
+        await db.save_conversation(
+            session,
+            owner_id=x_owner_id,
+            kind="chat",
+            card_id=card_id,
+            payload=[*history, {"role": "assistant", "content": reply}],
+        )
     return ChatResponse(reply=reply)
+
+
+@router.get("/{card_id}/chat", response_model=ChatHistoryResponse)
+async def get_chat_history(
+    card_id: str,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> ChatHistoryResponse:
+    """Restore this owner's saved chat for a card (docs/14). Empty when none."""
+    async with db.session() as session:
+        row = await db.get_conversation(
+            session, owner_id=x_owner_id, kind="chat", card_id=card_id
+        )
+        messages = list(row.payload) if row else []
+    return ChatHistoryResponse(
+        messages=[ChatMessage(**m) for m in messages if isinstance(m, dict)]
+    )
+
+
+@router.post("/{card_id}/rabbithole", response_model=RabbitHoleResponse)
+async def explore_rabbithole(
+    card_id: str,
+    req: RabbitHoleRequest,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> RabbitHoleResponse:
+    """Explore one thread of the rabbit hole (docs/14). Unlike card chat, this is
+    NOT confined to the card — it uses the card as an anchor but explains the
+    tapped topic from general knowledge and returns fresh follow-on threads.
+
+    The exploration is PERSISTED per owner, keyed by the root topic the journey
+    started from: the new step is appended to the stored trail (truncated to the
+    depth the client is on, so branching back overwrites the abandoned tail)."""
+    topic = req.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=422, detail="topic is required")
+    root = (req.root or topic).strip()
+
+    async with db.session() as session:
+        row = await db.get_card_row(session, card_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="card not found")
+        if row.state != CardState.READY.value:
+            raise HTTPException(status_code=409, detail="card is not ready")
+        card = row.to_card()
+
+    result = await llm_rabbithole.explore_async(card, topic, req.trail)
+    if result is None:
+        raise HTTPException(
+            status_code=503,
+            detail="rabbit hole is unavailable (no LLM backend configured)",
+        )
+
+    step = {
+        "topic": topic,
+        "explanation": result["explanation"],
+        "threads": result["threads"],
+    }
+    # Append to the stored trail, truncated to the client's current depth so a
+    # branch taken after jumping back replaces the abandoned deeper steps.
+    async with db.session() as session:
+        existing = await db.get_conversation(
+            session, owner_id=x_owner_id, kind="rabbit_hole",
+            card_id=card_id, thread=root,
+        )
+        prior = list(existing.payload) if existing else []
+        trail_depth = len(req.trail)
+        payload = [*prior[:trail_depth], step]
+        await db.save_conversation(
+            session,
+            owner_id=x_owner_id,
+            kind="rabbit_hole",
+            card_id=card_id,
+            thread=root,
+            payload=payload,
+        )
+    return RabbitHoleResponse(
+        explanation=result["explanation"], threads=result["threads"]
+    )
+
+
+@router.get("/{card_id}/rabbithole", response_model=RabbitHoleHistoryResponse)
+async def get_rabbithole_history(
+    card_id: str,
+    root: str,
+    x_owner_id: Annotated[str | None, Header()] = None,
+) -> RabbitHoleHistoryResponse:
+    """Restore this owner's saved rabbit-hole trail for a card + root topic."""
+    async with db.session() as session:
+        row = await db.get_conversation(
+            session, owner_id=x_owner_id, kind="rabbit_hole",
+            card_id=card_id, thread=root.strip(),
+        )
+        steps = list(row.payload) if row else []
+    return RabbitHoleHistoryResponse(
+        steps=[
+            RabbitHoleStep(
+                topic=str(s.get("topic", "")),
+                explanation=str(s.get("explanation", "")),
+                threads=[str(t) for t in (s.get("threads") or [])],
+            )
+            for s in steps
+            if isinstance(s, dict)
+        ]
+    )
 
 
 @router.delete("/{card_id}")
