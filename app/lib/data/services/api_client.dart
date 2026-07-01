@@ -127,6 +127,24 @@ class ApiClient {
   }
 
   // ------------------------------------------------------------------------- //
+  // Presenter (in-app "Present" mode Q&A — the LLM runs server-side)
+  // ------------------------------------------------------------------------- //
+
+  /// Ask the presenting agent a question or hand it a task. Returns an ordered
+  /// list of "beats" — each an optional line to `say` and an optional `action`
+  /// to perform — so the agent answers by *doing*, not just describing.
+  Future<List<Map<String, dynamic>>> presenterAsk(String question) async {
+    final resp = await _client.post(
+      _uri('/presenter/ask'),
+      headers: {'content-type': 'application/json', ..._ownerHeader},
+      body: jsonEncode({'question': question}),
+    );
+    final json = _decodeMap(resp);
+    final steps = (json['steps'] as List?) ?? const [];
+    return steps.whereType<Map<String, dynamic>>().toList();
+  }
+
+  // ------------------------------------------------------------------------- //
   // Cards
   // ------------------------------------------------------------------------- //
 
