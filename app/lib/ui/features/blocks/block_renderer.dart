@@ -653,7 +653,10 @@ class _Callout extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                RichInlineText(block.text, style: theme.textTheme.bodyMedium),
+                RichInlineText(
+                  block.text,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+                ),
                 if (block.confidence != 'unverified' ||
                     block.sourceUrl != null) ...[
                   const SizedBox(height: 6),
