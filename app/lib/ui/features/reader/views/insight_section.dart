@@ -15,7 +15,7 @@ import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/stat_strip.dart';
-import 'chat_screen.dart';
+import 'rabbit_hole_screen.dart';
 
 class InsightSection extends StatelessWidget {
   const InsightSection({
@@ -55,7 +55,6 @@ class InsightSection extends StatelessWidget {
         rabbitHole: insight.rabbitHole,
         accent: accent,
         cardId: cardId,
-        cardTitle: cardTitle,
       ));
     }
     if (insight.topicMap != null) {
@@ -218,12 +217,10 @@ class _RabbitHoleCard extends StatelessWidget {
     required this.rabbitHole,
     required this.accent,
     required this.cardId,
-    required this.cardTitle,
   });
   final RabbitHole rabbitHole;
   final ContentAccent accent;
   final String cardId;
-  final String cardTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +239,8 @@ class _RabbitHoleCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: Text('Tap a thread to go deeper — the card answers, grounded in its content.',
+            child: Text(
+                'Tap a thread to fall in — each answer opens fresh threads to keep exploring.',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           ),
@@ -252,7 +250,6 @@ class _RabbitHoleCard extends StatelessWidget {
               items: group.$2,
               accent: accent,
               cardId: cardId,
-              cardTitle: cardTitle,
             ),
         ],
       ),
@@ -266,18 +263,16 @@ class _RabbitHoleGroup extends StatelessWidget {
     required this.items,
     required this.accent,
     required this.cardId,
-    required this.cardTitle,
   });
   final String label;
   final List<String> items;
   final ContentAccent accent;
   final String cardId;
-  final String cardTitle;
 
   void _ask(BuildContext context, String thread) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ChatScreen(cardId: cardId, title: cardTitle, seed: thread),
+        builder: (_) => RabbitHoleScreen(cardId: cardId, seed: thread, accent: accent),
       ),
     );
   }

@@ -33,10 +33,37 @@ class LibraryChatViewModel extends ChangeNotifier {
   bool _busy = false;
   bool get busy => _busy;
 
+  bool _loading = false;
+  bool get loading => _loading;
+
   String? _error;
   String? get error => _error;
 
   bool get isEmpty => _messages.isEmpty;
+
+  /// Load the saved cross-card conversation on entry, then auto-send [seed] only
+  /// when there's nothing to restore. Owner-scoped and preserved server-side
+  /// (docs/14).
+  void bootstrap({String? seed}) {
+    Future.microtask(() async {
+      _loading = true;
+      notifyListeners();
+      try {
+        final saved = await _repository.libraryChatHistory();
+        _messages.addAll(saved.map(
+          (m) => LibraryChatMessage(
+              role: m['role'] ?? '', content: m['content'] ?? ''),
+        ));
+      } catch (_) {
+        // Best-effort restore; a fresh conversation is fine.
+      }
+      _loading = false;
+      notifyListeners();
+      if (_messages.isEmpty && seed != null && seed.trim().isNotEmpty) {
+        send(seed);
+      }
+    });
+  }
 
   Future<void> send(String text) async {
     final trimmed = text.trim();

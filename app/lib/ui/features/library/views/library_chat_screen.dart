@@ -27,7 +27,7 @@ class LibraryChatScreen extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (ctx) {
         final vm = LibraryChatViewModel(repository: ctx.read<CardRepository>());
-        if (seedQuery != null) vm.send(seedQuery!);
+        vm.bootstrap(seed: seedQuery);
         return vm;
       },
       child: const _LibraryChatView(),
@@ -107,6 +107,9 @@ class _LibraryChatViewState extends State<_LibraryChatView> {
   }
 
   Widget _messages(BuildContext context, LibraryChatViewModel vm) {
+    if (vm.loading && vm.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (vm.isEmpty) {
       return Center(
         child: Padding(

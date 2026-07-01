@@ -183,6 +183,121 @@ async def test_chat_returns_reply_when_backend_answers(client, database, monkeyp
     assert captured["history"][-1]["content"] == "ingredients?"
 
 
+# ---------------------------------------------------------------------------
+# Persisted, owner-scoped AI conversations (docs/14)
+# ---------------------------------------------------------------------------
+
+async def test_chat_persists_and_restores_per_owner(client, database, monkeypatch):
+    """A chat turn is saved for the owner that made it, restorable via GET, and
+    invisible to a different owner."""
+    card_id = await _make_ready_card(database)
+    monkeypatch.setattr(
+        "app.api.cards.llm_chat.answer", lambda card, history: "Use 1 cup."
+    )
+
+    post = await client.post(
+        f"/cards/{card_id}/chat",
+        headers={"x-owner-id": "alice"},
+        json={"messages": [{"role": "user", "content": "how much flour?"}]},
+    )
+    assert post.status_code == 200
+
+    # Alice restores the full turn (her question + the reply).
+    restored = await client.get(
+        f"/cards/{card_id}/chat", headers={"x-owner-id": "alice"}
+    )
+    msgs = restored.json()["messages"]
+    assert [m["content"] for m in msgs] == ["how much flour?", "Use 1 cup."]
+
+    # Bob sees nothing — isolation by owner.
+    other = await client.get(
+        f"/cards/{card_id}/chat", headers={"x-owner-id": "bob"}
+    )
+    assert other.json()["messages"] == []
+
+
+async def test_rabbithole_persists_trail_and_restores(client, database, monkeypatch):
+    """Successive dives build a persisted trail keyed by the root topic, and a
+    branch taken after jumping back replaces the abandoned deeper steps."""
+    card_id = await _make_ready_card(database)
+
+    async def fake_explore(card, topic, trail):
+        return {"explanation": f"About {topic}.", "threads": [f"{topic} deeper"]}
+
+    monkeypatch.setattr(
+        "app.api.cards.llm_rabbithole.explore_async", fake_explore
+    )
+
+    # Dive root → A (trail empty, root defaults to topic).
+    r1 = await client.post(
+        f"/cards/{card_id}/rabbithole",
+        headers={"x-owner-id": "alice"},
+        json={"topic": "roots", "trail": [], "root": "roots"},
+    )
+    assert r1.status_code == 200
+
+    # Dive one deeper (trail carries the root).
+    await client.post(
+        f"/cards/{card_id}/rabbithole",
+        headers={"x-owner-id": "alice"},
+        json={"topic": "branch-a", "trail": ["roots"], "root": "roots"},
+    )
+
+    restored = await client.get(
+        f"/cards/{card_id}/rabbithole",
+        headers={"x-owner-id": "alice"},
+        params={"root": "roots"},
+    )
+    steps = restored.json()["steps"]
+    assert [s["topic"] for s in steps] == ["roots", "branch-a"]
+    assert steps[0]["explanation"] == "About roots."
+
+    # Jump back to depth 1 and branch differently → deeper tail is replaced.
+    await client.post(
+        f"/cards/{card_id}/rabbithole",
+        headers={"x-owner-id": "alice"},
+        json={"topic": "branch-b", "trail": ["roots"], "root": "roots"},
+    )
+    restored2 = await client.get(
+        f"/cards/{card_id}/rabbithole",
+        headers={"x-owner-id": "alice"},
+        params={"root": "roots"},
+    )
+    assert [s["topic"] for s in restored2.json()["steps"]] == ["roots", "branch-b"]
+
+    # A different owner has no trail for the same card + root.
+    other = await client.get(
+        f"/cards/{card_id}/rabbithole",
+        headers={"x-owner-id": "bob"},
+        params={"root": "roots"},
+    )
+    assert other.json()["steps"] == []
+
+
+async def test_library_chat_persists_and_restores_per_owner(client, monkeypatch):
+    async def fake_answer(history):
+        return ("You saved 2 recipes.", [])
+
+    monkeypatch.setattr(
+        "app.api.library_chat.llm_library_chat.answer", fake_answer
+    )
+
+    await client.post(
+        "/library/chat",
+        headers={"x-owner-id": "alice"},
+        json={"messages": [{"role": "user", "content": "what did I save?"}]},
+    )
+
+    restored = await client.get("/library/chat", headers={"x-owner-id": "alice"})
+    assert [m["content"] for m in restored.json()["messages"]] == [
+        "what did I save?",
+        "You saved 2 recipes.",
+    ]
+
+    other = await client.get("/library/chat", headers={"x-owner-id": "bob"})
+    assert other.json()["messages"] == []
+
+
 async def test_catalog_detail_and_delete(client, database):
     async with database.session() as s:
         row = await database.upsert_artifact(
