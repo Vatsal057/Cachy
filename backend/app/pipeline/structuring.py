@@ -142,7 +142,7 @@ Formatting rules:
   *italic* for emphasis. Use it sparingly. No other markdown (no #, no links).
 """.strip()
 
-_PROMPT = """You convert a short-form video's extracted text into a COMPREHENSIVE, RICHLY STRUCTURED knowledge card.
+_SYSTEM_PROMPT = """You convert a short-form video's extracted text into a COMPREHENSIVE, RICHLY STRUCTURED knowledge card.
 
 Your PRIME DIRECTIVE: capture every meaningful insight with full context — not just WHAT, but WHY it works and HOW to apply it.
 Every tip, habit, step, claim, or tool must appear with its explanation, not as a bare label.
@@ -201,11 +201,6 @@ Other rules:
 - concepts: 1-6 evergreen, source-independent IDEAS. Lowercase noun phrases.
 
 {vocab}
-
-Extracted text bundle:
----
-{bundle}
----
 """
 
 
@@ -214,7 +209,7 @@ Extracted text bundle:
 # Bundle preprocessor (Gemini Flash Lite — separate quota pool)
 # --------------------------------------------------------------------------- #
 
-_PREPROCESS_PROMPT = """You clean and prepare a noisy text bundle extracted from a short-form video \
+_PREPROCESS_SYSTEM = """You clean and prepare a noisy text bundle extracted from a short-form video \
 (caption + audio transcript + on-screen/slide text) before it is turned into a detailed knowledge note.
 
 Your job: remove noise AND translate non-English text to English. Never reduce information density.
@@ -230,13 +225,7 @@ Do ONLY this:
 - Keep the CAPTION / TRANSCRIPT / ON-SCREEN TEXT / VISUAL CONTEXT / SOURCE PLATFORM section labels and structure intact.
 - Output ONLY the cleaned bundle text — no preamble, no explanation, no markdown.
 
-If you are unsure whether something is noise or content, KEEP IT.
-
-Bundle:
----
-{bundle}
----
-"""
+If you are unsure whether something is noise or content, KEEP IT."""
 
 
 
@@ -244,14 +233,20 @@ def _preprocess_bundle(bundle: str) -> str:
     """Gemini Flash Lite (500 RPD, separate pool): dedupe + strip filler before the
     main structuring call. Tries the dedicated key, then the spare-account pool on
     quota errors. Pure optimization — any/all failure passes the raw bundle through,
-    so Cerebras (60k TPM) still handles the fat bundle fine."""
+    so Cerebras (60k TPM) still handles the fat bundle fine.
+
+    The cleaning instructions ride as a stable system instruction so their tokens
+    are cached across cards; only the variable bundle is sent as contents."""
     settings = get_settings()
     keys = settings.gemini_vision_keys
     if not keys:
         return bundle
     log.info("preprocess: cleaning bundle with Gemini (%s)", settings.gemini_preprocess_model)
     cleaned = llm_gemini.complete_with_keys(
-        keys, settings.gemini_preprocess_model, _PREPROCESS_PROMPT.format(bundle=bundle)
+        keys,
+        settings.gemini_preprocess_model,
+        f"Bundle:\n---\n{bundle}\n---",
+        system_instruction=_PREPROCESS_SYSTEM,
     )
     if cleaned:
         log.info("preprocess: done (%d → %d chars)", len(bundle), len(cleaned))
@@ -265,36 +260,65 @@ def _preprocess_bundle(bundle: str) -> str:
 # LLM call (Cerebras primary -> Groq fallback)
 # --------------------------------------------------------------------------- #
 
-def complete(prompt: str, *, max_tokens: int = 8192, temperature: float = 0.2) -> str | None:
-    """Generic single-prompt completion: Cerebras primary (60k TPM, reliable 70b),
-    Groq fallback. Shared by the structuring pass and the gated insight pass
-    (docs/14). Any failure -> None; callers decide how to degrade."""
+def complete(
+    prompt: str,
+    *,
+    system: str | None = None,
+    max_tokens: int = 8192,
+    temperature: float = 0.2,
+) -> str | None:
+    """Generic completion: Gemini (primary) -> Cerebras -> Groq. Any failure -> None.
+
+    When `system` is provided, the static instructions are sent in the system
+    role/instruction and only the variable `prompt` as the user content. All three
+    backends cache a stable system prefix (Gemini 2.5 implicit caching; Cerebras /
+    Groq automatic prompt caching), so the big instruction block is billed at a
+    discount after the first call — with zero change to the instruction text or the
+    model output. Callers that pass no `system` behave exactly as before."""
     settings = get_settings()
     if settings.gemini_structuring_keys:
         out = llm_gemini.complete_with_keys(
-            settings.gemini_structuring_keys, settings.gemini_llm_model, prompt
+            settings.gemini_structuring_keys,
+            settings.gemini_llm_model,
+            prompt,
+            system_instruction=system,
         )
         if out:
             return out
         log.info("llm: Gemini failed; falling back to Cerebras")
     if settings.cerebras_enabled:
-        out = _call_cerebras(prompt, max_tokens, temperature)
+        out = _call_cerebras(prompt, max_tokens, temperature, system=system)
         if out:
             return out
         log.info("llm: Cerebras failed; falling back to Groq")
     if settings.groq_api_key.strip():
-        return _call_groq(prompt, max_tokens, temperature)
+        return _call_groq(prompt, max_tokens, temperature, system=system)
     return None
 
 
+def _messages(prompt: str, system: str | None) -> list[dict]:
+    """Build an OpenAI-style message list. A stable system message first (when
+    present) is the prefix these backends cache."""
+    msgs: list[dict] = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    msgs.append({"role": "user", "content": prompt})
+    return msgs
+
+
 def _call_llm(bundle: str) -> str | None:
-    """Structuring (pass 1): preprocess the bundle, then format + complete the card prompt."""
+    """Structuring (pass 1): preprocess the bundle, then complete with the static
+    instruction block as a cached system prompt + the bundle as the user content."""
     bundle = bundle[:_MAX_BUNDLE_CHARS]  # backstop cap — bound worst-case input tokens
-    cleaned = _preprocess_bundle(bundle)
-    return complete(_PROMPT.format(vocab=_VOCAB_SPEC, bundle=cleaned[:_MAX_BUNDLE_CHARS]))
+    cleaned = _preprocess_bundle(bundle)[:_MAX_BUNDLE_CHARS]
+    system = _SYSTEM_PROMPT.format(vocab=_VOCAB_SPEC)
+    user = f"Extracted text bundle:\n---\n{cleaned}\n---"
+    return complete(user, system=system)
 
 
-def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | None:
+def _call_cerebras(
+    prompt: str, max_tokens: int, temperature: float, *, system: str | None = None
+) -> str | None:
     settings = get_settings()
     log.info("llm: calling Cerebras (%s)", settings.cerebras_llm_model)
     try:
@@ -303,7 +327,7 @@ def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | No
         client = Cerebras(api_key=settings.cerebras_api_key)
         resp = client.chat.completions.create(
             model=settings.cerebras_llm_model,  # free tier; default llama-3.3-70b (60k TPM)
-            messages=[{"role": "user", "content": prompt}],
+            messages=_messages(prompt, system),
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -317,7 +341,9 @@ def _call_cerebras(prompt: str, max_tokens: int, temperature: float) -> str | No
         return None
 
 
-def _call_groq(prompt: str, max_tokens: int, temperature: float) -> str | None:
+def _call_groq(
+    prompt: str, max_tokens: int, temperature: float, *, system: str | None = None
+) -> str | None:
     settings = get_settings()
     log.info("llm: calling Groq (%s)", settings.groq_llm_model)
     try:
@@ -326,7 +352,7 @@ def _call_groq(prompt: str, max_tokens: int, temperature: float) -> str | None:
         client = Groq(api_key=settings.groq_api_key)
         resp = client.chat.completions.create(
             model=settings.groq_llm_model,  # free tier; default llama-3.3-70b-versatile
-            messages=[{"role": "user", "content": prompt}],
+            messages=_messages(prompt, system),
             temperature=temperature,
             max_tokens=max_tokens,  # rich carousels (e.g. 140-item lists) overflow a smaller cap
         )
