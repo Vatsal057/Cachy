@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'brand.dart';
+import 'ios_back_gesture.dart';
 
 class AppTheme {
   static ThemeData light() => _build(Brightness.light);
@@ -165,59 +166,5 @@ class Insets {
   static const splitPane = 1100.0;
 }
 
-/// Custom transition builder allowing swipe-right-to-go-back from ANYWHERE
-/// on the screen, while preserving iOS slide transitions.
-class IOSPageTransitionsBuilder extends PageTransitionsBuilder {
-  const IOSPageTransitionsBuilder();
-
-  @override
-  Widget buildTransitions<T>(
-    PageRoute<T> route,
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    return const CupertinoPageTransitionsBuilder().buildTransitions<T>(
-      route,
-      context,
-      animation,
-      secondaryAnimation,
-      _SwipeBackGate(child: child),
-    );
-  }
-}
-
-class _SwipeBackGate extends StatefulWidget {
-  const _SwipeBackGate({required this.child});
-  final Widget child;
-
-  @override
-  State<_SwipeBackGate> createState() => _SwipeBackGateState();
-}
-
-class _SwipeBackGateState extends State<_SwipeBackGate> {
-  double _dragDistance = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragStart: (_) => _dragDistance = 0,
-      onHorizontalDragUpdate: (details) {
-        _dragDistance += details.delta.dx;
-      },
-      onHorizontalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if ((velocity > 300 || _dragDistance > 70) && _dragDistance > 0) {
-          final nav = Navigator.of(context);
-          if (nav.canPop()) {
-            nav.pop();
-          }
-        }
-        _dragDistance = 0;
-      },
-      child: widget.child,
-    );
-  }
-}
+// The iOS-style interactive back gesture + transition lives in
+// ios_back_gesture.dart (IOSPageTransitionsBuilder), imported above.
