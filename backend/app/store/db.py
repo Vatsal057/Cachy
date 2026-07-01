@@ -280,6 +280,22 @@ class JobRow(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ConnectionRow(Base):
+    """A cached 'serendipity' link between two of an owner's cards — a surprising
+    but real connection, explained once by the LLM and stored so the Knowledge
+    Feed and Connections view can show it cheaply. Card ids are stored canonically
+    (a < b) so a pair is deduped regardless of discovery order. Owner-scoped."""
+
+    __tablename__ = "connections"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_uuid)
+    owner_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    card_a_id: Mapped[str] = mapped_column(String, index=True)
+    card_b_id: Mapped[str] = mapped_column(String, index=True)
+    blurb: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 # --------------------------------------------------------------------------- #
 # Engine / session lifecycle
 # --------------------------------------------------------------------------- #
@@ -679,8 +695,9 @@ async def cleanup_after_card_deletion(
     db: AsyncSession, card_id: str
 ) -> None:
     """Clean up orphaned collections, concepts, and catalog artifacts after a card is deleted."""
-    # 0. Drop persisted AI conversations (chat + rabbit hole) for this card.
+    # 0. Drop persisted AI conversations + cached connections for this card.
     await delete_card_conversations(db, card_id)
+    await delete_card_connections(db, card_id)
 
     # 1. Clean up concepts referencing this card
     concepts = (await db.execute(select(ConceptRow))).scalars().all()
@@ -785,6 +802,71 @@ async def delete_card_conversations(db: AsyncSession, card_id: str) -> None:
 
     await db.execute(
         sa_delete(ConversationRow).where(ConversationRow.card_id == card_id)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Connections — cached serendipity links (Knowledge Feed / Connections view)
+# --------------------------------------------------------------------------- #
+
+def _canonical_pair(a: str, b: str) -> tuple[str, str]:
+    """Order two card ids so a pair keys the same regardless of arg order."""
+    return (a, b) if a <= b else (b, a)
+
+
+async def get_connection(
+    db: AsyncSession, *, owner_id: str | None, card_a: str, card_b: str
+) -> ConnectionRow | None:
+    a, b = _canonical_pair(card_a, card_b)
+    stmt = select(ConnectionRow).where(
+        ConnectionRow.owner_id.is_(None) if owner_id is None
+        else ConnectionRow.owner_id == owner_id,
+        ConnectionRow.card_a_id == a,
+        ConnectionRow.card_b_id == b,
+    )
+    return (await db.execute(stmt)).scalars().first()
+
+
+async def save_connection(
+    db: AsyncSession, *, owner_id: str | None, card_a: str, card_b: str, blurb: str
+) -> ConnectionRow:
+    a, b = _canonical_pair(card_a, card_b)
+    row = await get_connection(db, owner_id=owner_id, card_a=a, card_b=b)
+    if row is None:
+        row = ConnectionRow(owner_id=owner_id, card_a_id=a, card_b_id=b, blurb=blurb)
+        db.add(row)
+    else:
+        row.blurb = blurb
+    await db.commit()
+    return row
+
+
+async def list_connections(
+    db: AsyncSession, *, owner_id: str | None, limit: int = 50
+) -> list[ConnectionRow]:
+    stmt = (
+        select(ConnectionRow)
+        .where(
+            ConnectionRow.owner_id.is_(None) if owner_id is None
+            else ConnectionRow.owner_id == owner_id
+        )
+        .order_by(ConnectionRow.created_at.desc())
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def delete_card_connections(db: AsyncSession, card_id: str) -> None:
+    """Drop cached connections that reference a deleted card."""
+    from sqlalchemy import delete as sa_delete, or_
+
+    await db.execute(
+        sa_delete(ConnectionRow).where(
+            or_(
+                ConnectionRow.card_a_id == card_id,
+                ConnectionRow.card_b_id == card_id,
+            )
+        )
     )
 
 

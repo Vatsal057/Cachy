@@ -19,45 +19,27 @@ import logging
 
 from app.models.card import Card
 from app.pipeline.structuring import complete, _strip_fences
-from app.services.llm_chat import card_context
 
 log = logging.getLogger("services.llm_rabbithole")
 
-_MAX_THREADS = 5
-_MAX_TRAIL = 8  # cap the breadcrumb context so prompts stay small + cheap
+_MAX_THREADS = 4
+_MAX_TRAIL = 6  # cap the breadcrumb context so prompts stay small + cheap
+_MAX_ANCHOR = 400  # chars of card context — just enough to set topic/level
+_MAX_OUTPUT_TOKENS = 512  # 3-4 sentences + a few short threads never needs more
 
-_PROMPT = """You are a brilliant, generous explainer guiding someone down a
-"rabbit hole" of curiosity. They started from the saved card below and are now
-exploring OUTWARD from it — following one idea to the next. Your job is to feed
-that curiosity: explain the current thread well, then open new doors.
-
-WHERE THEY STARTED (anchor — for tone/level only, do NOT confine yourself to it):
----
+# Terse on purpose: a shorter prompt is cheaper per call and the model already
+# knows how to explain. Every line here earns its tokens.
+_PROMPT = """Guide a curious reader down a "rabbit hole" that started from this note:
 {anchor}
----
-{trail}
-CURRENT THREAD THEY TAPPED: "{topic}"
+{trail}THREAD THEY TAPPED: "{topic}"
 
-Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
-{{
-  "explanation": str,   // the payoff: 3-5 sentences that genuinely EXPLAIN this
-                        // thread using your broad general knowledge. Teach the
-                        // real idea — do NOT restrict yourself to the card, and
-                        // do NOT say "the card doesn't cover this". Concrete,
-                        // vivid, accurate. You may use inline **bold** for key
-                        // terms and *italic* for emphasis, sparingly. No headers,
-                        // no lists, no links.
-  "threads": [str]      // 3-5 SHORT (3-8 word) follow-on threads that branch
-                        // naturally from your explanation — the next places a
-                        // curious mind would want to go. Each is a self-contained
-                        // topic/question, distinct from the trail already taken.
-}}
+Explain that thread using your general knowledge — go beyond the note, never say
+it "isn't covered". Then offer fresh threads to keep exploring.
 
-Rules:
-- Be accurate and specific. If the thread is a genuine question, answer it.
-- Threads must move FORWARD (deeper or sideways), never repeat the trail.
-- Output strict JSON. No commentary outside the JSON.
-"""
+Return ONLY strict JSON (no fences):
+{{"explanation": str, "threads": [str]}}
+- explanation: 3-4 sentences, concrete and accurate. Inline **bold**/*italic* ok, sparingly. No lists/headers/links.
+- threads: 3-4 short (3-8 words) follow-ups that branch forward, none repeating the trail."""
 
 
 def _clean_str(value, limit: int = 1200) -> str:
@@ -112,6 +94,14 @@ def _validate(raw_text: str, trail: list[str]) -> dict | None:
     return {"explanation": explanation, "threads": threads}
 
 
+def _anchor(card: Card) -> str:
+    """A minimal text anchor — the one-liner + summary set the topic and level.
+    We deliberately skip the full block body: the rabbit hole explores OUTWARD,
+    so a heavy card dump would waste tokens without improving the explanation."""
+    parts = [p for p in (card.base.one_liner, card.base.tldr) if p and p.strip()]
+    return " — ".join(parts)[:_MAX_ANCHOR]
+
+
 def explore(card: Card, topic: str, trail: list[str]) -> dict | None:
     """Explore one thread of the rabbit hole.
 
@@ -128,11 +118,11 @@ def explore(card: Card, topic: str, trail: list[str]) -> dict | None:
     if not topic:
         return None
     prompt = _PROMPT.format(
-        anchor=card_context(card)[:2000],
+        anchor=_anchor(card),
         trail=_format_trail(trail),
         topic=topic,
     )
-    raw = complete(prompt, max_tokens=1024, temperature=0.5)
+    raw = complete(prompt, max_tokens=_MAX_OUTPUT_TOKENS, temperature=0.5)
     if not raw:
         log.info("rabbithole: no LLM output for topic %r", topic)
         return None

@@ -31,6 +31,7 @@ import '../../../core/widgets/spot_art.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../catalog/views/catalog_screen.dart';
 import '../../concepts/views/concepts_screen.dart';
+import '../../feed/views/knowledge_feed_screen.dart';
 import '../../library/views/library_chat_screen.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
@@ -74,6 +75,13 @@ class _LibraryView extends StatelessWidget {
                   child: PhosphorIcon(PhosphorIconsRegular.cloudSlash, size: 20),
                 ),
               ),
+            IconButton(
+              tooltip: 'Feed',
+              icon: const PhosphorIcon(PhosphorIconsRegular.cardsThree),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const KnowledgeFeedScreen()),
+              ),
+            ),
             IconButton(
               tooltip: 'Chat',
               icon: const PhosphorIcon(PhosphorIconsRegular.chats),

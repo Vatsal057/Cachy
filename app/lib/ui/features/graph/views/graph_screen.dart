@@ -33,6 +33,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/spot_art.dart';
 import '../../concepts/views/concept_detail_screen.dart';
+import '../../feed/views/connections_screen.dart';
 import '../../reader/views/reader_screen.dart';
 
 // ========================================================================== //
@@ -707,6 +708,13 @@ class _GraphScreenState extends State<GraphScreen>
       appBar: AppBar(
         title: const Text('Graph'),
         actions: [
+          IconButton(
+            tooltip: 'Connections',
+            icon: const PhosphorIcon(PhosphorIconsRegular.sparkle),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ConnectionsScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Settings',
             icon: const PhosphorIcon(PhosphorIconsRegular.sliders),

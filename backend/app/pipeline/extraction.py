@@ -461,6 +461,18 @@ def _vision_read_video(frames: list[str]) -> str:
 # Aggregate
 # --------------------------------------------------------------------------- #
 
+# Safety caps — bound only pathological inputs (e.g. an hour-long podcast
+# transcription or a massive article), never real content. Short-form reels run a
+# few thousand chars; even a long video's transcript sits well under these, so
+# these do not trim normal cards — they exist purely to stop a runaway outlier
+# from blowing up cost.
+_MAX_CAPTION_CHARS = 3000
+_MAX_TRANSCRIPT_CHARS = 16000
+_MAX_OCR_CHARS = 5000
+_MAX_VISUAL_CONTEXT_CHARS = 3000
+_MAX_ARTICLE_CHARS = 20000
+
+
 def _aggregate(
     caption: str,
     transcript: str,
@@ -468,13 +480,17 @@ def _aggregate(
     source_line: str,
     visual_context: str = "",
 ) -> str:
+    caption = caption.strip()[:_MAX_CAPTION_CHARS]
+    transcript = transcript.strip()[:_MAX_TRANSCRIPT_CHARS]
+    ocr_text = ocr_text.strip()[:_MAX_OCR_CHARS]
+    visual_context = visual_context.strip()[:_MAX_VISUAL_CONTEXT_CHARS]
     parts = [
-        f"CAPTION: {caption.strip()}" if caption.strip() else "CAPTION:",
-        f"TRANSCRIPT: {transcript.strip()}" if transcript.strip() else "TRANSCRIPT:",
-        f"ON-SCREEN TEXT: {ocr_text.strip()}" if ocr_text.strip() else "ON-SCREEN TEXT:",
+        f"CAPTION: {caption}" if caption else "CAPTION:",
+        f"TRANSCRIPT: {transcript}" if transcript else "TRANSCRIPT:",
+        f"ON-SCREEN TEXT: {ocr_text}" if ocr_text else "ON-SCREEN TEXT:",
     ]
-    if visual_context.strip():
-        parts.append(f"VISUAL CONTEXT (FRAME DESCRIPTIONS):\n{visual_context.strip()}")
+    if visual_context:
+        parts.append(f"VISUAL CONTEXT (FRAME DESCRIPTIONS):\n{visual_context}")
     parts.append(f"SOURCE PLATFORM: {source_line}")
     return "\n".join(parts)
 
@@ -484,13 +500,15 @@ def _aggregate_article(
 ) -> str:
     """Text-source bundle (docs/02 article path): includes vision descriptions
     for attached/lead images when present."""
+    text = text.strip()[:_MAX_ARTICLE_CHARS]
+    ocr_text = ocr_text.strip()[:_MAX_OCR_CHARS]
     parts = [
         f"TITLE: {title.strip()}" if title.strip() else "TITLE:",
         f"AUTHOR: {author.strip()}" if author and author.strip() else "AUTHOR:",
-        f"ARTICLE TEXT: {text.strip()}" if text.strip() else "ARTICLE TEXT:",
+        f"ARTICLE TEXT: {text}" if text else "ARTICLE TEXT:",
     ]
-    if ocr_text.strip():
-        parts.append(f"ATTACHED VISUAL CONTENT / ON-SCREEN TEXT:\n{ocr_text.strip()}")
+    if ocr_text:
+        parts.append(f"ATTACHED VISUAL CONTENT / ON-SCREEN TEXT:\n{ocr_text}")
     parts.append(f"SOURCE PLATFORM: {source_line}")
     return "\n".join(parts)
 

@@ -1,7 +1,8 @@
 """Insight analysis (docs/14): the GATED second pass. Runs ONLY for cards the
 structuring pass judged `depth == "deep"`. One text-only LLM call turns the card's
-own summary + body into a reasoning layer — claims, blind spots, rabbit holes, a
-small topic map, and a ready-to-paste deep-research prompt.
+own summary + body into a reasoning layer — rabbit-hole threads to explore, a
+short "test yourself" quiz for active recall, and a ready-to-paste deep-research
+prompt.
 
 Same discipline as structuring: never trust the model. Every field is validated
 and independently optional; a malformed or empty result yields `None` (no layer),
@@ -15,52 +16,57 @@ import logging
 
 from app.models.card import (
     Insight,
+    Quiz,
+    QuizQuestion,
     RabbitHole,
-    TopicMap,
 )
 from app.pipeline.structuring import complete, _strip_fences
 
 log = logging.getLogger("pipeline.insight")
 
 _MAX = {
-    "questions": 6,
-    "adjacent_topics": 6,
-    "advanced_concepts": 5,
-    "nodes": 6,
+    "questions": 3,
+    "adjacent_topics": 3,
+    "advanced_concepts": 2,
+    "quiz": 4,
 }
 
 _PROMPT = """You are a sharp analyst. You are given a knowledge card distilled from a
 short-form video on an idea-rich topic. Produce a DEEP ANALYSIS layer — the
-scaffolding a curious person would use to go FURTHER than the video. Everything
-must be something the reader can act on, not passive commentary.
+scaffolding a curious person would use to go FURTHER than the video, and to test
+whether they actually got it. Everything must be something the reader can act on.
 
 Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 {{
   "rabbit_hole": {{           // threads to go deeper; each becomes a tappable
-                              // question the reader can ask an AI. Each list may be empty.
+                              // prompt in an explorer. Each list may be empty.
     "questions": [str],            // sharp open questions the content raises
     "adjacent_topics": [str],      // neighbouring subjects worth exploring
     "advanced_concepts": [str]     // next-level ideas for someone who gets the basics
   }},
-  "topic_map": {{             // a one-hop concept map, or null if not meaningful
-    "center": str,                 // the core idea (1-3 words)
-    "nodes": [str]                 // 3-6 connected concepts (1-3 words each)
-  }},
+  "quiz": [                   // 2-4 multiple-choice questions to test recall, or []
+    {{
+      "question": str,              // one clear question about the card's ideas
+      "options": [str],             // 3-4 plausible choices, exactly one correct
+      "answer_index": int,          // 0-based index of the correct option
+      "explanation": str            // one short sentence on WHY that answer is right
+    }}
+  ],
   "deep_research_prompt": str // a ready-to-paste prompt for an external LLM (see below)
 }}
 
 Rules:
 - Ground EVERY item in the card's actual content. Do not invent. If the card is
-  thin, return fewer items — an empty list is correct when there is nothing real
-  to say. Never pad.
-- rabbit_hole: phrase questions/topics so they make sense as a prompt the reader
-  taps to ask an AI (e.g. "How does compound interest differ from simple
-  interest?", "Behavioural economics of saving"). Concrete, specific, self-contained.
-- topic_map: only when the content genuinely connects several concepts. If it is a
-  single narrow point, set "topic_map": null.
+  thin, return fewer items — an empty list is correct. Never pad.
+- rabbit_hole: keep it TIGHT. Only the sharpest threads (at most 2-3 each), phrased
+  so they work as a prompt (e.g. "How does compound interest differ from simple
+  interest?"). Concrete, specific, self-contained.
+- quiz: test real understanding of the card's ideas, not trivia. Each question has
+  3-4 options with exactly one clearly-correct answer and a one-line explanation.
+  Return [] if the card is too thin to quiz honestly.
 - deep_research_prompt: a structured, rigorous research brief (research objectives,
   desired output sections, constraints) an expert could paste into a frontier LLM to
-  go far beyond this video. Plain text, ~150-350 words, no markdown headers. Omit it
+  go far beyond this video. Plain text, ~150-300 words, no markdown headers. Omit it
   (use null) only if the topic does not reward independent research.
 - Output strict JSON. No commentary.
 
@@ -111,6 +117,33 @@ def _str_list(raw, cap: int) -> list[str]:
     return out
 
 
+def _parse_quiz(raw, cap: int) -> Quiz:
+    """Validate the quiz array. Drops any malformed question; keeps at most `cap`
+    valid ones. Options are cleaned + deduped and the answer index is bounds-checked."""
+    if not isinstance(raw, list):
+        return Quiz()
+    out: list[QuizQuestion] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        question = _clean_str(item.get("question"), limit=200)
+        options = _str_list(item.get("options"), cap=4)
+        answer_index = item.get("answer_index")
+        if not isinstance(answer_index, int):
+            continue
+        q = QuizQuestion(
+            question=question,
+            options=options,
+            answer_index=answer_index,
+            explanation=_clean_str(item.get("explanation"), limit=240),
+        )
+        if q.is_valid():
+            out.append(q)
+        if len(out) >= cap:
+            break
+    return Quiz(questions=out)
+
+
 def _validate(raw_text: str) -> Insight | None:
     try:
         data = json.loads(_strip_fences(raw_text))
@@ -129,19 +162,13 @@ def _validate(raw_text: str) -> Insight | None:
         ),
     )
 
-    topic_map = None
-    tm_raw = data.get("topic_map")
-    if isinstance(tm_raw, dict):
-        center = _clean_str(tm_raw.get("center"), limit=60)
-        nodes = _str_list(tm_raw.get("nodes"), _MAX["nodes"])
-        if center and len(nodes) >= 2:  # a center with <2 satellites is not a map
-            topic_map = TopicMap(center=center, nodes=nodes)
+    quiz = _parse_quiz(data.get("quiz"), _MAX["quiz"])
 
     deep_research_prompt = _clean_str(data.get("deep_research_prompt"), limit=4000) or None
 
     insight = Insight(
         rabbit_hole=rabbit_hole,
-        topic_map=topic_map,
+        quiz=quiz,
         deep_research_prompt=deep_research_prompt,
     )
     # Drop a layer that came back empty after validation — render nothing rather
