@@ -18,6 +18,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../library/views/card_tile.dart';
+import '../../presenter/agent_bus.dart';
 import '../../reader/views/reader_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -36,6 +37,28 @@ class _SearchScreenState extends State<SearchScreen> {
   List<model.Card> _results = const [];
   String _query = '';
   ContentType? _filter; // null = All
+
+  // Agent driving: let the presenter agent run searches while mounted.
+  AgentBus? _bus;
+  SearchAgentHooks? _hooks;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_hooks != null) return;
+    _bus = context.read<AgentBus>();
+    final hooks = SearchAgentHooks(run: _runAgentQuery);
+    _hooks = hooks;
+    _bus!.attachSearch(hooks);
+  }
+
+  void _runAgentQuery(String query) {
+    if (!mounted) return;
+    _controller.text = query;
+    _query = query.trim();
+    setState(() {});
+    if (_query.isNotEmpty) _run();
+  }
 
   void _onChanged(String value) {
     _query = value.trim();
@@ -80,6 +103,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    final h = _hooks;
+    if (h != null) _bus?.detachSearch(h);
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();

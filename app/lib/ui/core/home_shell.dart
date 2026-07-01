@@ -13,11 +13,20 @@ import 'package:provider/provider.dart';
 
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
+import '../features/catalog/views/catalog_screen.dart';
 import '../features/collections/views/collections_screen.dart';
+import '../features/concepts/views/concepts_screen.dart';
 import '../features/feed/views/knowledge_feed_screen.dart';
+import '../features/graph/views/graph_screen.dart';
 import '../features/library/view_models/library_view_model.dart';
 import '../features/library/views/library_screen.dart';
+import '../features/presenter/agent_bus.dart';
+import '../features/presenter/presenter_controller.dart';
+import '../features/presenter/presenter_overlay.dart';
 import '../features/profile/views/profile_screen.dart';
+import '../features/reader/views/reader_screen.dart';
+import '../features/search/views/search_screen.dart';
+import '../../data/repositories/card_repository.dart';
 import 'brand.dart';
 import 'theme.dart';
 import 'widgets/adaptive_modal.dart';
@@ -65,6 +74,91 @@ class _HomeShellState extends State<HomeShell> {
     ProfileScreen(),     // 4 — YOU
   ];
 
+  // Present mode: a self-driving spoken tour that navigates the app and answers
+  // audience questions. While active, Graph/Search render in-body (not pushed)
+  // so the presenter control bar stays visible on top.
+  PresenterController? _presenter;
+  Widget? _presenterScreen; // GraphScreen/SearchScreen shown during the tour
+
+  void _startPresenting() {
+    final repo = context.read<CardRepository>();
+    final bus = context.read<AgentBus>()
+      ..onNavigate = _goToView
+      ..onOpenCard = _openCardInPresenter
+      ..onCreateCard = _createCardInPresenter;
+    final controller = PresenterController(repository: repo, bus: bus);
+    setState(() => _presenter = controller);
+    controller.addListener(_onPresenterChanged);
+    controller.start();
+  }
+
+  /// Open a card in the reader as a presenter overlay (kept under the agent
+  /// glyph, not pushed as a route) so the agent stays in control.
+  Future<void> _openCardInPresenter(String cardId) async {
+    if (!mounted) return;
+    setState(() => _presenterScreen = ReaderScreen(cardId: cardId));
+  }
+
+  /// Submit a URL to the live pipeline and open the streaming card so the
+  /// audience watches it fill in.
+  Future<String?> _createCardInPresenter(String url) async {
+    final repo = context.read<CardRepository>();
+    try {
+      final result = await repo.share(url);
+      if (mounted && result.cardId.isNotEmpty) {
+        setState(() => _presenterScreen = ReaderScreen(cardId: result.cardId));
+      }
+      return result.cardId;
+    } catch (_) {
+      return null; // live demo: don't crash the tour if the pipeline is down
+    }
+  }
+
+  void _onPresenterChanged() {
+    if (_presenter?.phase == PresenterPhase.done) {
+      final c = _presenter;
+      c?.removeListener(_onPresenterChanged);
+      setState(() {
+        _presenter = null;
+        _presenterScreen = null;
+      });
+      c?.dispose();
+    }
+  }
+
+  /// Navigation the agent drives. Tabs switch the shell; graph/search/catalog/
+  /// concepts/reader render in-body under the agent glyph.
+  void _goToView(String view) {
+    setState(() {
+      switch (view) {
+        case 'feed':
+          _presenterScreen = null;
+          _index = 3;
+        case 'collections':
+          _presenterScreen = null;
+          _index = 1;
+        case 'actions':
+          _presenterScreen = null;
+          _index = 2;
+        case 'profile':
+          _presenterScreen = null;
+          _index = 4;
+        case 'graph':
+          _presenterScreen = const GraphScreen();
+        case 'search':
+          _presenterScreen = const SearchScreen();
+        case 'catalog':
+          _presenterScreen = const CatalogScreen();
+        case 'concepts':
+          _presenterScreen = const ConceptsScreen();
+        case 'library':
+        default:
+          _presenterScreen = null;
+          _index = 0;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<LibraryViewModel>(
@@ -89,6 +183,12 @@ class _HomeShellState extends State<HomeShell> {
         const SingleActivator(LogicalKeyboardKey.digit4, control: true): () => _select(3),
         const SingleActivator(LogicalKeyboardKey.digit5, meta: true): () => _select(4),
         const SingleActivator(LogicalKeyboardKey.digit5, control: true): () => _select(4),
+        // 6/7 push Search/Graph (not shell tabs) — used by the presenter agent
+        // to switch the visible screen live during a demo Q&A.
+        const SingleActivator(LogicalKeyboardKey.digit6, meta: true): () => _openSearch(context),
+        const SingleActivator(LogicalKeyboardKey.digit6, control: true): () => _openSearch(context),
+        const SingleActivator(LogicalKeyboardKey.digit7, meta: true): () => _openGraph(context),
+        const SingleActivator(LogicalKeyboardKey.digit7, control: true): () => _openGraph(context),
       },
       child: Focus(
         autofocus: true,
@@ -118,6 +218,8 @@ class _HomeShellState extends State<HomeShell> {
         children: [
           const Positioned.fill(child: AmbientBackground()),
           IndexedStack(index: _index, children: _screens),
+          if (_presenterScreen != null) Positioned.fill(child: _presenterScreen!),
+          ..._presenterLayers(context),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -184,19 +286,93 @@ class _HomeShellState extends State<HomeShell> {
                   onCapture: () => showCaptureSheet(context),
                 ),
                 Expanded(
-                  child: IndexedStack(index: _index, children: _screens),
+                  child: Stack(
+                    children: [
+                      IndexedStack(index: _index, children: _screens),
+                      if (_presenterScreen != null)
+                        Positioned.fill(child: _presenterScreen!),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
+          ..._presenterLayers(context),
         ],
       ),
     );
   }
 
+  /// Overlay layers shared by both shells: the control bar while presenting, or a
+  /// "Present" launch chip when idle.
+  List<Widget> _presenterLayers(BuildContext context) {
+    if (_presenter != null) {
+      return [PresenterOverlay(controller: _presenter!)];
+    }
+    return [
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _PresentButton(onTap: _startPresenting),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   void _select(int i) {
     if (i == _index) return;
     setState(() => _index = i);
+  }
+
+  void _openSearch(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchScreen()));
+  }
+
+  void _openGraph(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GraphScreen()));
+  }
+}
+
+// ── "Present" launch chip ──────────────────────────────────────────────────── //
+
+class _PresentButton extends StatelessWidget {
+  const _PresentButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.primary,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 2,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.slideshow_rounded, size: 18, color: theme.colorScheme.onPrimary),
+              const SizedBox(width: 6),
+              Text('Present',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
