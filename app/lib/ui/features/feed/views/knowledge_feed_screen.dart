@@ -76,6 +76,9 @@ class _FeedViewState extends State<_FeedView> {
       next: () => _next(_total),
       prev: () => _prev(_total),
       count: () => _total,
+      shuffle: () {
+        if (mounted) context.read<KnowledgeFeedViewModel>().refresh();
+      },
     );
     _hooks = hooks;
     _bus!.attachFeed(hooks);

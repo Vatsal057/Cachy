@@ -188,6 +188,8 @@ class _GraphScreenState extends State<GraphScreen>
       open: _agentOpen,
       wander: _agentWander,
       reset: _agentReset,
+      filterCluster: _agentFilterCluster,
+      toggleConcepts: _agentToggleConcepts,
     );
     _hooks = hooks;
     _bus!.attachGraph(hooks);
@@ -272,6 +274,33 @@ class _GraphScreenState extends State<GraphScreen>
       _alphaTarget = 0.0;
     });
     if (!_ticker.isActive) _ticker.start();
+  }
+
+  /// Filter the graph down to a single community cluster.
+  Future<void> _agentFilterCluster() async {
+    final data = _data;
+    if (!mounted || data == null || data.clusters.isEmpty) return;
+    setState(() {
+      _localMode = false;
+      _localRoot = null;
+      _activeCluster = data.clusters.first.id;
+      _alpha = 1.0;
+      _alphaTarget = 0.0;
+    });
+    if (!_ticker.isActive) _ticker.start();
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+  }
+
+  /// Toggle the concept hub nodes on/off so the audience sees their effect.
+  Future<void> _agentToggleConcepts() async {
+    if (!mounted) return;
+    setState(() {
+      _showConcepts = !_showConcepts;
+      _alpha = 1.0;
+      _alphaTarget = 0.0;
+    });
+    if (!_ticker.isActive) _ticker.start();
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
   }
 
   Future<void> _load() async {
