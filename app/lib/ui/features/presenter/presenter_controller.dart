@@ -203,11 +203,12 @@ const List<AgentBeat> kTour = [
     }),
   ),
   AgentBeat(
-    focus: 'reader.blocks',
-    say: "And there it is — a brand-new card, built from nothing. That's Cachy. "
-        "I'm not going anywhere though — tap me, ask me anything, or hand me a "
-        "task.",
-    action: AgentAction('scroll', {'target': 'reader', 'dy': 560, 'sweep': true}),
+    focus: 'content',
+    say: "Watch the stages run — fetching the page, pulling the text, shaping "
+        "it into a card — and in a moment it opens as a brand-new card, built "
+        "from nothing. That's Cachy. I'm not going anywhere though — tap me, "
+        "ask me anything, or hand me a task.",
+    action: AgentAction('point'),
   ),
 ];
 
@@ -932,10 +933,8 @@ class PresenterController extends ChangeNotifier {
 
   Future<void> _followActions() async {
     final card = await _cardWithActions();
+    _bus.onNavigate?.call('actions');
     if (card == null || card.actionItems.items.isEmpty) {
-      // Nothing to follow — still show the hub, but don't nest a _speak while
-      // the beat's narration may be running.
-      _bus.onNavigate?.call('actions');
       await _settle(ms: 700);
       return;
     }
@@ -948,13 +947,19 @@ class PresenterController extends ChangeNotifier {
     } catch (e, st) {
       _logError('patchActionItems (follow, ${card.cardId})', e, st);
     }
-    _bus.onNavigate?.call('actions');
+    // The hub caches its list on load — reload it so the card we just followed
+    // actually appears, otherwise the To-do screen looks empty.
+    await _try('onRefreshActions', () => _bus.onRefreshActions?.call());
     await _settle(ms: 900);
   }
 
   Future<void> _toggleActionItem() async {
     final card = await _cardWithActions();
     if (card == null || card.actionItems.items.isEmpty) return;
+    // Expand the card's group first, so all of that note's to-dos are visible —
+    // the "tap an item and it expands" beat.
+    _bus.onExpandActionGroup?.call(card.cardId);
+    await _settle(ms: 550);
     final first = card.actionItems.items.first;
     final updated = model.ActionItems(
       followed: true,
@@ -970,7 +975,7 @@ class PresenterController extends ChangeNotifier {
     } catch (e, st) {
       _logError('patchActionItems (toggle, ${card.cardId})', e, st);
     }
-    _bus.onNavigate?.call('actions');
+    await _try('onRefreshActions', () => _bus.onRefreshActions?.call());
     await _settle(ms: 800);
   }
 

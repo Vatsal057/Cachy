@@ -37,6 +37,11 @@ class PresenterSpotlight extends StatefulWidget {
 class _PresenterSpotlightState extends State<PresenterSpotlight> {
   Timer? _poll;
 
+  // Anchors the overlay's own box so we can convert a target's global rect into
+  // this layer's local coordinate space (they don't necessarily share an
+  // origin — the layer may sit below a status bar / inside insets).
+  final _overlayKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -70,7 +75,9 @@ class _PresenterSpotlightState extends State<PresenterSpotlight> {
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: IgnorePointer(
-        child: LayoutBuilder(
+        child: KeyedSubtree(
+          key: _overlayKey,
+          child: LayoutBuilder(
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
             final id = widget.controller.focusId;
@@ -89,19 +96,35 @@ class _PresenterSpotlightState extends State<PresenterSpotlight> {
               color: Theme.of(context).colorScheme.primary,
             );
           },
+          ),
         ),
       ),
     );
   }
 
-  /// Real widget bounds when the target is registered and mounted, else a
-  /// generous fallback region so guidance degrades instead of vanishing.
+  /// This layer's global origin, so a target's global rect can be expressed in
+  /// local coordinates. Read from last frame's box (origin is stable, so a
+  /// one-frame lag is harmless).
+  Offset get _origin {
+    final ro = _overlayKey.currentContext?.findRenderObject();
+    if (ro is RenderBox && ro.attached && ro.hasSize) {
+      return ro.localToGlobal(Offset.zero);
+    }
+    return Offset.zero;
+  }
+
+  /// Real widget bounds (mapped into this layer's local space) when the target
+  /// is registered and mounted, else a generous fallback region so guidance
+  /// degrades instead of vanishing.
   Rect _resolve(String id, Size size) {
     final live = widget.bus.spotlightRect(id);
     if (live != null && !live.isEmpty) {
+      // The registry hands back *global* coordinates; shift into this overlay's
+      // local space so the box actually hugs the widget.
+      final local = live.shift(-_origin);
       // Keep the hole on screen even if the widget hangs off an edge.
       final screen = Offset.zero & size;
-      final clamped = live.intersect(screen.inflate(-4));
+      final clamped = local.intersect(screen.inflate(-4));
       if (!clamped.isEmpty) return clamped;
     }
     return _fallbackRect(id, size);
