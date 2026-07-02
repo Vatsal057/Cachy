@@ -9,11 +9,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../../../domain/models/card.dart';
 import '../../../core/brand.dart';
 import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/stat_strip.dart';
+import '../../presenter/agent_bus.dart';
 import 'rabbit_hole_screen.dart';
 
 /// Hard ceiling on rabbit-hole starter threads shown in the panel — keeps the
@@ -100,6 +103,34 @@ class _DiveDeeperButton extends StatefulWidget {
 
 class _DiveDeeperButtonState extends State<_DiveDeeperButton> {
   bool _expanded = false;
+  AgentBus? _bus;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Let the presenter agent expand this section (and scroll it into view)
+    // the way a person would tap it open.
+    _bus = context.read<AgentBus>()..onExpandDeepDive = _presenterExpand;
+  }
+
+  Future<void> _presenterExpand() async {
+    if (!mounted) return;
+    await Scrollable.ensureVisible(
+      context,
+      alignment: 0.1,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeInOutCubic,
+    );
+    if (mounted && !_expanded) setState(() => _expanded = true);
+  }
+
+  @override
+  void dispose() {
+    if (identical(_bus?.onExpandDeepDive, _presenterExpand)) {
+      _bus?.onExpandDeepDive = null;
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

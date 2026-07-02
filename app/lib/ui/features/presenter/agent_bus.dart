@@ -195,6 +195,11 @@ class AgentBus extends ChangeNotifier {
   /// "Fetch info" demo). No-op if the catalog is empty.
   Future<void> Function()? onOpenCatalogItem;
 
+  /// Expand the reader's "Dive deeper" section in place (scrolls it into view
+  /// and opens the panel). Registered by the section while a reader is on
+  /// screen; null if the current card has no deep-dive.
+  Future<void> Function()? onExpandDeepDive;
+
   // ── Screen-provided hooks (present only while that screen is mounted) ──── //
 
   GraphAgentHooks? graph;
