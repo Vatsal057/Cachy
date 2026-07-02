@@ -274,16 +274,26 @@ class AgentBus extends ChangeNotifier {
   }
 
   /// Smoothly scroll a registered surface by [dy] pixels (negative = up),
-  /// clamped to its extent. No-op while the surface isn't mounted.
-  Future<void> scrollBy(String id, double dy) async {
+  /// clamped to its extent, over [duration]. No-op while the surface isn't
+  /// mounted. Returns the distance actually travelled (0 if it couldn't move).
+  Future<double> scrollBy(
+    String id,
+    double dy, {
+    Duration duration = const Duration(milliseconds: 900),
+  }) async {
     final c = _scrollables[id];
-    if (c == null || !c.hasClients) return;
-    final target =
-        (c.offset + dy).clamp(0.0, c.position.maxScrollExtent);
-    await c.animateTo(
-      target,
-      duration: const Duration(milliseconds: 900),
-      curve: Curves.easeInOutCubic,
-    );
+    if (c == null || !c.hasClients) return 0;
+    final from = c.offset;
+    final target = (from + dy).clamp(0.0, c.position.maxScrollExtent);
+    if ((target - from).abs() < 1) return 0;
+    await c.animateTo(target, duration: duration, curve: Curves.easeInOutCubic);
+    return target - from;
+  }
+
+  /// Distance a registered surface can still scroll down from where it is.
+  double scrollRoom(String id) {
+    final c = _scrollables[id];
+    if (c == null || !c.hasClients) return 0;
+    return (c.position.maxScrollExtent - c.offset).clamp(0.0, double.infinity);
   }
 }

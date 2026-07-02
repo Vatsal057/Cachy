@@ -75,12 +75,12 @@ class _PresenterSpotlightState extends State<PresenterSpotlight> {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
             final id = widget.controller.focusId;
             final rect = id == null ? null : _resolve(id, size);
-            // Dim the app only around genuinely small targets (a button, a nav
-            // item); dimming a region that already fills the screen just makes
-            // everything darker. The cursor, though, always shows so the
-            // audience can see where the agent is clicking.
+            // Dim the app only around genuinely small controls (a button, a nav
+            // item, the action bar). For anything larger, dimming reads as the
+            // whole screen going dark — distracting — so we skip the scrim and
+            // just let the cursor + a soft ring point the way.
             final small = rect != null &&
-                rect.width * rect.height < size.width * size.height * 0.5;
+                rect.width * rect.height < size.width * size.height * 0.22;
             return _Guidance(
               target: rect,
               dim: small,
@@ -254,16 +254,16 @@ class _SpotlightPainter extends CustomPainter {
       Path()..addRect(full),
       Path()..addRRect(cut),
     );
-    // Light enough that a dark theme doesn't collapse into a black wash.
-    canvas.drawPath(scrim, Paint()..color = Colors.black.withValues(alpha: 0.35));
-    // Glowing ring around the lit widget.
+    // Gentle scrim — enough to lift the target out, not a black wash.
+    canvas.drawPath(scrim, Paint()..color = Colors.black.withValues(alpha: 0.18));
+    // Soft ring around the lit widget.
     canvas.drawRRect(
       cut,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = color.withValues(alpha: 0.85)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..strokeWidth = 1.5
+        ..color = color.withValues(alpha: 0.6)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
   }
 
@@ -311,18 +311,18 @@ class _Cursor extends StatelessWidget {
           ),
           // The pointer dot.
           Container(
-            width: 24,
-            height: 24,
+            width: 22,
+            height: 22,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: color.withValues(alpha: 0.35),
-              border:
-                  Border.all(color: Colors.white.withValues(alpha: 0.9), width: 2),
+              color: color.withValues(alpha: 0.30),
+              border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.85), width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.7),
-                  blurRadius: 18,
-                  spreadRadius: 2,
+                  color: color.withValues(alpha: 0.45),
+                  blurRadius: 10,
+                  spreadRadius: 1,
                 ),
               ],
             ),
