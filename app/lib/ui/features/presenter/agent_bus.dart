@@ -200,6 +200,14 @@ class AgentBus extends ChangeNotifier {
   /// screen; null if the current card has no deep-dive.
   Future<void> Function()? onExpandDeepDive;
 
+  /// Reload the Actions (To-do) hub so a card the agent just followed actually
+  /// shows up (the hub caches its list on load).
+  Future<void> Function()? onRefreshActions;
+
+  /// Expand a followed card's to-do group in the Actions hub, the way tapping
+  /// its header does.
+  void Function(String cardId)? onExpandActionGroup;
+
   // ── Screen-provided hooks (present only while that screen is mounted) ──── //
 
   GraphAgentHooks? graph;

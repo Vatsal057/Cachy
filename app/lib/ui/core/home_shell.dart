@@ -29,6 +29,7 @@ import '../features/profile/views/profile_screen.dart';
 import '../features/reader/views/chat_screen.dart';
 import '../features/reader/views/rabbit_hole_screen.dart';
 import '../features/reader/views/reader_screen.dart';
+import '../features/share/views/share_screen.dart';
 import '../features/search/views/search_screen.dart';
 import '../../data/repositories/card_repository.dart';
 import '../../domain/models/concept.dart';
@@ -159,23 +160,13 @@ class _HomeShellState extends State<HomeShell> {
     setState(() => _presenterScreen = LibraryChatScreen(seedQuery: seed));
   }
 
-  /// Submit a URL to the live pipeline and open the streaming card so the
-  /// audience watches it fill in.
+  /// Open the visible pipeline (ShareScreen) for [url] under the agent glyph,
+  /// so the audience watches the stages run and it auto-advances into the
+  /// finished card — the same screen the Capture sheet uses.
   Future<String?> _createCardInPresenter(String url) async {
-    final repo = context.read<CardRepository>();
-    try {
-      final result = await repo.share(url);
-      if (mounted && result.cardId.isNotEmpty) {
-        setState(() => _presenterScreen = ReaderScreen(cardId: result.cardId));
-      }
-      return result.cardId;
-    } catch (e, st) {
-      // Live demo: don't crash the tour if the pipeline is down, but the
-      // failure shouldn't vanish silently either.
-      debugPrint('[Presenter] create_card($url) failed: $e');
-      debugPrintStack(stackTrace: st, label: '[Presenter] create_card');
-      return null;
-    }
+    if (!mounted) return null;
+    setState(() => _presenterScreen = ShareScreen(sharedUrl: url));
+    return null;
   }
 
   void _onPresenterChanged() {
