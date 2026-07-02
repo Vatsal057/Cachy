@@ -165,7 +165,13 @@ class _HomeShellState extends State<HomeShell> {
   /// finished card — the same screen the Capture sheet uses.
   Future<String?> _createCardInPresenter(String url) async {
     if (!mounted) return null;
-    setState(() => _presenterScreen = ShareScreen(sharedUrl: url));
+    debugPrint('[Presenter] opening pipeline for $url');
+    setState(() {
+      // Sit on the home layer and put the pipeline on top of it, so it shows
+      // regardless of whatever screen the agent was last on.
+      _index = 0;
+      _presenterScreen = ShareScreen(key: ValueKey(url), sharedUrl: url);
+    });
     return null;
   }
 
