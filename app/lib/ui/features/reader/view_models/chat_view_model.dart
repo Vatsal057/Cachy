@@ -78,7 +78,7 @@ class ChatViewModel extends ChangeNotifier with SafeNotifier {
       _messages.add(ChatMessage(role: 'assistant', content: reply));
     } on ApiException catch (e) {
       _error = e.statusCode == 503
-          ? 'Chat is unavailable — no AI backend is configured.'
+          ? 'The AI is catching its breath — try again in a moment.'
           : "Couldn't get an answer. Try again.";
     } catch (_) {
       _error = "Couldn't reach the backend.";

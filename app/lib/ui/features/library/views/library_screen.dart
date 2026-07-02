@@ -234,7 +234,14 @@ class _CardsTabState extends State<_CardsTab> {
     if (_bus != null) return;
     _bus = context.read<AgentBus>()
       ..registerScrollable('library', _gridScroll)
-      ..registerSpotlight('card.first', _firstCardKey);
+      ..registerSpotlight('card.first', _firstCardKey)
+      ..onSelectLibraryCard = _selectCardFromAgent;
+  }
+
+  /// The agent opens a card into the side column, exactly like a user tap.
+  Future<void> _selectCardFromAgent(String cardId) async {
+    if (!mounted) return;
+    context.read<LibraryViewModel>().selectCard(cardId);
   }
 
   /// Grows or shrinks [_focusNodes] to exactly [count] nodes.
@@ -258,7 +265,8 @@ class _CardsTabState extends State<_CardsTab> {
   void dispose() {
     _bus
       ?..unregisterScrollable('library', _gridScroll)
-      ..unregisterSpotlight('card.first', _firstCardKey);
+      ..unregisterSpotlight('card.first', _firstCardKey)
+      ..onSelectLibraryCard = null;
     _gridScroll.dispose();
     for (final node in _focusNodes) {
       node.dispose();
@@ -300,6 +308,8 @@ class _CardsTabState extends State<_CardsTab> {
                       cardId: vm.selectedCardId!,
                       embedded: true,
                       onClose: () => vm.selectCard(null),
+                      onToggleFullscreen: () =>
+                          _bus?.onEnterCardFullscreen?.call(vm.selectedCardId!),
                     ),
               onFractionChanged: (f) {
                 setState(() => _fraction = f);

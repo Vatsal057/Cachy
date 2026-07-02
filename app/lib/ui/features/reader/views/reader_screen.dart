@@ -35,7 +35,14 @@ import 'insight_section.dart';
 import 'primary_action_bar.dart';
 
 class ReaderScreen extends StatelessWidget {
-  const ReaderScreen({super.key, required this.cardId, this.embedded = false, this.onClose});
+  const ReaderScreen({
+    super.key,
+    required this.cardId,
+    this.embedded = false,
+    this.onClose,
+    this.fullscreen = false,
+    this.onToggleFullscreen,
+  });
   final String cardId;
 
   /// True when rendered inline in the desktop split pane (Library, wide
@@ -47,6 +54,16 @@ class ReaderScreen extends StatelessWidget {
   /// Clears the pane selection. Only used when [embedded] is true.
   final VoidCallback? onClose;
 
+  /// True when this reader is the fullscreen overlay promoted from the side
+  /// column — the toggle button then shows a "restore" affordance instead of
+  /// "expand".
+  final bool fullscreen;
+
+  /// Toggles between the side-column and fullscreen presentations of the
+  /// notes. In [embedded] mode it expands to fullscreen; in [fullscreen] mode
+  /// it restores to the side column. Null hides the toggle.
+  final VoidCallback? onToggleFullscreen;
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
@@ -55,7 +72,12 @@ class ReaderScreen extends StatelessWidget {
         cardId: cardId,
       )..init(),
       child: _ReaderAgentBridge(
-        child: _ReaderView(embedded: embedded, onClose: onClose),
+        child: _ReaderView(
+          embedded: embedded,
+          onClose: onClose,
+          fullscreen: fullscreen,
+          onToggleFullscreen: onToggleFullscreen,
+        ),
       ),
     );
   }
@@ -80,6 +102,7 @@ class ReaderSpotlightKeys {
   final insight = GlobalKey();
   final references = GlobalKey();
   final actionBar = GlobalKey();
+  final fullscreen = GlobalKey();
 }
 
 /// Hands the section keys down to [_ReaderView] without threading them through
@@ -128,6 +151,7 @@ class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
     // it for both — the narration says which control.
     _bus!.registerSpotlight('reader.ask', _spotlight.actionBar);
     _bus!.registerSpotlight('reader.more', _spotlight.actionBar);
+    _bus!.registerSpotlight('reader.fullscreen', _spotlight.fullscreen);
     _bus!.registerScrollable('reader', _scroll);
   }
 
@@ -175,6 +199,7 @@ class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
     _bus?.unregisterSpotlight('reader.references', _spotlight.references);
     _bus?.unregisterSpotlight('reader.ask', _spotlight.actionBar);
     _bus?.unregisterSpotlight('reader.more', _spotlight.actionBar);
+    _bus?.unregisterSpotlight('reader.fullscreen', _spotlight.fullscreen);
     _bus?.unregisterScrollable('reader', _scroll);
     _scroll.dispose();
     super.dispose();
@@ -191,9 +216,16 @@ class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
 }
 
 class _ReaderView extends StatelessWidget {
-  const _ReaderView({required this.embedded, this.onClose});
+  const _ReaderView({
+    required this.embedded,
+    this.onClose,
+    this.fullscreen = false,
+    this.onToggleFullscreen,
+  });
   final bool embedded;
   final VoidCallback? onClose;
+  final bool fullscreen;
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +396,12 @@ class _ReaderView extends StatelessWidget {
     if (embedded) {
       return Column(
         children: [
-          _EmbeddedHeader(card: card, accent: accent, onClose: onClose),
+          _EmbeddedHeader(
+            card: card,
+            accent: accent,
+            onClose: onClose,
+            onToggleFullscreen: onToggleFullscreen,
+          ),
           Expanded(child: SingleChildScrollView(primary: true, child: content)),
           if (card.isReady)
             KeyedSubtree(
@@ -379,7 +416,13 @@ class _ReaderView extends StatelessWidget {
       body: CustomScrollView(
         primary: true,
         slivers: [
-          _FaceAppBar(card: card, api: api, accent: accent),
+          _FaceAppBar(
+            card: card,
+            api: api,
+            accent: accent,
+            fullscreen: fullscreen,
+            onToggleFullscreen: onToggleFullscreen,
+          ),
           SliverToBoxAdapter(child: content),
         ],
       ),
@@ -425,16 +468,23 @@ class _ReaderView extends StatelessWidget {
 /// embedded in the Library split pane: a close affordance plus the content
 /// type, no hero face takeover (there's no route transition to animate into).
 class _EmbeddedHeader extends StatelessWidget {
-  const _EmbeddedHeader({required this.card, required this.accent, this.onClose});
+  const _EmbeddedHeader({
+    required this.card,
+    required this.accent,
+    this.onClose,
+    this.onToggleFullscreen,
+  });
   final model.Card card;
   final ContentAccent accent;
   final VoidCallback? onClose;
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final spotlight = _ReaderSpotlight.of(context);
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
@@ -455,6 +505,15 @@ class _EmbeddedHeader extends StatelessWidget {
               style: Brand.label(size: 11, color: scheme.onSurfaceVariant, weight: FontWeight.w700),
             ),
           ),
+          if (onToggleFullscreen != null)
+            KeyedSubtree(
+              key: spotlight?.fullscreen,
+              child: IconButton(
+                tooltip: 'Fullscreen',
+                icon: const PhosphorIcon(PhosphorIconsRegular.arrowsOutSimple),
+                onPressed: onToggleFullscreen,
+              ),
+            ),
         ],
       ),
     );
@@ -470,14 +529,19 @@ class _FaceAppBar extends StatelessWidget {
     required this.card,
     required this.api,
     required this.accent,
+    this.fullscreen = false,
+    this.onToggleFullscreen,
   });
   final model.Card card;
   final dynamic api;
   final ContentAccent accent;
+  final bool fullscreen;
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final spotlight = _ReaderSpotlight.of(context);
     return SliverAppBar(
       expandedHeight: 260,
       pinned: true,
@@ -485,10 +549,29 @@ class _FaceAppBar extends StatelessWidget {
       leading: Padding(
         padding: const EdgeInsets.all(8),
         child: _CircleButton(
-          icon: PhosphorIconsRegular.arrowLeft,
-          onTap: () => Navigator.of(context).maybePop(),
+          // When promoted from the side column there's no route to pop —
+          // the toggle restores it instead.
+          icon: onToggleFullscreen != null
+              ? PhosphorIconsRegular.arrowsInSimple
+              : PhosphorIconsRegular.arrowLeft,
+          onTap: () => onToggleFullscreen != null
+              ? onToggleFullscreen!()
+              : Navigator.of(context).maybePop(),
         ),
       ),
+      actions: [
+        if (onToggleFullscreen != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: KeyedSubtree(
+              key: spotlight?.fullscreen,
+              child: _CircleButton(
+                icon: PhosphorIconsRegular.arrowsInSimple,
+                onTap: onToggleFullscreen!,
+              ),
+            ),
+          ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         stretchModes: const [StretchMode.zoomBackground],
         background: Stack(

@@ -36,6 +36,13 @@ class AppController extends ChangeNotifier {
 
   Future<void> completeOnboarding() => _store.setSeenOnboarding(true);
 
+  /// Clears the user's name and onboarding flag so [RootGate] redirects back
+  /// to the name-entry screen on the next render cycle.
+  Future<void> logout() async {
+    await _store.clearUser();
+    notifyListeners();
+  }
+
   Future<void> setSplitPaneFraction(double fraction) async {
     final clamped = fraction.clamp(0.25, 0.5);
     await _store.setSplitPaneFraction(clamped);

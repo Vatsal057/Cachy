@@ -42,6 +42,13 @@ class LocalStore {
   String? get apiBaseUrl => _prefs.getString(_apiBaseUrlKey);
   Future<void> setApiBaseUrl(String url) => _prefs.setString(_apiBaseUrlKey, url);
 
+  /// Clears user identity and onboarding state, effectively signing the user
+  /// out and forcing them back through the name-entry gate on next launch.
+  Future<void> clearUser() async {
+    await _prefs.remove(_userNameKey);
+    await _prefs.remove(_seenOnboardingKey);
+  }
+
   /// Split-pane divider position as a fraction of available width.
   /// Defaults to ~0.35 (≈420/1200).
   double get splitPaneFraction =>

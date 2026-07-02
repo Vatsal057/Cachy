@@ -54,6 +54,12 @@ const List<AgentBeat> kTour = [
     action: AgentAction('open_card', {'query': 'auto'}),
   ),
   AgentBeat(
+    focus: 'reader.fullscreen',
+    say: "It opens right here in the side column. Let me pop it out to full "
+        "screen so we can really dig in.",
+    action: AgentAction('enter_fullscreen'),
+  ),
+  AgentBeat(
     focus: 'reader.blocks',
     say: "This is the good part. From any source online, Cachy pulls out proper "
         "structured notes — a one-liner, a summary, then clean blocks: steps, "
@@ -92,6 +98,11 @@ const List<AgentBeat> kTour = [
     say: "And the three dots hide the rest — copy, share, shopping list, and "
         "more.",
     action: AgentAction('point'),
+  ),
+  AgentBeat(
+    focus: 'reader.fullscreen',
+    say: "Let me shrink it back down so we can move on.",
+    action: AgentAction('exit_fullscreen'),
   ),
 
   // ── 3. Concepts (top segment) ────────────────────────────────────────────
@@ -229,6 +240,12 @@ class PresenterController extends ChangeNotifier {
   /// caption beside the glyph.
   String caption = '';
 
+  /// How many characters of [caption] the TTS engine has spoken so far, from
+  /// its word-boundary events. The caption highlights up to here so each word
+  /// lights as it's read (karaoke-style). For non-spoken captions (Thinking…,
+  /// the idle prompt) this is the full length, so they render fully lit.
+  int captionSpokenEnd = 0;
+
   /// Spotlight target the agent is currently presenting: a widget id
   /// registered on the [AgentBus] (e.g. 'search.field', 'graph.canvas'),
   /// a pseudo-region ('content', 'nav') the spotlight resolves to a coarse
@@ -268,10 +285,21 @@ class PresenterController extends ChangeNotifier {
 
   bool _voicePicked = false;
 
+  /// Drives the caption highlight's left-to-right crawl while a line is spoken.
+  Timer? _captionTimer;
+
   Future<void> _initTts() async {
     _tts.setCompletionHandler(_finishUtterance);
     _tts.setCancelHandler(_finishUtterance);
     _tts.setErrorHandler((_) => _finishUtterance());
+    // Word-boundary events, when the engine emits them, drive the caption's
+    // karaoke highlight exactly — cancelling the time-based estimate so the
+    // two don't fight.
+    _tts.setProgressHandler((text, start, end, word) {
+      _captionTimer?.cancel();
+      captionSpokenEnd = end.clamp(0, caption.length);
+      notifyListeners();
+    });
     try {
       // Rate scale differs by engine: the browser's Web Speech API treats 1.0
       // as normal speed (0.5 is half-speed — that's what felt sluggish), while
@@ -328,7 +356,12 @@ class PresenterController extends ChangeNotifier {
 
   void _setPhase(PresenterPhase p, {String? caption}) {
     phase = p;
-    if (caption != null) this.caption = caption;
+    if (caption != null) {
+      this.caption = caption;
+      // Default to fully lit; a spoken line resets this to 0 in _speak so the
+      // highlight can crawl across it as the words are read.
+      captionSpokenEnd = caption.length;
+    }
     notifyListeners();
   }
 
@@ -375,8 +408,12 @@ class PresenterController extends ChangeNotifier {
   }
 
   void _finishUtterance() {
+    _captionTimer?.cancel();
+    // Line's done (or was cut off) — show it fully lit.
+    captionSpokenEnd = caption.length;
     final c = _speakCompleter;
     if (c != null && !c.isCompleted) c.complete();
+    notifyListeners();
   }
 
   /// Speak [text]; resolve true if it finished naturally, false if superseded by
@@ -386,6 +423,11 @@ class PresenterController extends ChangeNotifier {
     if (!_voicePicked) await _selectNaturalVoice(); // web voices load late
     final myGen = ++_gen;
     _setPhase(PresenterPhase.speaking, caption: text);
+    // Crawl the caption highlight across the line over the time it takes to
+    // read aloud. Works everywhere (web voices usually don't emit word
+    // boundaries); if the engine *does* emit them, they cancel this and drive
+    // the highlight exactly (see the progress handler in _initTts).
+    _startCaptionCrawl(text);
     final completer = Completer<void>();
     _speakCompleter = completer;
     try {
@@ -411,8 +453,39 @@ class PresenterController extends ChangeNotifier {
 
   Future<void> _stopSpeaking() async {
     _gen++; // supersede whatever is (or was) speaking
+    _captionTimer?.cancel();
     await _tts.stop();
     _finishUtterance();
+  }
+
+  /// Advance [captionSpokenEnd] from 0 to the end of [text] over the estimated
+  /// time it takes to speak the line, so the caption highlight crawls across in
+  /// step with the voice. A fresh utterance (bumped [_gen]) or the tour ending
+  /// stops it; a natural finish/barge-in fills it in via [_finishUtterance].
+  void _startCaptionCrawl(String text) {
+    _captionTimer?.cancel();
+    captionSpokenEnd = 0;
+    notifyListeners();
+    final len = text.length;
+    if (len == 0) return;
+    final words = text.trim().split(RegExp(r'\s+')).length;
+    // Web Speech at rate 1.0 reads quickly (~230 wpm); ~260 ms/word keeps the
+    // highlight level with the voice and leaning a touch ahead, so it never
+    // drags behind. Tune this if the voice/rate changes.
+    final estMs = (words * 260).clamp(900, 30000);
+    final startedGen = _gen;
+    final start = DateTime.now();
+    _captionTimer = Timer.periodic(const Duration(milliseconds: 45), (t) {
+      if (!_active || _gen != startedGen) {
+        t.cancel();
+        return;
+      }
+      final elapsed = DateTime.now().difference(start).inMilliseconds;
+      final frac = (elapsed / estMs).clamp(0.0, 1.0);
+      captionSpokenEnd = (frac * len).round();
+      notifyListeners();
+      if (frac >= 1.0) t.cancel();
+    });
   }
 
   // ── Public control ──────────────────────────────────────────────────────── //
@@ -468,6 +541,7 @@ class PresenterController extends ChangeNotifier {
   Future<void> stop() async {
     _active = false;
     _questionQueue.clear();
+    _captionTimer?.cancel();
     await _stopSpeaking();
     _setFocus(null);
     _setPhase(PresenterPhase.done);
@@ -480,10 +554,15 @@ class PresenterController extends ChangeNotifier {
 
   Future<void> _runTour() async {
     while (_active && _tourIndex < kTour.length) {
-      final completed = await _runBeat(kTour[_tourIndex]);
+      final spoken = await _runBeat(kTour[_tourIndex]);
       if (!_active) return;
-      if (!completed || _questionQueue.isNotEmpty) {
+      if (!spoken || _questionQueue.isNotEmpty) {
         await _handleQuestions();
+        if (!_active) return;
+        // A barge-in cut this beat short (line unfinished, action skipped) —
+        // replay it after answering, like a presenter picking back up where
+        // they were interrupted.
+        if (!spoken) continue;
       } else {
         // A short breath between beats so the tour doesn't feel read off a
         // teleprompter.
@@ -516,9 +595,9 @@ class PresenterController extends ChangeNotifier {
       }
       if (!_active) return;
       for (final beat in beats) {
-        final completed = await _runBeat(beat);
+        final spoken = await _runBeat(beat);
         if (!_active) return;
-        if (!completed) break; // a fresh barge-in — loop drains it next
+        if (!spoken) break; // a fresh barge-in — loop drains it next
       }
       if (!_active) return;
       if (_questionQueue.isEmpty) {
@@ -526,6 +605,11 @@ class PresenterController extends ChangeNotifier {
         await _runBeat(const AgentBeat(
           say: "Anything else? Otherwise I'll carry on.",
         ));
+        // Actually leave a gap for someone to take the floor before the tour
+        // rolls on — the loop picks up anything that arrives during it.
+        for (var i = 0; i < 10 && _active && _questionQueue.isEmpty; i++) {
+          await _settle(ms: 250);
+        }
       }
     }
   }
@@ -564,7 +648,9 @@ class PresenterController extends ChangeNotifier {
       } else {
         _setPhase(PresenterPhase.acting);
       }
-      if (_active) {
+      // A barge-in during the lead-in cancels the action — the beat replays
+      // in full after the question is answered, so nothing is lost.
+      if (_active && _questionQueue.isEmpty) {
         // Tap the lit target, then fire the effect — the click precedes the
         // change the audience sees.
         await _tap();
@@ -576,9 +662,7 @@ class PresenterController extends ChangeNotifier {
         }
       }
     }
-    final spoken = speech == null || await speech;
-    if (!spoken) return false;
-    return _active && _questionQueue.isEmpty;
+    return speech == null || await speech;
   }
 
   void _setFocus(String? id) {
@@ -650,6 +734,7 @@ class PresenterController extends ChangeNotifier {
         'open_card' => 'card.first',
         'create_card' => 'home.plus',
         'reader_toggle' => 'reader.blocks',
+        'enter_fullscreen' || 'exit_fullscreen' => 'reader.fullscreen',
         'rabbit_hole' || 'expand_deep_dive' => 'reader.insight',
         'card_chat' => 'reader.ask',
         'catalog_item' => 'catalog.item',
@@ -680,7 +765,12 @@ class PresenterController extends ChangeNotifier {
         final url = a.url;
         if (url != null && url.isNotEmpty) {
           final id = await _bus.onCreateCard?.call(url);
-          if (id != null && id.isNotEmpty) _currentCardId = id;
+          if (id != null && id.isNotEmpty) {
+            _currentCardId = id;
+            // The library just changed — drop the snapshot so follow-up asks
+            // ("open a rabbit hole on that") resolve against the new card.
+            _cards = null;
+          }
           // Hold on the pipeline so the stages are clearly visible before the
           // tour moves on / winds down.
           await _settle(ms: 1500);
@@ -693,6 +783,19 @@ class PresenterController extends ChangeNotifier {
         await _openCard(a.query);
       case 'reader_toggle':
         await _readerToggle();
+      case 'enter_fullscreen':
+        if (_currentCardId != null) {
+          await _try('onEnterCardFullscreen',
+              () => _bus.onEnterCardFullscreen?.call(_currentCardId!));
+          // The fullscreen reader remounts — wait for it before the walkthrough.
+          await _waitFor(() => _bus.reader?.isReady() == true,
+              what: 'reader (fullscreen)');
+          await _settle(ms: 450);
+        }
+      case 'exit_fullscreen':
+        await _try(
+            'onExitCardFullscreen', () => _bus.onExitCardFullscreen?.call());
+        await _settle(ms: 450);
       case 'graph_focus':
         await _graphFocus(a.query, open: false);
       case 'graph_open':
@@ -914,14 +1017,28 @@ class PresenterController extends ChangeNotifier {
     final match = (query == null || query.isEmpty || query == 'auto')
         ? concepts.first
         : (_bestBy(query, concepts, (c) => c.name) ?? concepts.first);
+    // Open the detail first so the audience immediately sees the concept —
+    // "let me open one" — instead of staring at the list while the definition
+    // is generated. (Previously we awaited defineConcept first; a slow or
+    // stalled backend left the tour looking frozen with nothing opening.)
+    await _try('onOpenConcept(${match.id})',
+        () => _bus.onOpenConcept?.call(match.id, match.name));
+    await _settle(ms: 600);
+    // Now define it "on the spot", bounded so a slow/hanging backend can't
+    // freeze the tour, then re-open so the fresh definition shows.
     try {
-      await _repo.defineConcept(match.id);
+      await _repo
+          .defineConcept(match.id)
+          .timeout(const Duration(seconds: 10));
+      await _try('onOpenConcept refresh(${match.id})',
+          () => _bus.onOpenConcept?.call(match.id, match.name));
+    } on TimeoutException catch (e, st) {
+      _logWarn('defineConcept(${match.id}) timed out');
+      _logError('defineConcept(${match.id})', e, st);
     } catch (e, st) {
       // best-effort; the detail screen still opens and can define on demand.
       _logError('defineConcept(${match.id})', e, st);
     }
-    await _try('onOpenConcept(${match.id})',
-        () => _bus.onOpenConcept?.call(match.id, match.name));
     await _settle(ms: 700);
   }
 

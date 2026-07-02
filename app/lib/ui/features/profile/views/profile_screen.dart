@@ -95,6 +95,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: 'Version',
             subtitle: '1.0.0',
           ),
+          const SizedBox(height: 24),
+          _sectionLabel(theme, 'Account'),
+          _Tile(
+            icon: PhosphorIconsRegular.signOut,
+            title: 'Sign out',
+            subtitle: 'Clear your name and reset the app to the setup screen.',
+            onTap: _confirmSignOut,
+            destructive: true,
+          ),
         ],
       ),
       ),
@@ -257,6 +266,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
   }
+
+  Future<void> _confirmSignOut() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+            'Your name will be cleared and you\'ll be taken back to the setup screen. '
+            'Your cards on the server are not affected.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      await context.read<AppController>().logout();
+    }
+  }
 }
 
 class _ThemePicker extends StatelessWidget {
@@ -293,16 +330,19 @@ class _Tile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
+    this.destructive = false,
   });
 
   final PhosphorIconData icon;
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
+  final bool destructive;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final color = destructive ? scheme.error : scheme.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
@@ -311,9 +351,11 @@ class _Tile extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          leading: PhosphorIcon(icon, color: scheme.primary),
+          leading: PhosphorIcon(icon, color: color),
           title: Text(title,
-              style: Theme.of(context).textTheme.titleMedium),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: destructive ? scheme.error : null,
+                  )),
           subtitle: Text(subtitle),
           trailing: onTap != null
               ? const PhosphorIcon(PhosphorIconsRegular.caretRight)
