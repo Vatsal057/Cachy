@@ -7,6 +7,7 @@ library;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/theme.dart';
 import 'presenter_controller.dart';
@@ -160,7 +161,7 @@ class _Glyph extends StatelessWidget {
                 ),
                 child: Center(
                   child: Icon(
-                    expanded ? Icons.keyboard_arrow_down_rounded : _phaseIcon(phase),
+                    expanded ? PhosphorIconsRegular.caretDown : _phaseIcon(phase),
                     color: Colors.white,
                     size: 28,
                   ),
@@ -262,7 +263,7 @@ class _Panel extends StatelessWidget {
                     const Spacer(),
                     TextButton.icon(
                       onPressed: onEnd,
-                      icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                      icon: const Icon(PhosphorIconsRegular.stopCircle, size: 18),
                       label: const Text('End'),
                     ),
                   ],
@@ -291,7 +292,7 @@ class _Panel extends StatelessWidget {
                       borderSide: BorderSide.none,
                     ),
                     suffixIcon: IconButton(
-                      icon: const Icon(Icons.send_rounded),
+                      icon: const Icon(PhosphorIconsRegular.paperPlaneRight),
                       onPressed: onSubmit,
                     ),
                   ),
@@ -319,11 +320,11 @@ Color _phaseColor(BuildContext context, PresenterPhase phase) {
 }
 
 IconData _phaseIcon(PresenterPhase phase) => switch (phase) {
-      PresenterPhase.speaking => Icons.graphic_eq_rounded,
-      PresenterPhase.thinking => Icons.auto_awesome_rounded,
-      PresenterPhase.acting => Icons.touch_app_rounded,
-      PresenterPhase.idle => Icons.mic_none_rounded,
-      PresenterPhase.done => Icons.check_rounded,
+      PresenterPhase.speaking => PhosphorIconsRegular.waveform,
+      PresenterPhase.thinking => PhosphorIconsRegular.sparkle,
+      PresenterPhase.acting => PhosphorIconsRegular.cursorClick,
+      PresenterPhase.idle => PhosphorIconsRegular.microphone,
+      PresenterPhase.done => PhosphorIconsRegular.check,
     };
 
 String _phaseLabel(PresenterPhase p) => switch (p) {

@@ -458,7 +458,7 @@ class _PresentButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.slideshow_rounded, size: 18, color: theme.colorScheme.onPrimary),
+              Icon(PhosphorIconsRegular.presentationChart, size: 18, color: theme.colorScheme.onPrimary),
               const SizedBox(width: 6),
               Text('Present',
                   style: theme.textTheme.labelLarge?.copyWith(
