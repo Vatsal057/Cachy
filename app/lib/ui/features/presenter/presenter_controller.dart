@@ -40,9 +40,10 @@ const List<AgentBeat> kTour = [
   AgentBeat(
     focus: 'content',
     say: "So this is home. Every reel, short, or article you share into Cachy "
-        "comes back as a knowledge card. Let me scroll down through the shelf "
-        "so you can see the collection... and back up to the top.",
-    action: AgentAction('scroll', {'target': 'library', 'dy': 720, 'sweep': true}),
+        "comes back as a knowledge card. Let me scroll all the way down through "
+        "the shelf so you can see the whole collection... and back up to the "
+        "top.",
+    action: AgentAction('scroll', {'target': 'library', 'mode': 'full', 'sweep': true}),
   ),
 
   // ── 2. Open the first card → the reader ──────────────────────────────────
@@ -56,19 +57,26 @@ const List<AgentBeat> kTour = [
     focus: 'reader.blocks',
     say: "This is the good part. From any source online, Cachy pulls out proper "
         "structured notes — a one-liner, a summary, then clean blocks: steps, "
-        "key facts, callouts. Let me scroll through them.",
-    action: AgentAction('scroll', {'target': 'reader', 'dy': 640, 'sweep': true}),
+        "key facts, callouts. Let me scroll through them, block by block, all "
+        "the way down.",
+    action: AgentAction('scroll', {'target': 'reader', 'mode': 'steps'}),
   ),
   AgentBeat(
     focus: 'reader.insight',
-    say: "Further down there's a 'Going deeper' section — that's the AI adding "
-        "the analysis the source only hinted at.",
+    say: "Near the bottom there's a 'Going deeper' section — that's the AI "
+        "adding the analysis the source only hinted at.",
     action: AgentAction('point'),
   ),
   AgentBeat(
+    focus: 'reader.insight',
+    say: "And 'Dive deeper' — let me open it. Inside are threads you can pull, "
+        "a quick quiz, and a jumping-off point for deeper research.",
+    action: AgentAction('expand_deep_dive'),
+  ),
+  AgentBeat(
     focus: 'reader.references',
-    say: "Then references — books, films, products the card mentions. Here's "
-        "the trick: press and hold any reference and it's saved straight to "
+    say: "Below that, references — books, films, products the card mentions. "
+        "The trick: press and hold any reference and it's saved straight to "
         "your catalog.",
     action: AgentAction('point'),
   ),
@@ -84,12 +92,6 @@ const List<AgentBeat> kTour = [
     say: "And the three dots hide the rest — copy, share, shopping list, and "
         "more.",
     action: AgentAction('point'),
-  ),
-  AgentBeat(
-    focus: 'reader.insight',
-    say: "One more from in here — 'Dive deeper' opens a rabbit hole, pulling a "
-        "thread from the card out into wider knowledge. Watch.",
-    action: AgentAction('rabbit_hole', {'query': 'auto'}),
   ),
 
   // ── 3. Concepts (top segment) ────────────────────────────────────────────
@@ -627,7 +629,7 @@ class PresenterController extends ChangeNotifier {
         'open_card' => 'card.first',
         'create_card' => 'home.plus',
         'reader_toggle' => 'reader.blocks',
-        'rabbit_hole' => 'reader.insight',
+        'rabbit_hole' || 'expand_deep_dive' => 'reader.insight',
         'card_chat' => 'reader.ask',
         'catalog_item' => 'catalog.item',
         'create_collection' => 'folders.create',
@@ -713,6 +715,9 @@ class PresenterController extends ChangeNotifier {
       case 'catalog_item':
         await _try('onOpenCatalogItem', () => _bus.onOpenCatalogItem?.call());
         await _settle(ms: 900);
+      case 'expand_deep_dive':
+        await _try('onExpandDeepDive', () => _bus.onExpandDeepDive?.call());
+        await _settle(ms: 700);
       case 'point':
         // Explain-only beat: the tap pulse already fired in _runBeat; nothing
         // to execute. The lit target is what the audience is looking at.
@@ -725,22 +730,46 @@ class PresenterController extends ChangeNotifier {
   /// Scroll a registered surface ('library' grid, 'reader' body) by `dy`
   /// pixels; with `sweep: true` it glides down, pauses, and glides back — the
   /// browsing gesture a human makes while talking over a screen.
+  /// Scroll a registered surface. Modes:
+  ///  * `steps` — page down a screenful at a time, pausing between each, all the
+  ///    way to the bottom (block-by-block browsing of a card's notes).
+  ///  * `full`  — glide all the way to the bottom in one motion.
+  ///  * default — glide down by `dy`.
+  /// With `sweep: true` it then glides back to where it started.
   Future<void> _scrollSurface(AgentAction a) async {
     final target = (a.args['target'] as String?) ?? 'library';
+    final mode = (a.args['mode'] as String?) ?? 'sweep';
     final dy = (a.args['dy'] as num?)?.toDouble() ?? 600;
     final sweep = a.args['sweep'] == true;
     // The surface may have just navigated/opened; give it a moment to lay out
-    // so there's something to scroll (otherwise the sweep no-ops instantly).
+    // so there's something to scroll (otherwise it no-ops instantly).
     await _waitFor(() => _bus.scrollRoom(target) > 8,
         what: 'scrollable "$target"', timeoutMs: 2500);
     if (!_active) return;
-    // Slow, continuous glide down so it reads as deliberate browsing and spans
-    // the narration, then a pause, then back up by exactly what we travelled.
+
     var moved = 0.0;
-    await _try('scroll($target)', () async {
-      moved = await _bus.scrollBy(target, dy,
-          duration: const Duration(milliseconds: 1600));
-    });
+    if (mode == 'steps') {
+      // Page down block by block until we reach the bottom (bounded so a huge
+      // card can't loop forever).
+      for (var i = 0; i < 14 && _active && _bus.scrollRoom(target) > 8; i++) {
+        double step = 0;
+        await _try('scroll($target step)', () async {
+          step = await _bus.scrollBy(target, 300,
+              duration: const Duration(milliseconds: 700));
+        });
+        moved += step;
+        if (step.abs() < 1) break;
+        await _settle(ms: 650); // a beat to "read" each block
+      }
+    } else {
+      // 'full' clamps to the bottom; otherwise glide down by dy.
+      final distance = mode == 'full' ? 1000000.0 : dy;
+      await _try('scroll($target)', () async {
+        moved = await _bus.scrollBy(target, distance,
+            duration: const Duration(milliseconds: 1600));
+      });
+    }
+
     if (sweep && moved.abs() > 1 && _active) {
       await _settle(ms: 800);
       if (!_active) return;
