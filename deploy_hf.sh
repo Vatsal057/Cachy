@@ -8,7 +8,9 @@ MSG=${1:-"deploy: update $(date '+%Y-%m-%d %H:%M')"}
 # 1. Build Flutter web (empty CACHY_API_BASE = relative URLs = same-origin API)
 echo "Building Flutter web..."
 cd app
-flutter build web --release --dart-define=CACHY_API_BASE= 2>&1
+# --no-tree-shake-icons: keep full icon fonts so runtime-selected icons (e.g. the
+# presenter glyph) render on the deploy instead of showing as blank boxes.
+flutter build web --release --no-tree-shake-icons --dart-define=CACHY_API_BASE= 2>&1
 cd ..
 
 # 2. Sync build output into web_dist/

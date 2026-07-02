@@ -426,6 +426,13 @@ class PresenterController extends ChangeNotifier {
     // wired before any error would need it.
     _repo.api.presenterLog('Present mode started');
     unawaited(_warmCards());
+    // Unlock web speech synthesis from inside the user gesture that launched us.
+    // Mobile/deployed browsers silently drop speech that isn't started by a tap,
+    // so a tiny warm-up utterance (fired synchronously, still in the gesture
+    // stack) opens the audio channel. The short wait lets it finish before the
+    // first real line so its end-event can't cut that line short.
+    await _try('tts.warmup', () => _tts.speak(' '));
+    await _settle(ms: 350);
     // Lock in the natural voice before the first line, so the tour doesn't
     // open in the default (legacy) voice and switch part-way through.
     await _ensureVoice();
