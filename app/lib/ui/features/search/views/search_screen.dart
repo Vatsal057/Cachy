@@ -38,9 +38,12 @@ class _SearchScreenState extends State<SearchScreen> {
   String _query = '';
   ContentType? _filter; // null = All
 
-  // Agent driving: let the presenter agent run searches while mounted.
+  // Agent driving: let the presenter agent run searches while mounted, and
+  // give its spotlight real geometry for the field and the filter bar.
   AgentBus? _bus;
   SearchAgentHooks? _hooks;
+  final _fieldKey = GlobalKey();
+  final _filtersKey = GlobalKey();
 
   @override
   void didChangeDependencies() {
@@ -50,6 +53,9 @@ class _SearchScreenState extends State<SearchScreen> {
     final hooks = SearchAgentHooks(run: _runAgentQuery, filter: _applyAgentFilter);
     _hooks = hooks;
     _bus!.attachSearch(hooks);
+    _bus!
+      ..registerSpotlight('search.field', _fieldKey)
+      ..registerSpotlight('search.filters', _filtersKey);
   }
 
   void _runAgentQuery(String query) {
@@ -114,6 +120,9 @@ class _SearchScreenState extends State<SearchScreen> {
   void dispose() {
     final h = _hooks;
     if (h != null) _bus?.detachSearch(h);
+    _bus
+      ?..unregisterSpotlight('search.field', _fieldKey)
+      ..unregisterSpotlight('search.filters', _filtersKey);
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
@@ -126,6 +135,7 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
+          key: _fieldKey,
           controller: _controller,
           autofocus: true,
           onChanged: _onChanged,
@@ -182,6 +192,7 @@ class _SearchScreenState extends State<SearchScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _FilterBar(
+              key: _filtersKey,
               types: _presentTypes,
               selected: _filter,
               total: _results.length,
@@ -224,6 +235,7 @@ class _SearchScreenState extends State<SearchScreen> {
 /// filters for types present in the results (docs/06 search).
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
+    super.key,
     required this.types,
     required this.selected,
     required this.total,

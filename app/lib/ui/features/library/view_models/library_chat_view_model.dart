@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
+import '../../../core/safe_notifier.dart';
 
 class LibraryChatMessage {
   const LibraryChatMessage({required this.role, required this.content});
@@ -17,7 +18,7 @@ class LibraryChatMessage {
   Map<String, String> toWire() => {'role': role, 'content': content};
 }
 
-class LibraryChatViewModel extends ChangeNotifier {
+class LibraryChatViewModel extends ChangeNotifier with SafeNotifier {
   LibraryChatViewModel({required CardRepository repository})
       : _repository = repository;
 

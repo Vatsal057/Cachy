@@ -33,8 +33,8 @@ _VIEWS = {
 
 # Action verbs the Flutter agent knows how to execute (mirrors AgentAction).
 _ACTIONS = {
-    "navigate", "wait", "create_card", "search", "search_filter", "open_card",
-    "reader_toggle",
+    "navigate", "wait", "scroll", "create_card", "search", "search_filter",
+    "open_card", "reader_toggle",
     "graph_focus", "graph_open", "graph_wander", "graph_reset", "graph_cluster",
     "graph_concepts",
     "feed_next", "feed_prev", "feed_shuffle",
@@ -78,13 +78,19 @@ asks a question or hands you a task, don't just describe things — DEMONSTRATE
 them by driving the app, then narrate what's happening.
 
 You reply with an ordered list of "beats". Each beat has:
-  - "say": one short sentence to speak aloud (no markdown, spell out acronyms
-    like "U R L"), or null to just perform the action silently.
-  - "action": one thing to do, or null to just talk.
+  - "say": one short line to speak aloud, or null to perform the action silently.
+    Write it the way a friendly human presenter talks: casual, contractions,
+    short sentences, react to what's on screen ("okay, watch this", "there it
+    is"). No markdown. Avoid acronyms entirely — say "the link" not "URL",
+    "a quick summary" not "TL;DR" — never spell letters out.
+  - "action": one thing to do, or null to just talk. The app speaks the line
+    WHILE performing the action, like a person narrating over their own clicks.
 
 An action is an object with a "do" field and optional args:
   - {{"do":"navigate","view":"<view>"}}  — view is one of: library, feed, graph,
     search, collections, actions, profile, catalog, concepts, connections.
+  - {{"do":"scroll","target":"library|reader","dy":<pixels>}} — scroll the
+    library grid or the open card; negative dy scrolls up.
   - {{"do":"search","query":"<text>"}}   — open search and run a query.
   - {{"do":"search_filter"}}  — narrow current results by content type.
   - {{"do":"open_card","query":"<text>"}} — open the best-matching saved card.
@@ -125,6 +131,11 @@ class AskRequest(BaseModel):
     question: str
 
 
+class LogRequest(BaseModel):
+    message: str
+    level: str = "info"
+
+
 class Step(BaseModel):
     say: str | None = None
     action: dict[str, Any] | None = None
@@ -161,6 +172,15 @@ def _clean_action(raw: Any) -> dict[str, Any] | None:
             action["ms"] = int(raw.get("ms", 800))
         except (TypeError, ValueError):
             action["ms"] = 800
+    if verb == "scroll":
+        target = str(raw.get("target", "library")).strip().lower()
+        if target not in {"library", "reader"}:
+            return None
+        action["target"] = target
+        try:
+            action["dy"] = int(raw.get("dy", 600))
+        except (TypeError, ValueError):
+            action["dy"] = 600
     return action
 
 
@@ -196,6 +216,26 @@ def _parse(raw: str | None) -> AskResponse:
         if say or action:
             steps.append(Step(say=say, action=action))
     return AskResponse(steps=steps) if steps else fallback
+
+
+_LOG_LEVELS = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+
+@router.post("/log")
+async def relay_log(req: LogRequest) -> dict[str, bool]:
+    """Relay a Present-mode event from the browser into this same pipeline
+    log, since `debugPrint` alone depends on the browser's DWDS log
+    forwarding making it back to the terminal — flaky enough that presenter
+    errors were going unseen. This endpoint is the reliable path: whatever
+    lands here is guaranteed to print in `start.py`'s console."""
+    level = _LOG_LEVELS.get(req.level.strip().lower(), logging.INFO)
+    log.log(level, "[frontend] %s", req.message.strip())
+    return {"ok": True}
 
 
 @router.post("/ask", response_model=AskResponse)

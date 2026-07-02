@@ -8,8 +8,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
+import '../../../core/safe_notifier.dart';
 
-class RabbitHoleViewModel extends ChangeNotifier {
+class RabbitHoleViewModel extends ChangeNotifier with SafeNotifier {
   RabbitHoleViewModel({required CardRepository repository, required this.cardId})
       : _repository = repository;
 

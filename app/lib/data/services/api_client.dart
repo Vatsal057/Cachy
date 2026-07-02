@@ -144,6 +144,27 @@ class ApiClient {
     return steps.whereType<Map<String, dynamic>>().toList();
   }
 
+  /// Relay a Present-mode event to the backend so it lands in the same
+  /// colour-coded pipeline log `start.py` shows — `debugPrint` alone only
+  /// reaches the terminal via the browser's DWDS log forwarding, which is
+  /// flaky, so this is the reliable path. Fire-and-forget: a failed relay
+  /// must never interrupt a live presentation, so errors are swallowed here.
+  void presenterLog(String message, {String level = 'info'}) {
+    unawaited(_postPresenterLog(message, level));
+  }
+
+  Future<void> _postPresenterLog(String message, String level) async {
+    try {
+      await _client.post(
+        _uri('/presenter/log'),
+        headers: {'content-type': 'application/json', ..._ownerHeader},
+        body: jsonEncode({'level': level, 'message': message}),
+      );
+    } catch (_) {
+      // Relay is best-effort; debugPrint is the fallback trail.
+    }
+  }
+
   // ------------------------------------------------------------------------- //
   // Cards
   // ------------------------------------------------------------------------- //

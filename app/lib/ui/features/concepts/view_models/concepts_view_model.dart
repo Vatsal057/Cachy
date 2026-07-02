@@ -6,10 +6,11 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/concept.dart';
+import '../../../core/safe_notifier.dart';
 
 enum ConceptsStatus { idle, loading, ready, error, empty }
 
-class ConceptsViewModel extends ChangeNotifier {
+class ConceptsViewModel extends ChangeNotifier with SafeNotifier {
   ConceptsViewModel({required CardRepository repository})
       : _repository = repository {
     _repository.addListener(_onRepoChange);

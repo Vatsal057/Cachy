@@ -13,10 +13,8 @@ import 'package:provider/provider.dart';
 
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
-import '../features/catalog/views/catalog_screen.dart';
 import '../features/collections/views/collections_screen.dart';
 import '../features/concepts/views/concept_detail_screen.dart';
-import '../features/concepts/views/concepts_screen.dart';
 import '../features/feed/views/connections_screen.dart';
 import '../features/feed/views/knowledge_feed_screen.dart';
 import '../features/graph/views/graph_screen.dart';
@@ -89,9 +87,21 @@ class _HomeShellState extends State<HomeShell> {
   PresenterController? _presenter;
   Widget? _presenterScreen; // GraphScreen/SearchScreen shown during the tour
 
+  // Spotlight anchor for the nav (bottom pill / side rail — only one mounted).
+  final GlobalKey _navKey = GlobalKey();
+
+  // Per-tab anchors so the presenter's cursor lands on the exact tab it taps,
+  // and the plus button so "add something" reads as a real click.
+  static const _navSpotlightIds = ['nav.home', 'nav.folders', 'nav.todo', 'nav.feed', 'nav.you'];
+  final List<GlobalKey> _navItemKeys =
+      List.generate(_navSpotlightIds.length, (_) => GlobalKey());
+  final GlobalKey _plusKey = GlobalKey();
+
   void _startPresenting() {
     final repo = context.read<CardRepository>();
     final bus = context.read<AgentBus>()
+      ..registerSpotlight('nav', _navKey)
+      ..registerSpotlight('home.plus', _plusKey)
       ..onNavigate = _goToView
       ..onOpenCard = _openCardInPresenter
       ..onCreateCard = _createCardInPresenter
@@ -99,6 +109,9 @@ class _HomeShellState extends State<HomeShell> {
       ..onOpenRabbitHole = _openRabbitHoleInPresenter
       ..onOpenCardChat = _openCardChatInPresenter
       ..onOpenLibraryChat = _openLibraryChatInPresenter;
+    for (var i = 0; i < _navSpotlightIds.length; i++) {
+      bus.registerSpotlight(_navSpotlightIds[i], _navItemKeys[i]);
+    }
     final controller = PresenterController(repository: repo, bus: bus);
     setState(() => _presenter = controller);
     controller.addListener(_onPresenterChanged);
@@ -156,8 +169,12 @@ class _HomeShellState extends State<HomeShell> {
         setState(() => _presenterScreen = ReaderScreen(cardId: result.cardId));
       }
       return result.cardId;
-    } catch (_) {
-      return null; // live demo: don't crash the tour if the pipeline is down
+    } catch (e, st) {
+      // Live demo: don't crash the tour if the pipeline is down, but the
+      // failure shouldn't vanish silently either.
+      debugPrint('[Presenter] create_card($url) failed: $e');
+      debugPrintStack(stackTrace: st, label: '[Presenter] create_card');
+      return null;
     }
   }
 
@@ -165,6 +182,12 @@ class _HomeShellState extends State<HomeShell> {
     if (_presenter?.phase == PresenterPhase.done) {
       final c = _presenter;
       c?.removeListener(_onPresenterChanged);
+      final bus = context.read<AgentBus>()
+        ..unregisterSpotlight('nav', _navKey)
+        ..unregisterSpotlight('home.plus', _plusKey);
+      for (var i = 0; i < _navSpotlightIds.length; i++) {
+        bus.unregisterSpotlight(_navSpotlightIds[i], _navItemKeys[i]);
+      }
       setState(() {
         _presenter = null;
         _presenterScreen = null;
@@ -195,15 +218,23 @@ class _HomeShellState extends State<HomeShell> {
         case 'search':
           _presenterScreen = const SearchScreen();
         case 'catalog':
-          _presenterScreen = const CatalogScreen();
+          // Concepts and Catalog are the library's own top tabs — flip the real
+          // tab (via the hook the library registers) instead of overlaying a
+          // separate screen, so it reads as a tap on the segment.
+          _presenterScreen = null;
+          _index = 0;
+          context.read<AgentBus>().onLibraryTab?.call(2);
         case 'concepts':
-          _presenterScreen = const ConceptsScreen();
+          _presenterScreen = null;
+          _index = 0;
+          context.read<AgentBus>().onLibraryTab?.call(1);
         case 'connections':
           _presenterScreen = const ConnectionsScreen();
         case 'library':
         default:
           _presenterScreen = null;
           _index = 0;
+          context.read<AgentBus>().onLibraryTab?.call(0);
       }
     });
   }
@@ -274,13 +305,23 @@ class _HomeShellState extends State<HomeShell> {
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: selecting
           ? null
-          : _CaptureButton(onTap: () => showCaptureSheet(context)),
+          : KeyedSubtree(
+              key: _plusKey,
+              child: _CaptureButton(onTap: () => showCaptureSheet(context)),
+            ),
       bottomNavigationBar: selecting
           ? _SelectionNavSlot(
               vm: vm,
               onConfirmDelete: () => _confirmBulkDelete(context, vm),
             )
-          : _GlassNav(index: _index, onSelect: _select),
+          : KeyedSubtree(
+              key: _navKey,
+              child: _GlassNav(
+                index: _index,
+                onSelect: _select,
+                itemKeys: _navItemKeys,
+              ),
+            ),
     );
   }
 
@@ -329,10 +370,13 @@ class _HomeShellState extends State<HomeShell> {
           Positioned.fill(
             child: Row(
               children: [
-                _GlassRail(
-                  index: _index,
-                  onSelect: _select,
-                  onCapture: () => showCaptureSheet(context),
+                KeyedSubtree(
+                  key: _navKey,
+                  child: _GlassRail(
+                    index: _index,
+                    onSelect: _select,
+                    onCapture: () => showCaptureSheet(context),
+                  ),
                 ),
                 Expanded(
                   child: Stack(
@@ -357,7 +401,10 @@ class _HomeShellState extends State<HomeShell> {
   List<Widget> _presenterLayers(BuildContext context) {
     if (_presenter != null) {
       return [
-        PresenterSpotlight(controller: _presenter!),
+        PresenterSpotlight(
+          controller: _presenter!,
+          bus: context.read<AgentBus>(),
+        ),
         PresenterOverlay(controller: _presenter!),
       ];
     }
@@ -517,9 +564,17 @@ class _GlassRail extends StatelessWidget {
 // ── Mobile floating pill nav ───────────────────────────────────────────────── //
 
 class _GlassNav extends StatelessWidget {
-  const _GlassNav({required this.index, required this.onSelect});
+  const _GlassNav({
+    required this.index,
+    required this.onSelect,
+    this.itemKeys = const [],
+  });
   final int index;
   final ValueChanged<int> onSelect;
+
+  /// Per-tab spotlight anchors so the presenter's cursor lands on the exact
+  /// tab it taps. Empty when not presenting.
+  final List<GlobalKey> itemKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -562,10 +617,13 @@ class _GlassNav extends StatelessWidget {
                   children: [
                     for (var i = 0; i < _navItems.length; i++)
                       Expanded(
-                        child: _NavBtn(
-                          def: _navItems[i],
-                          selected: index == i,
-                          onTap: () => onSelect(i),
+                        child: KeyedSubtree(
+                          key: i < itemKeys.length ? itemKeys[i] : null,
+                          child: _NavBtn(
+                            def: _navItems[i],
+                            selected: index == i,
+                            onTap: () => onSelect(i),
+                          ),
                         ),
                       ),
                   ],

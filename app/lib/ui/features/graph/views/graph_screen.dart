@@ -166,9 +166,11 @@ class _GraphScreenState extends State<GraphScreen>
   bool _showConcepts = true;
 
   // Agent driving: the presenter agent operates the graph through these hooks
-  // while this screen is mounted (see AgentBus).
+  // while this screen is mounted (see AgentBus). The canvas key gives its
+  // spotlight the real canvas bounds.
   AgentBus? _bus;
   GraphAgentHooks? _hooks;
+  final _canvasKey = GlobalKey();
 
   @override
   void initState() {
@@ -193,12 +195,14 @@ class _GraphScreenState extends State<GraphScreen>
     );
     _hooks = hooks;
     _bus!.attachGraph(hooks);
+    _bus!.registerSpotlight('graph.canvas', _canvasKey);
   }
 
   @override
   void dispose() {
     final h = _hooks;
     if (h != null) _bus?.detachGraph(h);
+    _bus?.unregisterSpotlight('graph.canvas', _canvasKey);
     _ticker.dispose();
     super.dispose();
   }
@@ -968,6 +972,7 @@ class _GraphScreenState extends State<GraphScreen>
               final size =
                   Size(constraints.maxWidth, constraints.maxHeight);
               return ClipRect(
+                key: _canvasKey,
                 child: GestureDetector(
                   onScaleStart: (d) => _onScaleStart(d, size),
                   onScaleUpdate: (d) => _onScaleUpdate(d, size),
