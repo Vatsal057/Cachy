@@ -169,6 +169,20 @@ class AgentBus extends ChangeNotifier {
   /// Open a card in the reader (kept under the agent glyph, not pushed).
   Future<void> Function(String cardId)? onOpenCard;
 
+  /// Select a card in the library's split-pane detail (the side column) — the
+  /// same thing a user tap does. Registered by the library screen while it's
+  /// mounted on a wide (split-pane) layout.
+  Future<void> Function(String cardId)? onSelectLibraryCard;
+
+  /// Promote a card's notes to a fullscreen reader (from the side column).
+  /// Registered by the shell; used by the reader's fullscreen toggle and by
+  /// the agent.
+  void Function(String cardId)? onEnterCardFullscreen;
+
+  /// Restore the fullscreen reader back to the side column. Registered by the
+  /// shell.
+  VoidCallback? onExitCardFullscreen;
+
   /// Submit a URL to the live pipeline and open the resulting card.
   Future<String?> Function(String url)? onCreateCard;
 

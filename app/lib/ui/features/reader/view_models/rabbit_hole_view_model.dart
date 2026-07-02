@@ -85,7 +85,7 @@ class RabbitHoleViewModel extends ChangeNotifier with SafeNotifier {
     } on ApiException catch (e) {
       _failedTopic = trimmed;
       _error = e.statusCode == 503
-          ? 'The rabbit hole is unavailable — no AI backend is configured.'
+          ? 'The rabbit hole is catching its breath — try again in a moment.'
           : "Couldn't explore that thread. Try again.";
     } catch (_) {
       _failedTopic = trimmed;
