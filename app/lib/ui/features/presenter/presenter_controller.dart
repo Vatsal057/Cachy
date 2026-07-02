@@ -533,8 +533,11 @@ class PresenterController extends ChangeNotifier {
     }
     if (beat.action != null) {
       if (speech != null) {
-        // Let the narration lead before the hand moves.
-        await Future<void>.delayed(const Duration(milliseconds: 550));
+        // Let the narration lead before the hand moves. Scrolling gets a longer
+        // lead so the glide starts *as* the agent says "let me scroll down",
+        // not before it.
+        final lead = beat.action!.type == 'scroll' ? 1300 : 550;
+        await Future<void>.delayed(Duration(milliseconds: lead));
       } else {
         _setPhase(PresenterPhase.acting);
       }
@@ -725,10 +728,26 @@ class PresenterController extends ChangeNotifier {
   Future<void> _scrollSurface(AgentAction a) async {
     final target = (a.args['target'] as String?) ?? 'library';
     final dy = (a.args['dy'] as num?)?.toDouble() ?? 600;
-    await _try('scroll($target)', () => _bus.scrollBy(target, dy));
-    if (a.args['sweep'] == true) {
-      await _settle(ms: 600);
-      await _try('scroll($target, back)', () => _bus.scrollBy(target, -dy));
+    final sweep = a.args['sweep'] == true;
+    // The surface may have just navigated/opened; give it a moment to lay out
+    // so there's something to scroll (otherwise the sweep no-ops instantly).
+    await _waitFor(() => _bus.scrollRoom(target) > 8,
+        what: 'scrollable "$target"', timeoutMs: 2500);
+    if (!_active) return;
+    // Slow, continuous glide down so it reads as deliberate browsing and spans
+    // the narration, then a pause, then back up by exactly what we travelled.
+    var moved = 0.0;
+    await _try('scroll($target)', () async {
+      moved = await _bus.scrollBy(target, dy,
+          duration: const Duration(milliseconds: 1600));
+    });
+    if (sweep && moved.abs() > 1 && _active) {
+      await _settle(ms: 800);
+      if (!_active) return;
+      await _try('scroll($target, back)', () async {
+        await _bus.scrollBy(target, -moved,
+            duration: const Duration(milliseconds: 1300));
+      });
     }
   }
 
