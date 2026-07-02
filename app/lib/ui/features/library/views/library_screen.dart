@@ -33,6 +33,7 @@ import '../../catalog/views/catalog_screen.dart';
 import '../../concepts/views/concepts_screen.dart';
 import '../../graph/views/graph_screen.dart';
 import '../../library/views/library_chat_screen.dart';
+import '../../presenter/agent_bus.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
 import '../view_models/library_view_model.dart';
@@ -50,8 +51,54 @@ class LibraryScreen extends StatelessWidget {
   }
 }
 
-class _LibraryView extends StatelessWidget {
+class _LibraryView extends StatefulWidget {
   const _LibraryView();
+
+  @override
+  State<_LibraryView> createState() => _LibraryViewState();
+}
+
+class _LibraryViewState extends State<_LibraryView>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 3, vsync: this);
+
+  // Presenter spotlight anchors: the top segments and top-bar icons the agent
+  // taps live here. Registered while mounted; the presenter's cursor resolves
+  // them to real geometry.
+  final _conceptsTabKey = GlobalKey();
+  final _catalogTabKey = GlobalKey();
+  final _graphKey = GlobalKey();
+  final _chatKey = GlobalKey();
+  final _searchKey = GlobalKey();
+  AgentBus? _bus;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bus != null) return;
+    _bus = context.read<AgentBus>()
+      ..onLibraryTab = (i) {
+        if (i >= 0 && i < _tabs.length) _tabs.animateTo(i);
+      }
+      ..registerSpotlight('library.tab.concepts', _conceptsTabKey)
+      ..registerSpotlight('library.tab.catalog', _catalogTabKey)
+      ..registerSpotlight('top.graph', _graphKey)
+      ..registerSpotlight('top.chat', _chatKey)
+      ..registerSpotlight('top.search', _searchKey);
+  }
+
+  @override
+  void dispose() {
+    _bus
+      ?..onLibraryTab = null
+      ..unregisterSpotlight('library.tab.concepts', _conceptsTabKey)
+      ..unregisterSpotlight('library.tab.catalog', _catalogTabKey)
+      ..unregisterSpotlight('top.graph', _graphKey)
+      ..unregisterSpotlight('top.chat', _chatKey)
+      ..unregisterSpotlight('top.search', _searchKey);
+    _tabs.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +106,7 @@ class _LibraryView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isDesktop = MediaQuery.sizeOf(context).width >= Insets.desktop;
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           titleSpacing: Insets.page,
@@ -76,6 +121,7 @@ class _LibraryView extends StatelessWidget {
                 ),
               ),
             IconButton(
+              key: _graphKey,
               tooltip: 'Graph',
               icon: const PhosphorIcon(PhosphorIconsRegular.graph),
               onPressed: () => Navigator.of(context).push(
@@ -83,6 +129,7 @@ class _LibraryView extends StatelessWidget {
               ),
             ),
             IconButton(
+              key: _chatKey,
               tooltip: 'Chat',
               icon: const PhosphorIcon(PhosphorIconsRegular.chats),
               onPressed: () => Navigator.of(context).push(
@@ -90,6 +137,7 @@ class _LibraryView extends StatelessWidget {
               ),
             ),
             IconButton(
+              key: _searchKey,
               tooltip: 'Search',
               icon: const PhosphorIcon(PhosphorIconsRegular.magnifyingGlass),
               onPressed: () => Navigator.of(context).push(
@@ -113,6 +161,7 @@ class _LibraryView extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: TabBar(
+                      controller: _tabs,
                       dividerColor: Colors.transparent,
                       indicator: BoxDecoration(
                         color: scheme.surface,
@@ -127,10 +176,10 @@ class _LibraryView extends StatelessWidget {
                       unselectedLabelColor: scheme.onSurfaceVariant,
                       labelStyle: Brand.label(size: 12, weight: FontWeight.w700),
                       unselectedLabelStyle: Brand.label(size: 12, weight: FontWeight.w500),
-                      tabs: const [
-                        Tab(text: 'CARDS'),
-                        Tab(text: 'CONCEPTS'),
-                        Tab(text: 'CATALOG'),
+                      tabs: [
+                        const Tab(text: 'CARDS'),
+                        Tab(key: _conceptsTabKey, text: 'CONCEPTS'),
+                        Tab(key: _catalogTabKey, text: 'CATALOG'),
                       ],
                     ),
                   ),
@@ -139,15 +188,15 @@ class _LibraryView extends StatelessWidget {
             ),
           ),
         ),
-        body: const TabBarView(
-          children: [
+        body: TabBarView(
+          controller: _tabs,
+          children: const [
             _CardsTab(),
             ConceptsScreen(),
             CatalogScreen(),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -167,10 +216,25 @@ class _CardsTabState extends State<_CardsTab> {
   /// The grid index that most recently received keyboard focus.
   int _lastFocusedIndex = 0;
 
+  // Presenter agent: expose the grid's scroll so the agent can browse the
+  // library while narrating.
+  final _gridScroll = ScrollController();
+  final _firstCardKey = GlobalKey();
+  AgentBus? _bus;
+
   @override
   void initState() {
     super.initState();
     _fraction = context.read<AppController>().splitPaneFraction;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bus != null) return;
+    _bus = context.read<AgentBus>()
+      ..registerScrollable('library', _gridScroll)
+      ..registerSpotlight('card.first', _firstCardKey);
   }
 
   /// Grows or shrinks [_focusNodes] to exactly [count] nodes.
@@ -192,6 +256,10 @@ class _CardsTabState extends State<_CardsTab> {
 
   @override
   void dispose() {
+    _bus
+      ?..unregisterScrollable('library', _gridScroll)
+      ..unregisterSpotlight('card.first', _firstCardKey);
+    _gridScroll.dispose();
     for (final node in _focusNodes) {
       node.dispose();
     }
@@ -426,6 +494,7 @@ class _CardsTabState extends State<_CardsTab> {
             child: FocusTraversalGroup(
               policy: OrderedTraversalPolicy(),
               child: GridView.builder(
+                controller: _gridScroll,
                 padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
                 physics: const AlwaysScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -444,7 +513,7 @@ class _CardsTabState extends State<_CardsTab> {
                       (Platform.isMacOS ||
                           Platform.isWindows ||
                           Platform.isLinux);
-                  return CardTile(
+                  final tile = CardTile(
                     focusNode: _focusNodes[i],
                     card: card,
                     api: api,
@@ -493,6 +562,11 @@ class _CardsTabState extends State<_CardsTab> {
                     },
                     onDelete: () => vm.delete(card.cardId),
                   );
+                  // Anchor the first tile so the presenter's cursor lands on a
+                  // real card before opening it.
+                  return i == 0
+                      ? KeyedSubtree(key: _firstCardKey, child: tile)
+                      : tile;
                 },
               ),
             ),

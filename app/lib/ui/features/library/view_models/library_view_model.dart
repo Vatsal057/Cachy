@@ -9,10 +9,11 @@ import 'package:flutter/foundation.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../domain/models/card.dart';
 import '../../../../domain/models/enums.dart';
+import '../../../core/safe_notifier.dart';
 
 enum LibraryStatus { idle, loading, ready, error, empty }
 
-class LibraryViewModel extends ChangeNotifier {
+class LibraryViewModel extends ChangeNotifier with SafeNotifier {
   LibraryViewModel({required CardRepository repository})
       : _repository = repository {
     _repository.addListener(_onRepoChange);

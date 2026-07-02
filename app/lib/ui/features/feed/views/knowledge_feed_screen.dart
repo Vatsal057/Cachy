@@ -59,8 +59,10 @@ class _FeedViewState extends State<_FeedView> {
   int _page = 0;
 
   // Agent driving: expose feed paging to the presenter agent while mounted.
+  // The page key gives its spotlight the pager's real bounds.
   AgentBus? _bus;
   FeedAgentHooks? _hooks;
+  final _pageKey = GlobalKey();
 
   int get _total {
     if (!mounted) return 0;
@@ -82,12 +84,14 @@ class _FeedViewState extends State<_FeedView> {
     );
     _hooks = hooks;
     _bus!.attachFeed(hooks);
+    _bus!.registerSpotlight('feed.page', _pageKey);
   }
 
   @override
   void dispose() {
     final h = _hooks;
     if (h != null) _bus?.detachFeed(h);
+    _bus?.unregisterSpotlight('feed.page', _pageKey);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -191,6 +195,7 @@ class _FeedViewState extends State<_FeedView> {
     return ScrollConfiguration(
       behavior: const _FeedScrollBehavior(),
       child: PageView.builder(
+        key: _pageKey,
         controller: _controller,
         scrollDirection: Axis.vertical,
         itemCount: vm.items.length,

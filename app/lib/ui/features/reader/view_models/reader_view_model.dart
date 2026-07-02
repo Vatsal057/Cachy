@@ -12,8 +12,9 @@ import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart';
 import '../../../../domain/models/concept.dart';
 import '../../../../domain/models/pipeline_event.dart';
+import '../../../core/safe_notifier.dart';
 
-class ReaderViewModel extends ChangeNotifier {
+class ReaderViewModel extends ChangeNotifier with SafeNotifier {
   ReaderViewModel({required CardRepository repository, required this.cardId})
       : _repository = repository;
 

@@ -72,10 +72,40 @@ class _ReaderAgentBridge extends StatefulWidget {
   State<_ReaderAgentBridge> createState() => _ReaderAgentBridgeState();
 }
 
+/// Spotlight anchors for the reader's sections, so the presenter's cursor can
+/// land on the real blocks / "Going deeper" / references / action bar it's
+/// talking about instead of a guessed region.
+class ReaderSpotlightKeys {
+  final blocks = GlobalKey();
+  final insight = GlobalKey();
+  final references = GlobalKey();
+  final actionBar = GlobalKey();
+}
+
+/// Hands the section keys down to [_ReaderView] without threading them through
+/// every constructor. Absent when not presenting.
+class _ReaderSpotlight extends InheritedWidget {
+  const _ReaderSpotlight({required this.keys, required super.child});
+  final ReaderSpotlightKeys keys;
+
+  static ReaderSpotlightKeys? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_ReaderSpotlight>()
+      ?.keys;
+
+  @override
+  bool updateShouldNotify(_ReaderSpotlight old) => false;
+}
+
 class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
   AgentBus? _bus;
   ReaderAgentHooks? _hooks;
   ReaderViewModel? _vm;
+  final _bodyKey = GlobalKey();
+  final _spotlight = ReaderSpotlightKeys();
+
+  // Handed to the reader's scroll view below via PrimaryScrollController, so
+  // the agent can scroll through a card while narrating it.
+  final _scroll = ScrollController();
 
   @override
   void didChangeDependencies() {
@@ -90,6 +120,15 @@ class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
     );
     _hooks = hooks;
     _bus!.attachReader(hooks);
+    _bus!.registerSpotlight('reader.body', _bodyKey);
+    _bus!.registerSpotlight('reader.blocks', _spotlight.blocks);
+    _bus!.registerSpotlight('reader.insight', _spotlight.insight);
+    _bus!.registerSpotlight('reader.references', _spotlight.references);
+    // Ask and the three-dots menu both live in the bottom action bar; point at
+    // it for both — the narration says which control.
+    _bus!.registerSpotlight('reader.ask', _spotlight.actionBar);
+    _bus!.registerSpotlight('reader.more', _spotlight.actionBar);
+    _bus!.registerScrollable('reader', _scroll);
   }
 
   Future<bool> _toggleCheck() async {
@@ -130,11 +169,25 @@ class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
   void dispose() {
     final h = _hooks;
     if (h != null) _bus?.detachReader(h);
+    _bus?.unregisterSpotlight('reader.body', _bodyKey);
+    _bus?.unregisterSpotlight('reader.blocks', _spotlight.blocks);
+    _bus?.unregisterSpotlight('reader.insight', _spotlight.insight);
+    _bus?.unregisterSpotlight('reader.references', _spotlight.references);
+    _bus?.unregisterSpotlight('reader.ask', _spotlight.actionBar);
+    _bus?.unregisterSpotlight('reader.more', _spotlight.actionBar);
+    _bus?.unregisterScrollable('reader', _scroll);
+    _scroll.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => PrimaryScrollController(
+        controller: _scroll,
+        child: _ReaderSpotlight(
+          keys: _spotlight,
+          child: KeyedSubtree(key: _bodyKey, child: widget.child),
+        ),
+      );
 }
 
 class _ReaderView extends StatelessWidget {
@@ -168,6 +221,7 @@ class _ReaderView extends StatelessWidget {
     final accent = ContentAccent.of(card.base.contentType);
     final readMins = _estimateReadMinutes(card);
     final highlightStore = context.read<HighlightStore>();
+    final spotlight = _ReaderSpotlight.of(context);
 
     void onHighlight(String text) {
       highlightStore.add(Highlight(
@@ -241,7 +295,9 @@ class _ReaderView extends StatelessWidget {
 
                       // Structured blocks — skeleton while building, fades in on arrival
                       if (card.blocks.isNotEmpty) ...[
-                        _fadeIn(BlockList(
+                        _fadeIn(KeyedSubtree(
+                          key: spotlight?.blocks,
+                          child: BlockList(
                           blocks: card.blocks,
                           onToggleChecklist: vm.toggleChecklistItem,
                           onToggleStep: vm.toggleStep,
@@ -255,7 +311,7 @@ class _ReaderView extends StatelessWidget {
                             ),
                           ),
                           onHighlight: card.isReady ? onHighlight : null,
-                        )),
+                        ))),
                         if (card.isProcessing) ...[
                           const SizedBox(height: 12),
                           const _SkeletonBox(height: 70, radius: Insets.radius),
@@ -274,16 +330,23 @@ class _ReaderView extends StatelessWidget {
                       if (card.isReady &&
                           card.insight != null &&
                           card.insight!.hasContent)
-                        InsightSection(
-                          insight: card.insight!,
-                          accent: accent,
-                          cardId: card.cardId,
-                          cardTitle: card.base.oneLiner,
-                          readMinutes: readMins,
+                        KeyedSubtree(
+                          key: spotlight?.insight,
+                          child: InsightSection(
+                            insight: card.insight!,
+                            accent: accent,
+                            cardId: card.cardId,
+                            cardTitle: card.base.oneLiner,
+                            readMinutes: readMins,
+                          ),
                         ),
 
                       // Referenced catalog items
-                      if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
+                      if (card.isReady)
+                        KeyedSubtree(
+                          key: spotlight?.references,
+                          child: _ReferencesStrip(entries: vm.artifacts),
+                        ),
 
                       // Concepts this card contributed to
                       if (card.isReady) _ConceptsStrip(entries: vm.concepts),
@@ -302,20 +365,30 @@ class _ReaderView extends StatelessWidget {
       return Column(
         children: [
           _EmbeddedHeader(card: card, accent: accent, onClose: onClose),
-          Expanded(child: SingleChildScrollView(child: content)),
-          if (card.isReady) PrimaryActionBar(card: card),
+          Expanded(child: SingleChildScrollView(primary: true, child: content)),
+          if (card.isReady)
+            KeyedSubtree(
+              key: spotlight?.actionBar,
+              child: PrimaryActionBar(card: card),
+            ),
         ],
       );
     }
 
     return Scaffold(
       body: CustomScrollView(
+        primary: true,
         slivers: [
           _FaceAppBar(card: card, api: api, accent: accent),
           SliverToBoxAdapter(child: content),
         ],
       ),
-      bottomSheet: card.isReady ? PrimaryActionBar(card: card) : null,
+      bottomSheet: card.isReady
+          ? KeyedSubtree(
+              key: spotlight?.actionBar,
+              child: PrimaryActionBar(card: card),
+            )
+          : null,
     );
   }
 
