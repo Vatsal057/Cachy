@@ -674,7 +674,9 @@ class PresenterController extends ChangeNotifier {
         if (url != null && url.isNotEmpty) {
           final id = await _bus.onCreateCard?.call(url);
           if (id != null && id.isNotEmpty) _currentCardId = id;
-          await _settle(ms: 600);
+          // Hold on the pipeline so the stages are clearly visible before the
+          // tour moves on / winds down.
+          await _settle(ms: 1500);
         }
       case 'search':
         await _runSearch(a.query);
