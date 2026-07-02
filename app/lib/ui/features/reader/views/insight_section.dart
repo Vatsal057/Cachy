@@ -121,7 +121,13 @@ class _DiveDeeperButtonState extends State<_DiveDeeperButton> {
       duration: const Duration(milliseconds: 600),
       curve: Curves.easeInOutCubic,
     );
-    if (mounted && !_expanded) setState(() => _expanded = true);
+    if (!mounted) return;
+    if (!_expanded) setState(() => _expanded = true);
+    // Hold open while the agent narrates the section, then close it so the
+    // card is left tidy — and so a follow-up expand animates cleanly instead
+    // of getting stuck open. Manual tapping still toggles it normally.
+    await Future<void>.delayed(const Duration(milliseconds: 4200));
+    if (mounted && _expanded) setState(() => _expanded = false);
   }
 
   @override

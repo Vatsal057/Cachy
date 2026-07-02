@@ -426,7 +426,20 @@ class PresenterController extends ChangeNotifier {
     // wired before any error would need it.
     _repo.api.presenterLog('Present mode started');
     unawaited(_warmCards());
+    // Lock in the natural voice before the first line, so the tour doesn't
+    // open in the default (legacy) voice and switch part-way through.
+    await _ensureVoice();
     await _runTour();
+  }
+
+  /// Web voices load asynchronously; poll until they're available and the
+  /// natural one is chosen, so line one already speaks in the good voice.
+  Future<void> _ensureVoice() async {
+    for (var i = 0; i < 12 && _active && !_voicePicked; i++) {
+      await _selectNaturalVoice();
+      if (_voicePicked) return;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
   }
 
   /// The audience/presenter submitted a question or task. Interrupts the tour,
@@ -803,12 +816,19 @@ class PresenterController extends ChangeNotifier {
   Future<void> _openCard(String? query) async {
     final cards = await _warmCards();
     final match = _bestCard(query, cards);
-    if (match != null) {
-      _currentCardId = match.cardId;
-      await _try('onOpenCard(${match.cardId})',
-          () => _bus.onOpenCard?.call(match.cardId));
-      await _settle(ms: 500);
+    if (match == null) {
+      _logWarn('open_card: no cards to open yet — skipped');
+      return;
     }
+    _currentCardId = match.cardId;
+    await _try('onOpenCard(${match.cardId})',
+        () => _bus.onOpenCard?.call(match.cardId));
+    // Wait for the reader to mount and load the card before moving on, so the
+    // block-by-block scroll and deep-dive beats act on a fully-open reader
+    // instead of racing a half-built one.
+    await _waitFor(() => _bus.reader?.isReady() == true,
+        what: 'reader (open_card)', timeoutMs: 6000);
+    await _settle(ms: 400);
   }
 
   Future<void> _readerToggle() async {
