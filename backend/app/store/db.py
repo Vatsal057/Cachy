@@ -298,6 +298,15 @@ class ConnectionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class ClaimRow(Base):
+    """Legacy display-name -> uid claims; first claim wins."""
+
+    __tablename__ = "claims"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    uid: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class UsageRow(Base):
     """Daily metered usage. One row per (owner, UTC day, kind); owner_id also
     stores "ip:<addr>" rows for the anonymous-farming IP cap."""
@@ -329,6 +338,22 @@ async def spend_usage(
     row.count += 1
     await db_session.commit()
     return True, row.count
+
+
+async def claim_owner(db_session: AsyncSession, *, name: str, uid: str) -> int | None:
+    """Re-point every legacy row owned by `name` to `uid`. None = taken."""
+    existing = await db_session.get(ClaimRow, name)
+    if existing is not None:
+        return 0 if existing.uid == uid else None
+    db_session.add(ClaimRow(name=name, uid=uid))
+    total = 0
+    for model in (CardRow, CollectionRow, ConversationRow, ConnectionRow):
+        res = await db_session.execute(
+            update(model).where(model.owner_id == name).values(owner_id=uid)
+        )
+        total += res.rowcount or 0
+    await db_session.commit()
+    return total
 
 
 # --------------------------------------------------------------------------- #
