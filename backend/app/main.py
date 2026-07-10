@@ -9,12 +9,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import discovery
+from app.config import get_settings
 from app.api import auth_routes, cards, catalog, collections, concepts, connections, feed, graph, library_chat, me, presenter, search
 from app.logging_config import configure_logging
 from app.models.card import SCHEMA_VERSION
@@ -61,23 +62,29 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Cachy", version="0.1.0", lifespan=lifespan)
 
 
+async def require_admin(x_admin_token: str | None = Header(None)) -> None:
+    """Gate for owner-only endpoints; unset ADMIN_TOKEN disables them entirely."""
+    expected = get_settings().admin_token
+    if not expected or x_admin_token != expected:
+        raise HTTPException(status_code=401, detail="admin token required")
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     import traceback
 
     tb = traceback.format_exc()
     log.error("Unhandled exception on %s %s:\n%s", request.method, request.url, tb)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"{exc.__class__.__name__}: {exc}", "traceback": tb},
-    )
+    # Never leak exception text or tracebacks to callers — logs only.
+    return JSONResponse(status_code=500, content={"detail": "internal error"})
 
 
-# Dev-open CORS so the Flutter web client (Chrome) can reach the API + SSE stream
-# from its own origin. Tighten to specific origins before any real deployment.
+# CORS: set CORS_ORIGINS (comma-separated) to the real web origins in deployment;
+# defaults to the local dev origin.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
+    or ["http://localhost:8000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -103,7 +110,7 @@ async def health() -> dict:
     return {"status": "ok", "schema_version": SCHEMA_VERSION}
 
 
-@app.get("/admin/stats")
+@app.get("/admin/stats", dependencies=[Depends(require_admin)])
 async def admin_stats() -> dict:
     """Owner and card counts across all users."""
     from sqlalchemy import func, select
@@ -120,7 +127,7 @@ async def admin_stats() -> dict:
     return {"total_users": len(users), "users": users}
 
 
-@app.get("/debug/jobs")
+@app.get("/debug/jobs", dependencies=[Depends(require_admin)])
 async def debug_jobs() -> dict:
     from sqlalchemy import select
     from app.store.db import JobRow, session as db_session
@@ -148,7 +155,7 @@ async def debug_jobs() -> dict:
     }
 
 
-@app.post("/debug/kill_stuck")
+@app.post("/debug/kill_stuck", dependencies=[Depends(require_admin)])
 async def kill_stuck() -> dict:
     import asyncio
     from sqlalchemy import update

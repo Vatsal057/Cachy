@@ -19,6 +19,10 @@ class Settings(BaseSettings):
 
     # auth — Firebase project id; token verification needs no secret.
     firebase_project_id: str = ""
+    # hardening — unset ADMIN_TOKEN disables admin/debug endpoints entirely;
+    # CORS_ORIGINS is comma-separated (empty -> localhost dev default).
+    admin_token: str = ""
+    cors_origins: str = ""
 
     # transcription
     whisper_backend: str = "groq"  # none | groq
