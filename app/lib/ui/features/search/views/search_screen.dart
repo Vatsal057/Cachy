@@ -18,7 +18,6 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../library/views/card_tile.dart';
-import '../../presenter/agent_bus.dart';
 import '../../reader/views/reader_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -37,43 +36,6 @@ class _SearchScreenState extends State<SearchScreen> {
   List<model.Card> _results = const [];
   String _query = '';
   ContentType? _filter; // null = All
-
-  // Agent driving: let the presenter agent run searches while mounted, and
-  // give its spotlight real geometry for the field and the filter bar.
-  AgentBus? _bus;
-  SearchAgentHooks? _hooks;
-  final _fieldKey = GlobalKey();
-  final _filtersKey = GlobalKey();
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_hooks != null) return;
-    _bus = context.read<AgentBus>();
-    final hooks = SearchAgentHooks(run: _runAgentQuery, filter: _applyAgentFilter);
-    _hooks = hooks;
-    _bus!.attachSearch(hooks);
-    _bus!
-      ..registerSpotlight('search.field', _fieldKey)
-      ..registerSpotlight('search.filters', _filtersKey);
-  }
-
-  void _runAgentQuery(String query) {
-    if (!mounted) return;
-    _controller.text = query;
-    _query = query.trim();
-    setState(() {});
-    if (_query.isNotEmpty) _run();
-  }
-
-  /// Narrow the current results to the first available content type — shows the
-  /// filter bar working during a demo.
-  void _applyAgentFilter() {
-    if (!mounted) return;
-    final types = _presentTypes;
-    if (types.isEmpty) return;
-    setState(() => _filter = types.first);
-  }
 
   void _onChanged(String value) {
     _query = value.trim();
@@ -118,11 +80,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
-    final h = _hooks;
-    if (h != null) _bus?.detachSearch(h);
-    _bus
-      ?..unregisterSpotlight('search.field', _fieldKey)
-      ..unregisterSpotlight('search.filters', _filtersKey);
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
@@ -135,7 +92,6 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
-          key: _fieldKey,
           controller: _controller,
           autofocus: true,
           onChanged: _onChanged,
@@ -192,7 +148,6 @@ class _SearchScreenState extends State<SearchScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _FilterBar(
-              key: _filtersKey,
               types: _presentTypes,
               selected: _filter,
               total: _results.length,
@@ -235,7 +190,6 @@ class _SearchScreenState extends State<SearchScreen> {
 /// filters for types present in the results (docs/06 search).
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
-    super.key,
     required this.types,
     required this.selected,
     required this.total,

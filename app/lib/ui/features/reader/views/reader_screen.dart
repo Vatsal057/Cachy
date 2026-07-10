@@ -29,7 +29,6 @@ import '../../../core/widgets/pipeline_progress.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
 import '../../concepts/views/concept_detail_screen.dart';
-import '../../presenter/agent_bus.dart';
 import '../view_models/reader_view_model.dart';
 import 'insight_section.dart';
 import 'primary_action_bar.dart';
@@ -71,7 +70,7 @@ class ReaderScreen extends StatelessWidget {
         repository: ctx.read<CardRepository>(),
         cardId: cardId,
       )..init(),
-      child: _ReaderAgentBridge(
+      child: _ReaderScrollHost(
         child: _ReaderView(
           embedded: embedded,
           onClose: onClose,
@@ -83,124 +82,21 @@ class ReaderScreen extends StatelessWidget {
   }
 }
 
-/// Bridges the mounted reader to the presenter agent: while a reader is on
-/// screen, the agent can toggle a checklist item or step live to show cards are
-/// interactive. Attaches on mount, detaches on unmount (AgentBus lifecycle).
-class _ReaderAgentBridge extends StatefulWidget {
-  const _ReaderAgentBridge({required this.child});
+/// Hosts the reader's scroll controller as the [PrimaryScrollController] the
+/// body's `primary: true` scroll views attach to.
+class _ReaderScrollHost extends StatefulWidget {
+  const _ReaderScrollHost({required this.child});
   final Widget child;
 
   @override
-  State<_ReaderAgentBridge> createState() => _ReaderAgentBridgeState();
+  State<_ReaderScrollHost> createState() => _ReaderScrollHostState();
 }
 
-/// Spotlight anchors for the reader's sections, so the presenter's cursor can
-/// land on the real blocks / "Going deeper" / references / action bar it's
-/// talking about instead of a guessed region.
-class ReaderSpotlightKeys {
-  final blocks = GlobalKey();
-  final insight = GlobalKey();
-  final references = GlobalKey();
-  final actionBar = GlobalKey();
-  final fullscreen = GlobalKey();
-}
-
-/// Hands the section keys down to [_ReaderView] without threading them through
-/// every constructor. Absent when not presenting.
-class _ReaderSpotlight extends InheritedWidget {
-  const _ReaderSpotlight({required this.keys, required super.child});
-  final ReaderSpotlightKeys keys;
-
-  static ReaderSpotlightKeys? of(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<_ReaderSpotlight>()
-      ?.keys;
-
-  @override
-  bool updateShouldNotify(_ReaderSpotlight old) => false;
-}
-
-class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
-  AgentBus? _bus;
-  ReaderAgentHooks? _hooks;
-  ReaderViewModel? _vm;
-  final _bodyKey = GlobalKey();
-  final _spotlight = ReaderSpotlightKeys();
-
-  // Handed to the reader's scroll view below via PrimaryScrollController, so
-  // the agent can scroll through a card while narrating it.
+class _ReaderScrollHostState extends State<_ReaderScrollHost> {
   final _scroll = ScrollController();
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _vm = context.read<ReaderViewModel>();
-    if (_hooks != null) return;
-    _bus = context.read<AgentBus>();
-    final hooks = ReaderAgentHooks(
-      isReady: () => _vm?.card != null,
-      toggleCheck: _toggleCheck,
-      toggleStep: _toggleStep,
-    );
-    _hooks = hooks;
-    _bus!.attachReader(hooks);
-    _bus!.registerSpotlight('reader.body', _bodyKey);
-    _bus!.registerSpotlight('reader.blocks', _spotlight.blocks);
-    _bus!.registerSpotlight('reader.insight', _spotlight.insight);
-    _bus!.registerSpotlight('reader.references', _spotlight.references);
-    // Ask and the three-dots menu both live in the bottom action bar; point at
-    // it for both — the narration says which control.
-    _bus!.registerSpotlight('reader.ask', _spotlight.actionBar);
-    _bus!.registerSpotlight('reader.more', _spotlight.actionBar);
-    _bus!.registerSpotlight('reader.fullscreen', _spotlight.fullscreen);
-    _bus!.registerScrollable('reader', _scroll);
-  }
-
-  Future<bool> _toggleCheck() async {
-    final card = _vm?.card;
-    if (card == null) return false;
-    for (final b in card.rawBlocks) {
-      if (b['type'] == 'checklist') {
-        final id = b['id'] as String?;
-        final items = (b['items'] as List?) ?? const [];
-        if (id != null && items.isNotEmpty) {
-          final checked = (items.first as Map)['checked'] == true;
-          await _vm!.toggleChecklistItem(id, 0, !checked);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  Future<bool> _toggleStep() async {
-    final card = _vm?.card;
-    if (card == null) return false;
-    for (final b in card.rawBlocks) {
-      if (b['type'] == 'step_list') {
-        final id = b['id'] as String?;
-        final steps = (b['steps'] as List?) ?? const [];
-        if (id != null && steps.isNotEmpty) {
-          final checked = (steps.first as Map)['checked'] == true;
-          await _vm!.toggleStep(id, 0, !checked);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  @override
   void dispose() {
-    final h = _hooks;
-    if (h != null) _bus?.detachReader(h);
-    _bus?.unregisterSpotlight('reader.body', _bodyKey);
-    _bus?.unregisterSpotlight('reader.blocks', _spotlight.blocks);
-    _bus?.unregisterSpotlight('reader.insight', _spotlight.insight);
-    _bus?.unregisterSpotlight('reader.references', _spotlight.references);
-    _bus?.unregisterSpotlight('reader.ask', _spotlight.actionBar);
-    _bus?.unregisterSpotlight('reader.more', _spotlight.actionBar);
-    _bus?.unregisterSpotlight('reader.fullscreen', _spotlight.fullscreen);
-    _bus?.unregisterScrollable('reader', _scroll);
     _scroll.dispose();
     super.dispose();
   }
@@ -208,10 +104,7 @@ class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
   @override
   Widget build(BuildContext context) => PrimaryScrollController(
         controller: _scroll,
-        child: _ReaderSpotlight(
-          keys: _spotlight,
-          child: KeyedSubtree(key: _bodyKey, child: widget.child),
-        ),
+        child: widget.child,
       );
 }
 
@@ -253,7 +146,6 @@ class _ReaderView extends StatelessWidget {
     final accent = ContentAccent.of(card.base.contentType);
     final readMins = _estimateReadMinutes(card);
     final highlightStore = context.read<HighlightStore>();
-    final spotlight = _ReaderSpotlight.of(context);
 
     void onHighlight(String text) {
       highlightStore.add(Highlight(
@@ -328,7 +220,6 @@ class _ReaderView extends StatelessWidget {
                       // Structured blocks — skeleton while building, fades in on arrival
                       if (card.blocks.isNotEmpty) ...[
                         _fadeIn(KeyedSubtree(
-                          key: spotlight?.blocks,
                           child: BlockList(
                           blocks: card.blocks,
                           onToggleChecklist: vm.toggleChecklistItem,
@@ -363,7 +254,6 @@ class _ReaderView extends StatelessWidget {
                           card.insight != null &&
                           card.insight!.hasContent)
                         KeyedSubtree(
-                          key: spotlight?.insight,
                           child: InsightSection(
                             insight: card.insight!,
                             accent: accent,
@@ -376,7 +266,6 @@ class _ReaderView extends StatelessWidget {
                       // Referenced catalog items
                       if (card.isReady)
                         KeyedSubtree(
-                          key: spotlight?.references,
                           child: _ReferencesStrip(entries: vm.artifacts),
                         ),
 
@@ -405,7 +294,6 @@ class _ReaderView extends StatelessWidget {
           Expanded(child: SingleChildScrollView(primary: true, child: content)),
           if (card.isReady)
             KeyedSubtree(
-              key: spotlight?.actionBar,
               child: PrimaryActionBar(card: card),
             ),
         ],
@@ -428,7 +316,6 @@ class _ReaderView extends StatelessWidget {
       ),
       bottomSheet: card.isReady
           ? KeyedSubtree(
-              key: spotlight?.actionBar,
               child: PrimaryActionBar(card: card),
             )
           : null,
@@ -482,7 +369,6 @@ class _EmbeddedHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final spotlight = _ReaderSpotlight.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
       decoration: BoxDecoration(
@@ -507,7 +393,6 @@ class _EmbeddedHeader extends StatelessWidget {
           ),
           if (onToggleFullscreen != null)
             KeyedSubtree(
-              key: spotlight?.fullscreen,
               child: IconButton(
                 tooltip: 'Fullscreen',
                 icon: const PhosphorIcon(PhosphorIconsRegular.arrowsOutSimple),
@@ -541,7 +426,6 @@ class _FaceAppBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final spotlight = _ReaderSpotlight.of(context);
     return SliverAppBar(
       expandedHeight: 260,
       pinned: true,
@@ -564,7 +448,6 @@ class _FaceAppBar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(8),
             child: KeyedSubtree(
-              key: spotlight?.fullscreen,
               child: _CircleButton(
                 icon: PhosphorIconsRegular.arrowsInSimple,
                 onTap: onToggleFullscreen!,

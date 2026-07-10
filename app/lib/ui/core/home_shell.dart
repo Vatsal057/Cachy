@@ -1,6 +1,7 @@
 /// Root navigation shell — responsive.
-/// < 600 dp : floating pill bottom nav (mobile / Android).
-/// ≥ 600 dp : glass side rail, compact; ≥ 1100 dp : extended with labels.
+/// < 600 dp : floating pill bottom nav (mobile / Android portrait).
+/// ≥ 600 dp : glass side rail (tablets + phone landscape), compact on short
+///            screens; ≥ 1100 dp : extended with labels.
 /// Phosphor icons: regular inactive, fill active.
 library;
 
@@ -14,29 +15,14 @@ import 'package:provider/provider.dart';
 import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
 import '../features/collections/views/collections_screen.dart';
-import '../features/concepts/views/concept_detail_screen.dart';
-import '../features/feed/views/connections_screen.dart';
 import '../features/feed/views/knowledge_feed_screen.dart';
-import '../features/graph/views/graph_screen.dart';
 import '../features/library/view_models/library_view_model.dart';
-import '../features/library/views/library_chat_screen.dart';
 import '../features/library/views/library_screen.dart';
-import '../features/presenter/agent_bus.dart';
-import '../features/presenter/presenter_controller.dart';
-import '../features/presenter/presenter_overlay.dart';
-import '../features/presenter/presenter_spotlight.dart';
 import '../features/profile/views/profile_screen.dart';
-import '../features/reader/views/chat_screen.dart';
-import '../features/reader/views/rabbit_hole_screen.dart';
 import '../features/reader/views/reader_screen.dart';
-import '../features/share/views/share_screen.dart';
-import '../features/search/views/search_screen.dart';
-import '../../data/repositories/card_repository.dart';
-import '../../domain/models/concept.dart';
-import '../../domain/models/enums.dart';
 import 'brand.dart';
-import 'content_accent.dart';
 import 'theme.dart';
+import 'ui_bus.dart';
 import 'widgets/adaptive_modal.dart';
 import 'widgets/glass.dart';
 import 'widgets/selection_action_bar.dart';
@@ -82,28 +68,16 @@ class _HomeShellState extends State<HomeShell> {
     ProfileScreen(),     // 4 — YOU
   ];
 
-  // Present mode: a self-driving spoken tour that navigates the app and answers
-  // audience questions. While active, Graph/Search render in-body (not pushed)
-  // so the presenter control bar stays visible on top.
-  PresenterController? _presenter;
-  Widget? _presenterScreen; // GraphScreen/SearchScreen shown during the tour
-
-  // Spotlight anchor for the nav (bottom pill / side rail — only one mounted).
-  final GlobalKey _navKey = GlobalKey();
-
-  // Per-tab anchors so the presenter's cursor lands on the exact tab it taps,
-  // and the plus button so "add something" reads as a real click.
-  static const _navSpotlightIds = ['nav.home', 'nav.folders', 'nav.todo', 'nav.feed', 'nav.you'];
-  final List<GlobalKey> _navItemKeys =
-      List.generate(_navSpotlightIds.length, (_) => GlobalKey());
-  final GlobalKey _plusKey = GlobalKey();
+  // Fullscreen notes overlay: a card's reader promoted from the library's side
+  // column to cover the shell. Null when not expanded.
+  Widget? _fullscreenCard;
 
   @override
   void initState() {
     super.initState();
-    // The fullscreen toggle on the notes works for everyone (not just during a
-    // presentation), so wire it on the app-wide bus up front.
-    context.read<AgentBus>()
+    // The library's notes column promotes a card to fullscreen through the bus;
+    // the shell owns the overlay slot, so it registers the handlers here.
+    context.read<UiBus>()
       ..onEnterCardFullscreen = _enterCardFullscreen
       ..onExitCardFullscreen = _exitCardFullscreen;
   }
@@ -114,7 +88,7 @@ class _HomeShellState extends State<HomeShell> {
     if (!mounted) return;
     setState(() {
       _index = 0; // notes live over the library
-      _presenterScreen = ReaderScreen(
+      _fullscreenCard = ReaderScreen(
         key: ValueKey('reader.fs:$cardId'),
         cardId: cardId,
         fullscreen: true,
@@ -127,196 +101,7 @@ class _HomeShellState extends State<HomeShell> {
   /// stays selected there, so it reappears).
   void _exitCardFullscreen() {
     if (!mounted) return;
-    setState(() => _presenterScreen = null);
-  }
-
-  void _startPresenting() {
-    final repo = context.read<CardRepository>();
-    final bus = context.read<AgentBus>()
-      ..registerSpotlight('nav', _navKey)
-      ..registerSpotlight('home.plus', _plusKey)
-      ..onNavigate = _goToView
-      ..onOpenCard = _openCardInPresenter
-      ..onCreateCard = _createCardInPresenter
-      ..onOpenConcept = _openConceptInPresenter
-      ..onOpenRabbitHole = _openRabbitHoleInPresenter
-      ..onOpenCardChat = _openCardChatInPresenter
-      ..onOpenLibraryChat = _openLibraryChatInPresenter;
-    for (var i = 0; i < _navSpotlightIds.length; i++) {
-      bus.registerSpotlight(_navSpotlightIds[i], _navItemKeys[i]);
-    }
-    final controller = PresenterController(repository: repo, bus: bus);
-    setState(() => _presenter = controller);
-    controller.addListener(_onPresenterChanged);
-    controller.start();
-  }
-
-  /// Open a card the way a user tap does: on a wide layout it lands in the
-  /// library's side column (the split-pane detail), so the agent then presses
-  /// the notes' fullscreen toggle to expand it. On a narrow layout there's no
-  /// side column, so fall straight to the fullscreen overlay.
-  Future<void> _openCardInPresenter(String cardId) async {
-    if (!mounted) return;
-    final wide = MediaQuery.sizeOf(context).width >= Insets.splitPane;
-    if (!wide) {
-      _enterCardFullscreen(cardId);
-      return;
-    }
-    setState(() {
-      _index = 0;
-      _presenterScreen = null;
-    });
-    final bus = context.read<AgentBus>();
-    bus.onLibraryTab?.call(0); // ensure the Cards segment is showing
-    // The Cards tab may need a frame to mount and register its select hook
-    // (e.g. when coming from another segment).
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-    final select = bus.onSelectLibraryCard;
-    if (select != null) {
-      await select(cardId);
-    } else {
-      // No side column available — open fullscreen directly.
-      _enterCardFullscreen(cardId);
-    }
-  }
-
-  /// Open a concept's detail under the glyph (definition is generated by the
-  /// agent before opening so it shows immediately).
-  Future<void> _openConceptInPresenter(String conceptId, String name) async {
-    if (!mounted) return;
-    // A unique key per call forces a remount so a second call (after the agent
-    // generates the definition) re-runs the detail's load and reveals it —
-    // otherwise Flutter reuses the existing State and the summary never
-    // refreshes.
-    final key = ValueKey('concept:$conceptId:${DateTime.now().microsecondsSinceEpoch}');
-    setState(() => _presenterScreen = ConceptDetailScreen(
-          key: key,
-          entry: ConceptEntry(id: conceptId, name: name),
-        ));
-  }
-
-  /// Open the rabbit-hole explorer under the glyph, seeded with a topic it
-  /// auto-explores.
-  Future<void> _openRabbitHoleInPresenter(String cardId, String seed) async {
-    if (!mounted) return;
-    setState(() => _presenterScreen = RabbitHoleScreen(
-          cardId: cardId,
-          seed: seed,
-          accent: ContentAccent.of(ContentType.other),
-        ));
-  }
-
-  /// Open the grounded per-card chat under the glyph, seeded with a question it
-  /// auto-asks.
-  Future<void> _openCardChatInPresenter(
-      String cardId, String title, String seed) async {
-    if (!mounted) return;
-    setState(() =>
-        _presenterScreen = ChatScreen(cardId: cardId, title: title, seed: seed));
-  }
-
-  /// Open the whole-library chat under the glyph, seeded with a question.
-  Future<void> _openLibraryChatInPresenter(String seed) async {
-    if (!mounted) return;
-    setState(() => _presenterScreen = LibraryChatScreen(seedQuery: seed));
-  }
-
-  /// Open the visible pipeline (ShareScreen) for [url] under the agent glyph,
-  /// so the audience watches the stages run and it auto-advances into the
-  /// finished card — the same screen the Capture sheet uses.
-  Future<String?> _createCardInPresenter(String url) async {
-    if (!mounted) return null;
-    debugPrint('[Presenter] opening pipeline for $url');
-    setState(() {
-      // Sit on the home layer and put the pipeline on top of it, so it shows
-      // regardless of whatever screen the agent was last on.
-      _index = 0;
-      _presenterScreen = ShareScreen(
-        key: ValueKey(url),
-        sharedUrl: url,
-        onOpenCard: _openCreatedCard,
-      );
-    });
-    return null;
-  }
-
-  /// Open a freshly-created card once the pipeline finishes: select it in the
-  /// side column (so restoring from fullscreen lands there) and open it
-  /// fullscreen, which carries the persistent restore toggle.
-  Future<void> _openCreatedCard(String cardId) async {
-    if (!mounted) return;
-    final bus = context.read<AgentBus>();
-    bus.onLibraryTab?.call(0);
-    // Give the Cards tab a frame to mount + register its select hook.
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-    // Best-effort select in the library so the restore target exists; harmless
-    // (and a no-op) on layouts without a side column.
-    await bus.onSelectLibraryCard?.call(cardId);
-    if (!mounted) return;
-    _enterCardFullscreen(cardId);
-  }
-
-  void _onPresenterChanged() {
-    if (_presenter?.phase == PresenterPhase.done) {
-      final c = _presenter;
-      c?.removeListener(_onPresenterChanged);
-      final bus = context.read<AgentBus>()
-        ..unregisterSpotlight('nav', _navKey)
-        ..unregisterSpotlight('home.plus', _plusKey);
-      for (var i = 0; i < _navSpotlightIds.length; i++) {
-        bus.unregisterSpotlight(_navSpotlightIds[i], _navItemKeys[i]);
-      }
-      setState(() {
-        _presenter = null;
-        _presenterScreen = null;
-      });
-      c?.dispose();
-    }
-  }
-
-  /// Navigation the agent drives. Tabs switch the shell; graph/search/catalog/
-  /// concepts/reader render in-body under the agent glyph.
-  void _goToView(String view) {
-    setState(() {
-      switch (view) {
-        case 'feed':
-          _presenterScreen = null;
-          _index = 3;
-        case 'collections':
-          _presenterScreen = null;
-          _index = 1;
-        case 'actions':
-          _presenterScreen = null;
-          _index = 2;
-        case 'profile':
-          _presenterScreen = null;
-          _index = 4;
-        case 'graph':
-          _presenterScreen = const GraphScreen();
-        case 'search':
-          _presenterScreen = const SearchScreen();
-        case 'catalog':
-          // Concepts and Catalog are the library's own top tabs — flip the real
-          // tab (via the hook the library registers) instead of overlaying a
-          // separate screen, so it reads as a tap on the segment.
-          _presenterScreen = null;
-          _index = 0;
-          context.read<AgentBus>().onLibraryTab?.call(2);
-        case 'concepts':
-          _presenterScreen = null;
-          _index = 0;
-          context.read<AgentBus>().onLibraryTab?.call(1);
-        case 'connections':
-          _presenterScreen = const ConnectionsScreen();
-        case 'library':
-        default:
-          _presenterScreen = null;
-          _index = 0;
-          context.read<AgentBus>().onLibraryTab?.call(0);
-      }
-    });
+    setState(() => _fullscreenCard = null);
   }
 
   @override
@@ -343,12 +128,6 @@ class _HomeShellState extends State<HomeShell> {
         const SingleActivator(LogicalKeyboardKey.digit4, control: true): () => _select(3),
         const SingleActivator(LogicalKeyboardKey.digit5, meta: true): () => _select(4),
         const SingleActivator(LogicalKeyboardKey.digit5, control: true): () => _select(4),
-        // 6/7 push Search/Graph (not shell tabs) — used by the presenter agent
-        // to switch the visible screen live during a demo Q&A.
-        const SingleActivator(LogicalKeyboardKey.digit6, meta: true): () => _openSearch(context),
-        const SingleActivator(LogicalKeyboardKey.digit6, control: true): () => _openSearch(context),
-        const SingleActivator(LogicalKeyboardKey.digit7, meta: true): () => _openGraph(context),
-        const SingleActivator(LogicalKeyboardKey.digit7, control: true): () => _openGraph(context),
       },
       child: Focus(
         autofocus: true,
@@ -378,30 +157,19 @@ class _HomeShellState extends State<HomeShell> {
         children: [
           const Positioned.fill(child: AmbientBackground()),
           IndexedStack(index: _index, children: _screens),
-          if (_presenterScreen != null) Positioned.fill(child: _presenterScreen!),
-          ..._presenterLayers(context),
+          if (_fullscreenCard != null) Positioned.fill(child: _fullscreenCard!),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: selecting
           ? null
-          : KeyedSubtree(
-              key: _plusKey,
-              child: _CaptureButton(onTap: () => showCaptureSheet(context)),
-            ),
+          : _CaptureButton(onTap: () => showCaptureSheet(context)),
       bottomNavigationBar: selecting
           ? _SelectionNavSlot(
               vm: vm,
               onConfirmDelete: () => _confirmBulkDelete(context, vm),
             )
-          : KeyedSubtree(
-              key: _navKey,
-              child: _GlassNav(
-                index: _index,
-                onSelect: _select,
-                itemKeys: _navItemKeys,
-              ),
-            ),
+          : _GlassNav(index: _index, onSelect: _select),
     );
   }
 
@@ -450,108 +218,31 @@ class _HomeShellState extends State<HomeShell> {
           Positioned.fill(
             child: Row(
               children: [
-                KeyedSubtree(
-                  key: _navKey,
-                  child: _GlassRail(
-                    index: _index,
-                    onSelect: _select,
-                    onCapture: () => showCaptureSheet(context),
-                  ),
+                _GlassRail(
+                  index: _index,
+                  onSelect: _select,
+                  onCapture: () => showCaptureSheet(context),
                 ),
                 Expanded(
                   child: Stack(
                     children: [
                       IndexedStack(index: _index, children: _screens),
-                      if (_presenterScreen != null)
-                        Positioned.fill(child: _presenterScreen!),
+                      if (_fullscreenCard != null)
+                        Positioned.fill(child: _fullscreenCard!),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          ..._presenterLayers(context),
         ],
       ),
     );
   }
 
-  /// Overlay layers shared by both shells: the control bar while presenting, or a
-  /// "Present" launch chip when idle.
-  List<Widget> _presenterLayers(BuildContext context) {
-    if (_presenter != null) {
-      return [
-        PresenterSpotlight(
-          controller: _presenter!,
-          bus: context.read<AgentBus>(),
-        ),
-        PresenterOverlay(controller: _presenter!),
-      ];
-    }
-    return [
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        child: SafeArea(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: _PresentButton(onTap: _startPresenting),
-            ),
-          ),
-        ),
-      ),
-    ];
-  }
-
   void _select(int i) {
     if (i == _index) return;
     setState(() => _index = i);
-  }
-
-  void _openSearch(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchScreen()));
-  }
-
-  void _openGraph(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GraphScreen()));
-  }
-}
-
-// ── "Present" launch chip ──────────────────────────────────────────────────── //
-
-class _PresentButton extends StatelessWidget {
-  const _PresentButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.primary,
-      borderRadius: BorderRadius.circular(20),
-      elevation: 2,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(PhosphorIconsRegular.presentationChart, size: 18, color: theme.colorScheme.onPrimary),
-              const SizedBox(width: 6),
-              Text('Present',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onPrimary,
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -571,8 +262,13 @@ class _GlassRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final b = Theme.of(context).brightness;
     final scheme = Theme.of(context).colorScheme;
-    final width = MediaQuery.sizeOf(context).width;
-    final extended = width >= 1100;
+    final size = MediaQuery.sizeOf(context);
+    final extended = size.width >= 1100;
+    // Phone landscape gives the rail very little height. Compact it — smaller
+    // capture button, tighter padding, no labels — so the five destinations fit
+    // without overflowing. ponytail: fits down to ~360dp tall; below that the
+    // rail would need to scroll (NavigationRail can't) — not a real phone size.
+    final short = size.height < 520;
 
     return ClipRect(
       child: BackdropFilter(
@@ -590,9 +286,9 @@ class _GlassRail extends StatelessWidget {
               selectedIndex: index,
               onDestinationSelected: onSelect,
               extended: extended,
-              minWidth: 72,
+              minWidth: short ? 64 : 72,
               minExtendedWidth: 180,
-              labelType: extended
+              labelType: (extended || short)
                   ? NavigationRailLabelType.none
                   : NavigationRailLabelType.selected,
               selectedIconTheme: IconThemeData(color: scheme.primary),
@@ -613,10 +309,12 @@ class _GlassRail extends StatelessWidget {
               useIndicator: true,
               indicatorColor: scheme.primary.withValues(alpha: 0.10),
               leading: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
+                padding: short
+                    ? const EdgeInsets.fromLTRB(0, 6, 0, 12)
+                    : const EdgeInsets.fromLTRB(0, 16, 0, 24),
                 child: Tooltip(
                   message: 'New capture (⌘N)',
-                  child: _CaptureButton(onTap: onCapture),
+                  child: _CaptureButton(onTap: onCapture, compact: short),
                 ),
               ),
               destinations: [
@@ -624,11 +322,11 @@ class _GlassRail extends StatelessWidget {
                   NavigationRailDestination(
                     icon: Tooltip(
                       message: item.label,
-                      child: PhosphorIcon(item.icon, size: 22),
+                      child: PhosphorIcon(item.icon, size: short ? 20 : 22),
                     ),
                     selectedIcon: Tooltip(
                       message: item.label,
-                      child: PhosphorIcon(item.activeIcon, size: 22),
+                      child: PhosphorIcon(item.activeIcon, size: short ? 20 : 22),
                     ),
                     label: Text(item.label),
                   ),
@@ -644,17 +342,9 @@ class _GlassRail extends StatelessWidget {
 // ── Mobile floating pill nav ───────────────────────────────────────────────── //
 
 class _GlassNav extends StatelessWidget {
-  const _GlassNav({
-    required this.index,
-    required this.onSelect,
-    this.itemKeys = const [],
-  });
+  const _GlassNav({required this.index, required this.onSelect});
   final int index;
   final ValueChanged<int> onSelect;
-
-  /// Per-tab spotlight anchors so the presenter's cursor lands on the exact
-  /// tab it taps. Empty when not presenting.
-  final List<GlobalKey> itemKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -697,13 +387,10 @@ class _GlassNav extends StatelessWidget {
                   children: [
                     for (var i = 0; i < _navItems.length; i++)
                       Expanded(
-                        child: KeyedSubtree(
-                          key: i < itemKeys.length ? itemKeys[i] : null,
-                          child: _NavBtn(
-                            def: _navItems[i],
-                            selected: index == i,
-                            onTap: () => onSelect(i),
-                          ),
+                        child: _NavBtn(
+                          def: _navItems[i],
+                          selected: index == i,
+                          onTap: () => onSelect(i),
                         ),
                       ),
                   ],
@@ -803,8 +490,11 @@ class _SelectionNavSlot extends StatelessWidget {
 }
 
 class _CaptureButton extends StatefulWidget {
-  const _CaptureButton({required this.onTap});
+  const _CaptureButton({required this.onTap, this.compact = false});
   final VoidCallback onTap;
+
+  /// Shrink the button for short layouts (phone-landscape side rail).
+  final bool compact;
 
   @override
   State<_CaptureButton> createState() => _CaptureButtonState();
@@ -816,6 +506,7 @@ class _CaptureButtonState extends State<_CaptureButton> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final dim = widget.compact ? 44.0 : 56.0;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -827,8 +518,8 @@ class _CaptureButtonState extends State<_CaptureButton> {
           duration: Motion.fast,
           curve: Motion.spring,
           child: Container(
-            width: 56,
-            height: 56,
+            width: dim,
+            height: dim,
             decoration: BoxDecoration(
               color: scheme.primary,
               shape: BoxShape.circle,
@@ -849,7 +540,7 @@ class _CaptureButtonState extends State<_CaptureButton> {
             child: PhosphorIcon(
               PhosphorIconsRegular.plus,
               color: scheme.onPrimary,
-              size: 26,
+              size: widget.compact ? 22 : 26,
             ),
           ),
         ),

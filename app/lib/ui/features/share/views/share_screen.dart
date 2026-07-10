@@ -17,19 +17,13 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../../core/widgets/processing_glyph.dart';
-import '../../presenter/agent_bus.dart';
+import '../../../core/ui_bus.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/share_view_model.dart';
 
 class ShareScreen extends StatelessWidget {
-  const ShareScreen({super.key, required this.sharedUrl, this.onOpenCard});
+  const ShareScreen({super.key, required this.sharedUrl});
   final String sharedUrl;
-
-  /// When set, the finished card is handed to this callback instead of being
-  /// pushed as a fullscreen route. The presenter/shell uses this to open the
-  /// card through its fullscreen-with-restore-toggle path rather than a plain
-  /// route with no way back to the side column.
-  final void Function(String cardId)? onOpenCard;
 
   @override
   Widget build(BuildContext context) {
@@ -37,15 +31,14 @@ class ShareScreen extends StatelessWidget {
       create: (ctx) =>
           ShareViewModel(repository: ctx.read<CardRepository>())
             ..submit(sharedUrl),
-      child: _ShareView(sharedUrl: sharedUrl, onOpenCard: onOpenCard),
+      child: _ShareView(sharedUrl: sharedUrl),
     );
   }
 }
 
 class _ShareView extends StatefulWidget {
-  const _ShareView({required this.sharedUrl, this.onOpenCard});
+  const _ShareView({required this.sharedUrl});
   final String sharedUrl;
-  final void Function(String cardId)? onOpenCard;
 
   @override
   State<_ShareView> createState() => _ShareViewState();
@@ -295,20 +288,12 @@ class _ShareViewState extends State<_ShareView> {
   }
 
   void _openReader(BuildContext context, String cardId) {
-    // Presenter/shell path: open through the fullscreen-with-toggle flow so the
-    // restore icon is present and the card can drop back into the side column.
-    final open = widget.onOpenCard;
-    if (open != null) {
-      open(cardId);
-      return;
-    }
-    // Capture-sheet / OS-share path: push the reader. On a wide layout give it
-    // a minimize toggle that pops back and drops the finished card into the
-    // library side column, so it matches the rest of the app (not just a bare
-    // back arrow).
+    // Push the reader. On a wide layout give it a minimize toggle that pops
+    // back and drops the finished card into the library side column, so it
+    // matches the rest of the app (not just a bare back arrow).
     final wide = MediaQuery.sizeOf(context).width >= Insets.splitPane;
     final navigator = Navigator.of(context);
-    final bus = context.read<AgentBus>();
+    final bus = context.read<UiBus>();
     navigator.pushReplacement(
       MaterialPageRoute(
         builder: (_) => ReaderScreen(

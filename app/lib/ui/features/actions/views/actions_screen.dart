@@ -13,7 +13,6 @@ import '../../../core/content_accent.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/spot_art.dart';
-import '../../presenter/agent_bus.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/actions_view_model.dart';
 
@@ -57,27 +56,6 @@ class _ActionsView extends StatefulWidget {
 class _ActionsViewState extends State<_ActionsView> {
   _FilterTab _filter = _FilterTab.all;
   final Set<String> _expandedCardIds = {};
-  AgentBus? _bus;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final vm = context.read<ActionsViewModel>();
-    final bus = context.read<AgentBus>();
-    bus.onRefreshActions = () => vm.load(showSpinner: false);
-    bus.onExpandActionGroup = (id) {
-      if (mounted) setState(() => _expandedCardIds.add(id));
-    };
-    _bus = bus;
-  }
-
-  @override
-  void dispose() {
-    _bus
-      ?..onRefreshActions = null
-      ..onExpandActionGroup = null;
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {

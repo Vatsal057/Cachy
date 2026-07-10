@@ -33,7 +33,7 @@ import '../../catalog/views/catalog_screen.dart';
 import '../../concepts/views/concepts_screen.dart';
 import '../../graph/views/graph_screen.dart';
 import '../../library/views/library_chat_screen.dart';
-import '../../presenter/agent_bus.dart';
+import '../../../core/ui_bus.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
 import '../view_models/library_view_model.dart';
@@ -62,40 +62,22 @@ class _LibraryViewState extends State<_LibraryView>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 3, vsync: this);
 
-  // Presenter spotlight anchors: the top segments and top-bar icons the agent
-  // taps live here. Registered while mounted; the presenter's cursor resolves
-  // them to real geometry.
-  final _conceptsTabKey = GlobalKey();
-  final _catalogTabKey = GlobalKey();
-  final _graphKey = GlobalKey();
-  final _chatKey = GlobalKey();
-  final _searchKey = GlobalKey();
-  AgentBus? _bus;
+  // The share pipeline flips the library's top segment through the bus.
+  UiBus? _bus;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_bus != null) return;
-    _bus = context.read<AgentBus>()
+    _bus = context.read<UiBus>()
       ..onLibraryTab = (i) {
         if (i >= 0 && i < _tabs.length) _tabs.animateTo(i);
-      }
-      ..registerSpotlight('library.tab.concepts', _conceptsTabKey)
-      ..registerSpotlight('library.tab.catalog', _catalogTabKey)
-      ..registerSpotlight('top.graph', _graphKey)
-      ..registerSpotlight('top.chat', _chatKey)
-      ..registerSpotlight('top.search', _searchKey);
+      };
   }
 
   @override
   void dispose() {
-    _bus
-      ?..onLibraryTab = null
-      ..unregisterSpotlight('library.tab.concepts', _conceptsTabKey)
-      ..unregisterSpotlight('library.tab.catalog', _catalogTabKey)
-      ..unregisterSpotlight('top.graph', _graphKey)
-      ..unregisterSpotlight('top.chat', _chatKey)
-      ..unregisterSpotlight('top.search', _searchKey);
+    _bus?.onLibraryTab = null;
     _tabs.dispose();
     super.dispose();
   }
@@ -121,7 +103,6 @@ class _LibraryViewState extends State<_LibraryView>
                 ),
               ),
             IconButton(
-              key: _graphKey,
               tooltip: 'Graph',
               icon: const PhosphorIcon(PhosphorIconsRegular.graph),
               onPressed: () => Navigator.of(context).push(
@@ -129,7 +110,6 @@ class _LibraryViewState extends State<_LibraryView>
               ),
             ),
             IconButton(
-              key: _chatKey,
               tooltip: 'Chat',
               icon: const PhosphorIcon(PhosphorIconsRegular.chats),
               onPressed: () => Navigator.of(context).push(
@@ -137,7 +117,6 @@ class _LibraryViewState extends State<_LibraryView>
               ),
             ),
             IconButton(
-              key: _searchKey,
               tooltip: 'Search',
               icon: const PhosphorIcon(PhosphorIconsRegular.magnifyingGlass),
               onPressed: () => Navigator.of(context).push(
@@ -178,8 +157,8 @@ class _LibraryViewState extends State<_LibraryView>
                       unselectedLabelStyle: Brand.label(size: 12, weight: FontWeight.w500),
                       tabs: [
                         const Tab(text: 'CARDS'),
-                        Tab(key: _conceptsTabKey, text: 'CONCEPTS'),
-                        Tab(key: _catalogTabKey, text: 'CATALOG'),
+                        const Tab(text: 'CONCEPTS'),
+                        const Tab(text: 'CATALOG'),
                       ],
                     ),
                   ),
@@ -216,11 +195,8 @@ class _CardsTabState extends State<_CardsTab> {
   /// The grid index that most recently received keyboard focus.
   int _lastFocusedIndex = 0;
 
-  // Presenter agent: expose the grid's scroll so the agent can browse the
-  // library while narrating.
   final _gridScroll = ScrollController();
-  final _firstCardKey = GlobalKey();
-  AgentBus? _bus;
+  UiBus? _bus;
 
   @override
   void initState() {
@@ -232,14 +208,13 @@ class _CardsTabState extends State<_CardsTab> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_bus != null) return;
-    _bus = context.read<AgentBus>()
-      ..registerScrollable('library', _gridScroll)
-      ..registerSpotlight('card.first', _firstCardKey)
-      ..onSelectLibraryCard = _selectCardFromAgent;
+    // The share pipeline selects the card it just created into the side column.
+    _bus = context.read<UiBus>()..onSelectLibraryCard = _selectCard;
   }
 
-  /// The agent opens a card into the side column, exactly like a user tap.
-  Future<void> _selectCardFromAgent(String cardId) async {
+  /// Open a card into the side column, exactly like a user tap. Used by the
+  /// share pipeline after a capture finishes.
+  Future<void> _selectCard(String cardId) async {
     if (!mounted) return;
     context.read<LibraryViewModel>().selectCard(cardId);
   }
@@ -263,10 +238,7 @@ class _CardsTabState extends State<_CardsTab> {
 
   @override
   void dispose() {
-    _bus
-      ?..unregisterScrollable('library', _gridScroll)
-      ..unregisterSpotlight('card.first', _firstCardKey)
-      ..onSelectLibraryCard = null;
+    _bus?.onSelectLibraryCard = null;
     _gridScroll.dispose();
     for (final node in _focusNodes) {
       node.dispose();
@@ -572,11 +544,7 @@ class _CardsTabState extends State<_CardsTab> {
                     },
                     onDelete: () => vm.delete(card.cardId),
                   );
-                  // Anchor the first tile so the presenter's cursor lands on a
-                  // real card before opening it.
-                  return i == 0
-                      ? KeyedSubtree(key: _firstCardKey, child: tile)
-                      : tile;
+                  return tile;
                 },
               ),
             ),

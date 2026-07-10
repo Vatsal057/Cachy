@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import discovery
-from app.api import cards, catalog, collections, concepts, connections, feed, graph, library_chat, presenter, search
+from app.api import cards, catalog, collections, concepts, connections, feed, graph, library_chat, search
 from app.logging_config import configure_logging
 from app.models.card import SCHEMA_VERSION
 from app.pipeline import worker
@@ -91,7 +91,6 @@ app.include_router(search.router)
 app.include_router(graph.router)
 app.include_router(feed.router)
 app.include_router(connections.router)
-app.include_router(presenter.router)
 
 # Media is persisted to HF Dataset (no local static mount — nothing stored on disk).
 
