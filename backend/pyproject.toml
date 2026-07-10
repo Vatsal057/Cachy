@@ -13,6 +13,8 @@ dependencies = [
     "greenlet>=3.0",
     "aiosqlite>=0.20",
     "python-multipart>=0.0.9",
+    # auth — Firebase ID token verification (project id only, no secret)
+    "firebase-admin>=6.5",
     # ingestion
     "requests>=2.31",
     "yt-dlp>=2024.4.9",

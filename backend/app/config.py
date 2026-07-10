@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Create a public dataset repo e.g. "yourname/cachy-media". Reuses hf_api_key.
     hf_media_repo: str = "Vatxzz/cachy-media"
 
+    # auth — Firebase project id; token verification needs no secret.
+    firebase_project_id: str = ""
+
     # transcription
     whisper_backend: str = "groq"  # none | groq
     groq_api_key: str = ""
