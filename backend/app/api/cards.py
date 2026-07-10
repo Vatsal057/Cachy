@@ -9,11 +9,12 @@ import logging
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 
+from app import quota
 from app.auth import OwnerDep
 from app.api.graph import invalidate_graph_cache
 from app.models.card import Card, CardState
@@ -38,6 +39,7 @@ class CreateCardResponse(BaseModel):
     card_id: str
     state: CardState
     cached: bool = False
+    quota_degraded: bool = False  # past daily AI budget -> paragraph fallback card
 
 
 class PatchCardRequest(BaseModel):
@@ -112,6 +114,7 @@ def _platform_for(url: str) -> str | None:
 async def create_card(
     req: CreateCardRequest,
     owner_id: OwnerDep,
+    request: Request,
 ) -> CreateCardResponse:
     url = req.url.strip()
     if not url:
@@ -125,6 +128,7 @@ async def create_card(
                 card_id=existing.id, state=CardState(existing.state), cached=True
             )
 
+        within = await quota.card_budget(owner_id, request)
         card = db.CardRow(
             source_url=url,
             platform=_platform_for(url),
@@ -134,10 +138,12 @@ async def create_card(
         )
         session.add(card)
         await session.flush()  # assign card.id
-        job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value)
+        job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value, degraded=not within)
         session.add(job)
         await session.commit()
-        return CreateCardResponse(card_id=card.id, state=CardState.QUEUED)
+        return CreateCardResponse(
+            card_id=card.id, state=CardState.QUEUED, quota_degraded=not within
+        )
 
 
 @router.get("/{card_id}/stream")
@@ -269,7 +275,8 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
         return row.to_card()
 
 
-@router.post("/{card_id}/chat", response_model=ChatResponse)
+@router.post("/{card_id}/chat", response_model=ChatResponse,
+             dependencies=[Depends(quota.spend("chat", "quota_chat_per_day"))])
 async def chat_card(
     card_id: str,
     req: ChatRequest,
@@ -323,7 +330,8 @@ async def get_chat_history(
     )
 
 
-@router.post("/{card_id}/rabbithole", response_model=RabbitHoleResponse)
+@router.post("/{card_id}/rabbithole", response_model=RabbitHoleResponse,
+             dependencies=[Depends(quota.spend("chat", "quota_chat_per_day"))])
 async def explore_rabbithole(
     card_id: str,
     req: RabbitHoleRequest,

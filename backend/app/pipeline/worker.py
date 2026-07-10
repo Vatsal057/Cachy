@@ -344,7 +344,8 @@ async def _run_job(session, job: db.JobRow) -> None:
     events.publish(card_id, "structuring", "processing", "Structuring card")
     log.info("%s Step 3/6 structure: LLM -> validated knowledge card", tag)
     structured = await structure_async(
-        extraction.aggregated_text, extraction.transcript, download.caption or ""
+        extraction.aggregated_text, extraction.transcript, download.caption or "",
+        force_fallback=job.degraded,
     )
     if structured.degraded:
         log.warning(

@@ -596,9 +596,14 @@ def _validate(raw_text: str, bundle: str, transcript: str, caption: str) -> "Str
 # Entry point
 # --------------------------------------------------------------------------- #
 
-def structure(bundle: str, transcript: str = "", caption: str = "") -> "StructuredCard":
+def structure(
+    bundle: str, transcript: str = "", caption: str = "", force_fallback: bool = False
+) -> "StructuredCard":
     """Single text-only LLM call (Groq) + mandatory validation. Always returns a valid
     StructuredCard, degrading to a paragraph fallback when needed."""
+    if force_fallback:
+        log.info("structuring: quota-degraded card -> paragraph fallback")
+        return _paragraph_fallback(bundle, transcript, caption, reason="quota")
     raw = _call_llm(bundle)
     if not raw:
         log.warning(
@@ -612,8 +617,8 @@ def structure(bundle: str, transcript: str = "", caption: str = "") -> "Structur
 
 
 async def structure_async(
-    bundle: str, transcript: str = "", caption: str = ""
+    bundle: str, transcript: str = "", caption: str = "", force_fallback: bool = False
 ) -> "StructuredCard":
     import asyncio
 
-    return await asyncio.to_thread(structure, bundle, transcript, caption)
+    return await asyncio.to_thread(structure, bundle, transcript, caption, force_fallback)

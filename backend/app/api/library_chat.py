@@ -11,9 +11,10 @@ import logging
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app import quota
 from app.auth import OwnerDep
 from app.services import llm_library_chat
 from app.store import db
@@ -45,7 +46,8 @@ class LibraryChatHistoryResponse(BaseModel):
     messages: list[ChatMessage]
 
 
-@router.post("/chat", response_model=LibraryChatResponse)
+@router.post("/chat", response_model=LibraryChatResponse,
+             dependencies=[Depends(quota.spend("chat", "quota_chat_per_day"))])
 async def library_chat(
     req: LibraryChatRequest,
     owner_id: OwnerDep,

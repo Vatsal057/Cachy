@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app import quota
 from app.auth import OwnerDep
 from app.api.feed import FeedCardRef
 from app.models.card import CardState
@@ -39,6 +40,8 @@ async def get_connections(
 ) -> ConnectionsResponse:
     """List surprising connections for the owner. `refresh=true` spends a little
     more of the LLM budget to surface new links."""
+    if refresh:
+        await quota.spend("connections_refresh", "quota_connections_refresh_per_day")(owner_id)
     async with db.session() as session:
         stmt = select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
         stmt = stmt.where(db.CardRow.owner_id == owner_id)
