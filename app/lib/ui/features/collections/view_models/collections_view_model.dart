@@ -3,6 +3,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/card.dart';
 import '../../../../domain/models/collection.dart';
 import '../../../../domain/models/enums.dart';
@@ -95,7 +96,7 @@ class CollectionsViewModel extends ChangeNotifier {
       _error = null;
       _status = _collections.isEmpty ? CollectionsStatus.empty : CollectionsStatus.ready;
     } catch (e) {
-      _error = '$e';
+      _error = friendlyError(e);
       // Fall back to client-side grouping from cached cards.
       try {
         final cards = await _repository.list();

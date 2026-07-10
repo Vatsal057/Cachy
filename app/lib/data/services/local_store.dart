@@ -90,6 +90,16 @@ class LocalStore {
     await _prefs.setStringList(_indexKey, index.toList());
   }
 
+  /// Remove every cached card and the index. Returns how many were removed.
+  Future<int> clearCardCache() async {
+    final ids = cachedCardIds();
+    for (final id in ids) {
+      await _prefs.remove('$_cardPrefix$id');
+    }
+    await _prefs.remove(_indexKey);
+    return ids.length;
+  }
+
   // --------------------------------------------------------------------- //
   // Offline share queue
   // --------------------------------------------------------------------- //

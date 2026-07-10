@@ -561,7 +561,7 @@ class _QuizCardState extends State<_QuizCard> {
           ),
         ),
       ],
-    ).animate().fadeIn(duration: 300.ms).scaleXY(begin: 0.96, end: 1, curve: Curves.easeOutBack);
+    ).animate().fadeIn(duration: 300.ms).scaleXY(begin: 0.96, end: 1, curve: Curves.easeOutCubic);
   }
 }
 

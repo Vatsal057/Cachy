@@ -21,10 +21,28 @@ import '../../domain/models/pipeline_event.dart';
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
   final int statusCode;
-  final String message;
+  final String message; // raw body — for logs only, never for UI
+
+  /// What users see. Raw bodies (which may include server details or
+  /// tracebacks) never leave the data layer.
+  String get friendlyMessage => switch (statusCode) {
+        401 || 403 => 'Session expired — please sign in again.',
+        404 => "That card isn't there anymore.",
+        429 => "You've hit today's limit. It resets at midnight UTC.",
+        >= 500 => 'Something went wrong on our side. Try again in a moment.',
+        _ => "That didn't work. Try again.",
+      };
+
   @override
   String toString() => 'ApiException($statusCode): $message';
 }
+
+/// UI-safe message for any thrown object. The only thing view-models should
+/// ever store in a user-visible error field.
+String friendlyError(Object e) => switch (e) {
+      ApiException api => api.friendlyMessage,
+      _ => "Can't reach Cachy. Check your connection.",
+    };
 
 class CreateCardResult {
   const CreateCardResult({

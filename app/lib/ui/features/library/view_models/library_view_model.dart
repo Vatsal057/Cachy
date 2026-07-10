@@ -7,19 +7,52 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/card.dart';
 import '../../../../domain/models/enums.dart';
 import '../../../core/safe_notifier.dart';
 
-enum LibraryStatus { idle, loading, ready, error, empty }
+enum LibraryStatus { idle, loading, waking, ready, error, empty }
 
 class LibraryViewModel extends ChangeNotifier with SafeNotifier {
-  LibraryViewModel({required CardRepository repository})
-      : _repository = repository {
+  LibraryViewModel({
+    required CardRepository repository,
+    this.wakeRetryDelay = const Duration(seconds: 10),
+  }) : _repository = repository {
     _repository.addListener(_onRepoChange);
   }
 
   final CardRepository _repository;
+
+  /// Delay between cold-start retries; overridden to zero in tests.
+  final Duration wakeRetryDelay;
+
+  /// Free HF Spaces nap when idle and take ~30s to wake. We retry a handful of
+  /// times, showing the "waking" state, before conceding to an error.
+  static const _maxWakeAttempts = 6;
+  int _wakeAttempt = 0;
+  int get wakeAttempt => _wakeAttempt;
+
+  /// A connection-shaped failure worth retrying: no HTTP response at all
+  /// (socket/timeout, thrown as non-[ApiException]) or a gateway 502/503 from
+  /// a Space that is still booting.
+  bool _isWaking(Object e) =>
+      e is! ApiException || e.statusCode == 502 || e.statusCode == 503;
+
+  /// Fetch the library, retrying through cold start. Rethrows once retries are
+  /// exhausted or the failure isn't cold-start-shaped.
+  Future<List<Card>> _fetchWithWake() async {
+    for (_wakeAttempt = 0; ; _wakeAttempt++) {
+      try {
+        return await _repository.list(state: _filter);
+      } catch (e) {
+        if (!_isWaking(e) || _wakeAttempt >= _maxWakeAttempts) rethrow;
+        _status = LibraryStatus.waking;
+        notifyListeners();
+        await Future<void>.delayed(wakeRetryDelay);
+      }
+    }
+  }
 
   void _onRepoChange() {
     if (_status != LibraryStatus.loading) {
@@ -207,13 +240,13 @@ class LibraryViewModel extends ChangeNotifier with SafeNotifier {
     }
     try {
       await _repository.flushPendingShares();
-      final cards = await _repository.list(state: _filter);
+      final cards = await _fetchWithWake();
       _cards = cards;
       _offline = false;
       _status = cards.isEmpty ? LibraryStatus.empty : LibraryStatus.ready;
       _error = null;
     } catch (e) {
-      _error = '$e';
+      _error = friendlyError(e);
       _offline = true;
       _status = _cards.isEmpty ? LibraryStatus.error : LibraryStatus.ready;
     }
@@ -247,6 +280,24 @@ class LibraryViewModel extends ChangeNotifier with SafeNotifier {
   /// repository. If any deletion fails, the card list and selection are
   /// restored exactly to their pre-operation values and an error is surfaced
   /// (Requirement 8.9).
+  /// Move every currently-selected card into [collectionId] (null removes them
+  /// from all folders). Clears the selection and resyncs on success; surfaces a
+  /// friendly error and keeps the selection on failure.
+  Future<void> bulkMove(String? collectionId) async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+    try {
+      for (final id in ids) {
+        await _repository.moveCardToCollection(id, collectionId);
+      }
+      clearSelection();
+      await load(showSpinner: false);
+    } catch (e) {
+      _error = friendlyError(e);
+      notifyListeners();
+    }
+  }
+
   Future<void> bulkDelete() async {
     final ids = _selectedIds.toList();
     if (ids.isEmpty) return;
@@ -287,7 +338,7 @@ class LibraryViewModel extends ChangeNotifier with SafeNotifier {
         ..addAll(selectionSnapshot);
       _selectionMode = selectionModeSnapshot;
       _selectionAnchorId = anchorSnapshot;
-      _error = '$e';
+      _error = friendlyError(e);
       notifyListeners();
     }
   }

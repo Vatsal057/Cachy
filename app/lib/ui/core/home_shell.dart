@@ -16,14 +16,15 @@ import '../features/actions/views/actions_screen.dart';
 import '../features/capture/views/capture_sheet.dart';
 import '../features/collections/views/collections_screen.dart';
 import '../features/feed/views/knowledge_feed_screen.dart';
+import '../features/collections/views/folder_picker_sheet.dart';
 import '../features/library/view_models/library_view_model.dart';
+import '../features/library/views/library_dialogs.dart';
 import '../features/library/views/library_screen.dart';
 import '../features/profile/views/profile_screen.dart';
 import '../features/reader/views/reader_screen.dart';
 import 'brand.dart';
 import 'theme.dart';
 import 'ui_bus.dart';
-import 'widgets/adaptive_modal.dart';
 import 'widgets/glass.dart';
 import 'widgets/selection_action_bar.dart';
 
@@ -167,47 +168,10 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: selecting
           ? _SelectionNavSlot(
               vm: vm,
-              onConfirmDelete: () => _confirmBulkDelete(context, vm),
+              onConfirmDelete: () => confirmBulkDelete(context, vm),
             )
           : _GlassNav(index: _index, onSelect: _select),
     );
-  }
-
-  Future<void> _confirmBulkDelete(
-      BuildContext context, LibraryViewModel vm) async {
-    final count = vm.selectedCount;
-    final ok = await showAdaptiveModal<bool>(
-      context: context,
-      builder: (ctx, dialog) => AlertDialog(
-        title: Text('Delete $count ${count == 1 ? 'card' : 'cards'}?'),
-        content: const Text(
-            'This removes the cards and their media. This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await vm.bulkDelete();
-      if (context.mounted) {
-        final error = context.read<LibraryViewModel>().error;
-        if (error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Delete failed: $error')),
-          );
-        }
-      }
-    }
   }
 
   Widget _desktopShell(BuildContext context) {
@@ -480,9 +444,7 @@ class _SelectionNavSlot extends StatelessWidget {
       child: SelectionActionBar(
         selectedCount: vm.selectedCount,
         onClose: vm.clearSelection,
-        onMoveToFolder: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Move to Folder coming soon')),
-        ),
+        onMoveToFolder: () => showFolderPicker(context, vm),
         onDeleteSelected: onConfirmDelete,
       ),
     );

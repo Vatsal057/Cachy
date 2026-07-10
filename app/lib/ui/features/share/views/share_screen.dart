@@ -133,10 +133,11 @@ class _ShareViewState extends State<_ShareView> {
             children: [
               const PhosphorIcon(PhosphorIconsRegular.cloudSlash, size: 48),
               const SizedBox(height: 14),
-              Text('Saved offline', style: theme.textTheme.titleLarge),
+              Text('Saved — will process shortly', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
               const Text(
-                "We'll process this reel as soon as you're back online.",
+                "We'll process this as soon as Cachy is reachable — the free "
+                'server can take ~30s to wake up.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),

@@ -641,14 +641,16 @@ class _SwipeHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(
+    final hint = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         PhosphorIcon(PhosphorIconsRegular.caretUp, size: 18, color: scheme.onSurfaceVariant),
         Text('SWIPE UP',
             style: Brand.label(size: 9, color: scheme.onSurfaceVariant, weight: FontWeight.w600)),
       ],
-    )
+    );
+    if (!context.motionEnabled) return hint; // reduced motion: static hint
+    return hint
         .animate(onPlay: (c) => c.repeat(reverse: true))
         .moveY(begin: 4, end: -4, duration: 900.ms, curve: Curves.easeInOut);
   }

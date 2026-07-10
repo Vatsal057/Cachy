@@ -5,6 +5,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/artifact.dart';
 
 enum CatalogStatus { idle, loading, ready, error, empty }
@@ -84,7 +85,7 @@ class CatalogViewModel extends ChangeNotifier {
           _entries.isEmpty ? CatalogStatus.empty : CatalogStatus.ready;
       _error = null;
     } catch (e) {
-      _error = '$e';
+      _error = friendlyError(e);
       _status = _entries.isEmpty ? CatalogStatus.error : CatalogStatus.ready;
     }
     notifyListeners();

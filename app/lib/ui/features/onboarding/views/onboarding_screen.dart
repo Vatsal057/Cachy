@@ -1,10 +1,10 @@
-/// First-run onboarding: detailed 3-phase showcase adapted from Insightr
-/// (demo) featuring Cachy logo headers, Fraunces serif display headlines,
-/// floating capability badges, mock structured feature cards, and library vault previews.
+/// First-run onboarding: a 3-page showcase — capture, structure, library — on
+/// the brand's calm-editorial chrome (CachyGlyph wordmark, Fraunces serif
+/// display via the theme), floating capability badges, mock structured feature
+/// cards, and library vault previews.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/brand.dart';
@@ -160,33 +160,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 class _LogoBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: scheme.primary,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.4),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: PhosphorIcon(
-            PhosphorIconsRegular.lightning,
-            color: scheme.onPrimary,
-            size: 20,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text('Cachy', style: Brand.wordmarkStyle(20, color: scheme.onSurface)),
-      ],
-    );
+    // The real brand mark, not a generic lightning-in-a-box.
+    return const CachyWordmark(size: 20);
   }
 }
 
@@ -244,27 +219,10 @@ class _PageHook extends StatelessWidget {
           RichText(
             textAlign: TextAlign.center,
             text: TextSpan(
-              style: GoogleFonts.fraunces(
-                fontSize: 48,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1.2,
-                height: 1.1,
-                color: scheme.onSurface,
-              ),
+              style: theme.textTheme.displayMedium?.copyWith(color: scheme.onSurface),
               children: [
                 const TextSpan(text: 'Any Link,\n'),
-                TextSpan(
-                  text: 'Captured.',
-                  style: TextStyle(
-                    color: scheme.primary,
-                    shadows: [
-                      Shadow(
-                        color: scheme.primary.withValues(alpha: 0.35),
-                        blurRadius: 24,
-                      ),
-                    ],
-                  ),
-                ),
+                TextSpan(text: 'Captured.', style: TextStyle(color: scheme.primary)),
               ],
             ),
           ),
@@ -308,13 +266,7 @@ class _PageStructure extends StatelessWidget {
           RichText(
             textAlign: TextAlign.center,
             text: TextSpan(
-              style: GoogleFonts.fraunces(
-                fontSize: 40,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1,
-                height: 1.1,
-                color: scheme.onSurface,
-              ),
+              style: theme.textTheme.displaySmall?.copyWith(color: scheme.onSurface),
               children: [
                 const TextSpan(text: 'Every Source,\n'),
                 TextSpan(
@@ -488,13 +440,7 @@ class _PageLibrary extends StatelessWidget {
           RichText(
             textAlign: TextAlign.center,
             text: TextSpan(
-              style: GoogleFonts.fraunces(
-                fontSize: 40,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1,
-                height: 1.1,
-                color: scheme.onSurface,
-              ),
+              style: theme.textTheme.displaySmall?.copyWith(color: scheme.onSurface),
               children: [
                 const TextSpan(text: 'Personal Web\n'),
                 TextSpan(

@@ -48,3 +48,5 @@ CACHY_OVERVIEW.md
 # Root-level Python prototype agent only — anchored so it does NOT swallow the
 # Flutter feature dir app/lib/ui/features/presenter/.
 /presenter/
+PRODUCT.md
+.impeccable/critique/2026-07-10T11-11-16Z__app-lib.md

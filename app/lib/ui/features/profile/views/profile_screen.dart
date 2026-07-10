@@ -249,9 +249,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (ok == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline cache cleared')),
-      );
+      final removed = await context.read<CardRepository>().clearCardCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(removed == 0
+                ? 'Nothing cached yet'
+                : 'Cleared $removed offline ${removed == 1 ? 'card' : 'cards'}'),
+          ),
+        );
+      }
     }
   }
 

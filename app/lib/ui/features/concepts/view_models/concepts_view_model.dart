@@ -5,6 +5,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/concept.dart';
 import '../../../core/safe_notifier.dart';
 
@@ -61,7 +62,7 @@ class ConceptsViewModel extends ChangeNotifier with SafeNotifier {
       _status = _entries.isEmpty ? ConceptsStatus.empty : ConceptsStatus.ready;
       _error = null;
     } catch (e) {
-      _error = '$e';
+      _error = friendlyError(e);
       _status = _entries.isEmpty ? ConceptsStatus.error : ConceptsStatus.ready;
     }
     notifyListeners();

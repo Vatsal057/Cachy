@@ -764,11 +764,13 @@ class _PulsingDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final dot = Container(
       width: 8,
       height: 8,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    )
+    );
+    if (!context.motionEnabled) return dot; // reduced motion: static dot
+    return dot
         .animate(onPlay: (c) => c.repeat(reverse: true))
         .scaleXY(
           begin: 0.5,
@@ -1321,14 +1323,16 @@ class _SkeletonBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    final box = Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(radius),
       ),
-    )
+    );
+    if (!context.motionEnabled) return box; // reduced motion: static block
+    return box
         .animate(onPlay: (c) => c.repeat())
         .shimmer(
           duration: const Duration(milliseconds: 1200),
