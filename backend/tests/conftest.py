@@ -30,7 +30,24 @@ get_settings.cache_clear()
 
 
 @pytest.fixture
-async def database():
+async def database(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Isolated per-test database: fresh temp SQLite file, engine rebuilt."""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/test.db")
+    get_settings.cache_clear()
+    await db.dispose_db()
     await db.init_db()
     yield db
     await db.dispose_db()
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+async def client(database):
+    """App-bound HTTP client on the isolated per-test database."""
+    import httpx
+
+    from app.main import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
