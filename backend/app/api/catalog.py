@@ -6,10 +6,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.auth import OwnerDep
 from app.api.graph import invalidate_graph_cache
 from app.models.artifact import ArtifactType, CatalogEntry
 from app.services import llm_catalog
@@ -25,11 +26,11 @@ class CatalogDetail(BaseModel):
 
 @router.get("", response_model=list[CatalogEntry])
 async def list_catalog(
+    owner_id: OwnerDep,
     type: ArtifactType | None = None,
     card_id: str | None = None,
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> list[CatalogEntry]:
     async with db.session() as session:
         stmt = select(db.ArtifactRow).order_by(db.ArtifactRow.created_at.desc())
@@ -39,13 +40,12 @@ async def list_catalog(
             stmt = stmt.where(db.ArtifactRow.saved.is_(True))
         rows = (await session.execute(stmt)).scalars().all()
         entries = [r.to_entry() for r in rows]
-        if x_owner_id is not None:
-            owner_cards = set(
-                (await session.execute(
-                    select(db.CardRow.id).where(db.CardRow.owner_id == x_owner_id)
-                )).scalars().all()
-            )
-            entries = [e for e in entries if bool(set(e.source_card_ids) & owner_cards)]
+        owner_cards = set(
+            (await session.execute(
+                select(db.CardRow.id).where(db.CardRow.owner_id == owner_id)
+            )).scalars().all()
+        )
+        entries = [e for e in entries if bool(set(e.source_card_ids) & owner_cards)]
     if card_id is not None:
         entries = [e for e in entries if card_id in e.source_card_ids]
     return entries[offset : offset + limit]

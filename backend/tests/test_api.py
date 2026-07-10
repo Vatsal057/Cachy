@@ -8,13 +8,6 @@ from httpx import ASGITransport
 from app.main import app
 
 
-@pytest.fixture
-async def client(database):
-    transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
@@ -91,6 +84,11 @@ async def test_catalog_empty_initially(client):
 
 async def test_catalog_upsert_dedupes_and_lists(client, database):
     async with database.session() as s:
+        s.add_all([
+            database.CardRow(id=cid, source_url=f"http://cat/{cid}", state="ready", owner_id="test-user")
+            for cid in ("c1", "c2", "c3")
+        ])
+        await s.commit()
         await database.upsert_artifact(
             s, card_id="c1", type_="book", title="Atomic Habits",
             creator="James Clear", year=2018, thumbnail="http://x/a.jpg", saved=True,
@@ -322,6 +320,11 @@ async def test_catalog_detail_and_delete(client, database):
 
 async def test_catalog_filter_by_card_id(client, database):
     async with database.session() as s:
+        s.add_all([
+            database.CardRow(id=cid, source_url=f"http://cat/{cid}", state="ready", owner_id="test-user")
+            for cid in ("card-a", "card-b")
+        ])
+        await s.commit()
         await database.upsert_artifact(
             s, card_id="card-a", type_="book", title="Deep Work",
             creator=None, year=None, thumbnail=None,
@@ -454,8 +457,8 @@ async def test_delete_card_cascades_cleanup(client, database):
 async def test_concepts_filtering_multi_reel(client):
     from app.store import db as database
     async with database.session() as s:
-        c1 = database.CardRow(id="f-1", source_url="http://f/1", state="ready")
-        c2 = database.CardRow(id="f-2", source_url="http://f/2", state="ready")
+        c1 = database.CardRow(id="f-1", source_url="http://f/1", state="ready", owner_id="test-user")
+        c2 = database.CardRow(id="f-2", source_url="http://f/2", state="ready", owner_id="test-user")
         s.add_all([c1, c2])
         await s.commit()
 

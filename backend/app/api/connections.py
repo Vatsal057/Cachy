@@ -7,10 +7,11 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.auth import OwnerDep
 from app.api.feed import FeedCardRef
 from app.models.card import CardState
 from app.services import serendipity
@@ -32,20 +33,19 @@ class ConnectionsResponse(BaseModel):
 
 @router.get("", response_model=ConnectionsResponse)
 async def get_connections(
+    owner_id: OwnerDep,
     limit: int = Query(12, ge=1, le=30),
     refresh: bool = Query(False),
-    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> ConnectionsResponse:
     """List surprising connections for the owner. `refresh=true` spends a little
     more of the LLM budget to surface new links."""
     async with db.session() as session:
         stmt = select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
-        if x_owner_id is not None:
-            stmt = stmt.where(db.CardRow.owner_id == x_owner_id)
+        stmt = stmt.where(db.CardRow.owner_id == owner_id)
         rows = list((await session.execute(stmt)).scalars().all())
         items = await serendipity.get_connections(
             session,
-            owner_id=x_owner_id,
+            owner_id=owner_id,
             cards=rows,
             want=limit,
             max_new=4 if refresh else 2,

@@ -11,9 +11,10 @@ import logging
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.auth import OwnerDep
 from app.services import llm_library_chat
 from app.store import db
 
@@ -47,7 +48,7 @@ class LibraryChatHistoryResponse(BaseModel):
 @router.post("/chat", response_model=LibraryChatResponse)
 async def library_chat(
     req: LibraryChatRequest,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> LibraryChatResponse:
     if not req.messages or req.messages[-1].role != "user":
         raise HTTPException(status_code=422, detail="last message must be from user")
@@ -67,7 +68,7 @@ async def library_chat(
     async with db.session() as session:
         await db.save_conversation(
             session,
-            owner_id=x_owner_id,
+            owner_id=owner_id,
             kind="library_chat",
             payload=[*history, {"role": "assistant", "content": reply}],
         )
@@ -76,12 +77,12 @@ async def library_chat(
 
 @router.get("/chat", response_model=LibraryChatHistoryResponse)
 async def get_library_chat_history(
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> LibraryChatHistoryResponse:
     """Restore this owner's saved library chat (docs/14). Empty when none."""
     async with db.session() as session:
         row = await db.get_conversation(
-            session, owner_id=x_owner_id, kind="library_chat"
+            session, owner_id=owner_id, kind="library_chat"
         )
         messages = list(row.payload) if row else []
     return LibraryChatHistoryResponse(

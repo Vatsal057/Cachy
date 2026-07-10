@@ -9,11 +9,12 @@ import logging
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 
+from app.auth import OwnerDep
 from app.api.graph import invalidate_graph_cache
 from app.models.card import Card, CardState
 from app.models.job import JobState
@@ -110,7 +111,7 @@ def _platform_for(url: str) -> str | None:
 @router.post("", response_model=CreateCardResponse)
 async def create_card(
     req: CreateCardRequest,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> CreateCardResponse:
     url = req.url.strip()
     if not url:
@@ -118,7 +119,7 @@ async def create_card(
 
     async with db.session() as session:
         # Dedup: re-sharing the same reel returns the existing card (docs/02).
-        existing = await cache.existing_card_for_url(session, url, owner_id=x_owner_id)
+        existing = await cache.existing_card_for_url(session, url, owner_id=owner_id)
         if existing is not None:
             return CreateCardResponse(
                 card_id=existing.id, state=CardState(existing.state), cached=True
@@ -129,7 +130,7 @@ async def create_card(
             platform=_platform_for(url),
             state=CardState.QUEUED.value,
             blocks=[],
-            owner_id=x_owner_id,
+            owner_id=owner_id,
         )
         session.add(card)
         await session.flush()  # assign card.id
@@ -140,11 +141,11 @@ async def create_card(
 
 
 @router.get("/{card_id}/stream")
-async def stream_card(card_id: str) -> StreamingResponse:
+async def stream_card(card_id: str, owner_id: OwnerDep) -> StreamingResponse:
     """SSE stream of pipeline stage updates until the card is READY or FAILED."""
     async with db.session() as session:
         row = await db.get_card_row(session, card_id)
-        if row is None:
+        if row is None or row.owner_id != owner_id:
             raise HTTPException(status_code=404, detail="card not found")
         initial_state = row.state
 
@@ -174,7 +175,7 @@ async def stream_card(card_id: str) -> StreamingResponse:
 @router.post("/import")
 async def import_cards(
     req: BulkImportRequest,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> dict:
     """Restore pre-processed cards from the phone cache after a server wipe.
     Skips URLs already on the server. Assigns new IDs so no PK conflicts."""
@@ -184,7 +185,7 @@ async def import_cards(
             if card.state != CardState.READY:
                 continue
             existing = await cache.existing_card_for_url(
-                session, card.source.url, owner_id=x_owner_id
+                session, card.source.url, owner_id=owner_id
             )
             if existing is not None:
                 continue
@@ -208,7 +209,7 @@ async def import_cards(
                 thumbnail=card.media.thumbnail,
                 keyframes=list(card.media.keyframes),
                 collection_id=None,  # collections don't survive server wipe
-                owner_id=x_owner_id,
+                owner_id=owner_id,
                 schema_version=card.schema_version,
             )
             session.add(row)
@@ -229,7 +230,7 @@ async def get_card(card_id: str) -> Card:
 
 @router.get("", response_model=list[Card])
 async def list_cards(
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
     state: CardState | None = None,
     content_type: str | None = None,
     collection_id: str | None = None,
@@ -238,8 +239,7 @@ async def list_cards(
 ) -> list[Card]:
     async with db.session() as session:
         stmt = select(db.CardRow).order_by(db.CardRow.created_at.desc())
-        if x_owner_id is not None:
-            stmt = stmt.where(db.CardRow.owner_id == x_owner_id)
+        stmt = stmt.where(db.CardRow.owner_id == owner_id)
         if state is not None:
             stmt = stmt.where(db.CardRow.state == state.value)
         if content_type is not None:
@@ -273,7 +273,7 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
 async def chat_card(
     card_id: str,
     req: ChatRequest,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> ChatResponse:
     """Grounded Q&A over one card (docs/13). The conversation is PERSISTED per
     owner (docs/14): the reply is generated from the card's structured content,
@@ -299,7 +299,7 @@ async def chat_card(
     async with db.session() as session:
         await db.save_conversation(
             session,
-            owner_id=x_owner_id,
+            owner_id=owner_id,
             kind="chat",
             card_id=card_id,
             payload=[*history, {"role": "assistant", "content": reply}],
@@ -310,12 +310,12 @@ async def chat_card(
 @router.get("/{card_id}/chat", response_model=ChatHistoryResponse)
 async def get_chat_history(
     card_id: str,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> ChatHistoryResponse:
     """Restore this owner's saved chat for a card (docs/14). Empty when none."""
     async with db.session() as session:
         row = await db.get_conversation(
-            session, owner_id=x_owner_id, kind="chat", card_id=card_id
+            session, owner_id=owner_id, kind="chat", card_id=card_id
         )
         messages = list(row.payload) if row else []
     return ChatHistoryResponse(
@@ -327,7 +327,7 @@ async def get_chat_history(
 async def explore_rabbithole(
     card_id: str,
     req: RabbitHoleRequest,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> RabbitHoleResponse:
     """Explore one thread of the rabbit hole (docs/14). Unlike card chat, this is
     NOT confined to the card — it uses the card as an anchor but explains the
@@ -365,7 +365,7 @@ async def explore_rabbithole(
     # branch taken after jumping back replaces the abandoned deeper steps.
     async with db.session() as session:
         existing = await db.get_conversation(
-            session, owner_id=x_owner_id, kind="rabbit_hole",
+            session, owner_id=owner_id, kind="rabbit_hole",
             card_id=card_id, thread=root,
         )
         prior = list(existing.payload) if existing else []
@@ -373,7 +373,7 @@ async def explore_rabbithole(
         payload = [*prior[:trail_depth], step]
         await db.save_conversation(
             session,
-            owner_id=x_owner_id,
+            owner_id=owner_id,
             kind="rabbit_hole",
             card_id=card_id,
             thread=root,
@@ -388,12 +388,12 @@ async def explore_rabbithole(
 async def get_rabbithole_history(
     card_id: str,
     root: str,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> RabbitHoleHistoryResponse:
     """Restore this owner's saved rabbit-hole trail for a card + root topic."""
     async with db.session() as session:
         row = await db.get_conversation(
-            session, owner_id=x_owner_id, kind="rabbit_hole",
+            session, owner_id=owner_id, kind="rabbit_hole",
             card_id=card_id, thread=root.strip(),
         )
         steps = list(row.payload) if row else []

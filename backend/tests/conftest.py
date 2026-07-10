@@ -23,10 +23,20 @@ for _gemini_var in ("GEMINI_JK", "GEMINI_KVA", "GEMINI_VPN", "GEMINI_VVA", "GEMI
 os.environ["WHISPER_BACKEND"] = "none"
 os.environ["MAX_ATTEMPTS"] = "2"
 
+from typing import Annotated  # noqa: E402
+
+import httpx  # noqa: E402
+from fastapi import Header  # noqa: E402
+
 from app.config import get_settings  # noqa: E402
 from app.store import db  # noqa: E402
 
 get_settings.cache_clear()
+
+
+def _fake_owner(x_owner_id: Annotated[str | None, Header()] = None) -> str:
+    """Test identity: uid from the x-owner-id header, else a fixed test uid."""
+    return x_owner_id or "test-user"
 
 
 @pytest.fixture
@@ -43,11 +53,19 @@ async def database(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 async def client(database):
-    """App-bound HTTP client on the isolated per-test database."""
-    import httpx
+    """App-bound HTTP client on the isolated per-test database.
 
+    Auth is stubbed: the test uid comes from the x-owner-id header (legacy test
+    convention), defaulting to "test-user". Tests exercising real auth behavior
+    reassign or delete app.dependency_overrides[get_owner] themselves.
+    """
+    from app.auth import get_owner
     from app.main import app
 
+    app.dependency_overrides[get_owner] = _fake_owner
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()

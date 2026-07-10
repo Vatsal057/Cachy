@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
+from app.auth import OwnerDep
 from app.store import db
 
 router = APIRouter(prefix="/collections", tags=["collections"])
@@ -46,23 +47,23 @@ def _out(row: db.CollectionRow, count: int) -> CollectionOut:
 
 @router.get("", response_model=list[CollectionOut])
 async def list_collections(
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> list[CollectionOut]:
     async with db.session() as session:
-        pairs = await db.list_collections(session, owner_id=x_owner_id)
+        pairs = await db.list_collections(session, owner_id=owner_id)
         return [_out(row, count) for row, count in pairs]
 
 
 @router.post("", response_model=CollectionOut, status_code=201)
 async def create_collection(
     req: CreateCollectionRequest,
-    x_owner_id: Annotated[str | None, Header()] = None,
+    owner_id: OwnerDep,
 ) -> CollectionOut:
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name is required")
     async with db.session() as session:
-        row = await db.create_custom_collection(session, name=name, owner_id=x_owner_id)
+        row = await db.create_custom_collection(session, name=name, owner_id=owner_id)
         return _out(row, 0)
 
 

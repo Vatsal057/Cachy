@@ -27,11 +27,12 @@ import math
 import random
 from typing import Literal
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from typing import Annotated
 
+from app.auth import OwnerDep
 from app.models.card import CardState
 from app.services import embeddings
 from app.store import db
@@ -123,8 +124,7 @@ async def _data_fingerprint(owner_id: str | None) -> str:
         card_stmt = select(func.count(), func.max(db.CardRow.updated_at)).where(
             db.CardRow.state == CardState.READY.value
         )
-        if owner_id is not None:
-            card_stmt = card_stmt.where(db.CardRow.owner_id == owner_id)
+        card_stmt = card_stmt.where(db.CardRow.owner_id == owner_id)
         card_agg = (await session.execute(card_stmt)).one()
         art_agg = (
             await session.execute(
@@ -300,15 +300,15 @@ def _cluster_labels(
 
 @router.get("", response_model=GraphResponse)
 async def get_graph(
+    owner_id: OwnerDep,
     threshold: float = Query(0.62, ge=0.0, le=1.0),
     top_k: int = Query(2, ge=1, le=12),
-    x_owner_id: Annotated[str | None, Header()] = None,
 ) -> GraphResponse:
     """Build the multi-entity card + catalog similarity graph. Cached until the
     underlying data changes (card/artifact create/update/delete)."""
 
-    fingerprint = await _data_fingerprint(x_owner_id)
-    cached = _cache.get(x_owner_id, fingerprint)
+    fingerprint = await _data_fingerprint(owner_id)
+    cached = _cache.get(owner_id, fingerprint)
     if cached is not None:
         log.debug("graph cache hit (%s)", fingerprint[:8])
         return cached
@@ -319,8 +319,7 @@ async def get_graph(
 
     async with db.session() as session:
         card_stmt = select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
-        if x_owner_id is not None:
-            card_stmt = card_stmt.where(db.CardRow.owner_id == x_owner_id)
+        card_stmt = card_stmt.where(db.CardRow.owner_id == owner_id)
         card_rows = (await session.execute(card_stmt)).scalars().all()
 
         user_card_ids = {r.id for r in card_rows}
@@ -332,14 +331,14 @@ async def get_graph(
         ).scalars().all()
         artifact_rows = [
             a for a in all_artifact_rows
-            if x_owner_id is None or bool(set(a.source_card_ids or []) & user_card_ids)
+            if bool(set(a.source_card_ids or []) & user_card_ids)
         ]
 
         all_concept_rows = (await session.execute(select(db.ConceptRow))).scalars().all()
         concept_rows = [
             c for c in all_concept_rows
             if len(c.source_card_ids or []) > 1
-            and (x_owner_id is None or bool(set(c.source_card_ids or []) & user_card_ids))
+            and bool(set(c.source_card_ids or []) & user_card_ids)
         ]
 
     # ---- Build nodes ------------------------------------------------------- #
@@ -391,7 +390,7 @@ async def get_graph(
 
     if not nodes:
         resp = GraphResponse(nodes=[], edges=[], clusters=[])
-        _cache.set(x_owner_id, fingerprint, resp)
+        _cache.set(owner_id, fingerprint, resp)
         return resp
 
     # ---- Build edges ------------------------------------------------------- #
@@ -484,5 +483,5 @@ async def get_graph(
     cluster_meta = _cluster_labels(nodes, cluster_map)
 
     resp = GraphResponse(nodes=nodes, edges=edges, clusters=cluster_meta)
-    _cache.set(x_owner_id, fingerprint, resp)
+    _cache.set(owner_id, fingerprint, resp)
     return resp
