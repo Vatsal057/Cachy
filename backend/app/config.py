@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
 
+    # quotas (per UTC day)
+    quota_cards_per_day: int = 10
+    quota_chat_per_day: int = 30
+    quota_connections_refresh_per_day: int = 3
+    quota_ip_cards_per_day: int = 30
+
     # worker / queue
     max_attempts: int = 3
     worker_poll_seconds: float = 1.0

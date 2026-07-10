@@ -275,6 +275,8 @@ class JobRow(Base):
     state: Mapped[str] = mapped_column(String, default=JobState.QUEUED.value, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Past-quota card creation: worker skips AI structuring, paragraph fallback.
+    degraded: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -294,6 +296,39 @@ class ConnectionRow(Base):
     card_b_id: Mapped[str] = mapped_column(String, index=True)
     blurb: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class UsageRow(Base):
+    """Daily metered usage. One row per (owner, UTC day, kind); owner_id also
+    stores "ip:<addr>" rows for the anonymous-farming IP cap."""
+
+    __tablename__ = "usage"
+
+    owner_id: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)  # "YYYY-MM-DD" UTC
+    kind: Mapped[str] = mapped_column(String, primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+def _today() -> str:
+    """Current UTC day key."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+async def spend_usage(
+    db_session: AsyncSession, *, owner_id: str, kind: str, limit: int
+) -> tuple[bool, int]:
+    """Increment today's counter unless at limit. Returns (allowed, used_after)."""
+    day = _today()
+    row = await db_session.get(UsageRow, (owner_id, day, kind))
+    if row is None:
+        row = UsageRow(owner_id=owner_id, day=day, kind=kind, count=0)
+        db_session.add(row)
+    if row.count >= limit:
+        return False, row.count
+    row.count += 1
+    await db_session.commit()
+    return True, row.count
 
 
 # --------------------------------------------------------------------------- #
@@ -381,6 +416,13 @@ async def init_db() -> None:
             {
                 "system_type": "TEXT",
                 "owner_id": "TEXT",
+            },
+        )
+        await _add_missing_columns(
+            conn,
+            "jobs",
+            {
+                "degraded": "BOOLEAN DEFAULT 0",  # quota-degraded card creation
             },
         )
         await _add_missing_columns(
