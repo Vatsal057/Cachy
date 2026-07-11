@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/local_ai/gemma_local_ai_service.dart';
+import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../../../../data/services/obsidian_export.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
@@ -69,6 +71,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onTap: _discovering ? null : _discoverServer,
           ),
           const SizedBox(height: 24),
+          const _OfflineAiSection(),
           _sectionLabel(theme, 'Library'),
           _Tile(
             icon: PhosphorIconsRegular.export,
@@ -321,5 +324,176 @@ class _Tile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+
+/// Offline AI (V2): download/enable/delete the on-device model. Hidden on
+/// platforms that can't run it. Honest copy — size, speed, trade-offs.
+class _OfflineAiSection extends StatelessWidget {
+  const _OfflineAiSection();
+
+  @override
+  Widget build(BuildContext context) {
+    LocalAiService? ai;
+    try {
+      ai = context.watch<LocalAiService>();
+    } catch (_) {
+      return const SizedBox.shrink(); // not provided (tests)
+    }
+    final theme = Theme.of(context);
+    if (ai.status.phase == LocalAiPhase.unsupported) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10, left: 4),
+          child: Text('OFFLINE AI',
+              style: Brand.label(
+                  size: 11, color: theme.colorScheme.onSurfaceVariant)),
+        ),
+        _offlineAiTile(context, ai),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _offlineAiTile(BuildContext context, LocalAiService ai) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (ai.status.phase) {
+      case LocalAiPhase.notInstalled:
+      case LocalAiPhase.error:
+        return Column(children: [
+          if (ai.status.phase == LocalAiPhase.error)
+            _Tile(
+              icon: PhosphorIconsRegular.warning,
+              title: 'Model problem',
+              subtitle: ai.status.message,
+            ),
+          _Tile(
+            icon: PhosphorIconsRegular.downloadSimple,
+            title: 'Download local model',
+            subtitle:
+                'Gemma 3 1B, $kLocalAiModelSizeLabel. Runs on your phone when the '
+                'daily AI budget runs out. Slower than cloud. Wi-Fi recommended.',
+            onTap: () => _confirmDownload(context, ai),
+          ),
+        ]);
+      case LocalAiPhase.downloading:
+        final pct = (ai.status.progress * 100).round();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              leading: SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  value: ai.status.progress > 0 ? ai.status.progress : null,
+                ),
+              ),
+              title: Text('Downloading model… $pct%'),
+              subtitle: const Text('Keep the app open until this finishes.'),
+            ),
+          ),
+        );
+      case LocalAiPhase.ready:
+        return Column(children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(14),
+              child: SwitchListTile(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                secondary:
+                    PhosphorIcon(PhosphorIconsRegular.cpu, color: scheme.primary),
+                title: const Text('Generate on this phone past quota'),
+                subtitle: const Text(
+                    'Model installed ($kLocalAiModelSizeLabel on disk).'),
+                value: ai.enabled,
+                onChanged: (v) => ai.setEnabled(v),
+              ),
+            ),
+          ),
+          _Tile(
+            icon: PhosphorIconsRegular.trash,
+            title: 'Delete local model',
+            subtitle: 'Frees $kLocalAiModelSizeLabel. You can re-download anytime.',
+            onTap: () => _confirmDelete(context, ai),
+          ),
+        ]);
+      case LocalAiPhase.unsupported:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Future<void> _confirmDownload(BuildContext context, LocalAiService ai) async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Download model?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+                '$kLocalAiModelSizeLabel download — Wi-Fi recommended. The model '
+                'is license-gated on HuggingFace: paste a free HF token that has '
+                'accepted the Gemma license.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'HuggingFace token (hf_…)',
+                border: OutlineInputBorder(),
+              ),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Download')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final token = controller.text.trim();
+    if (token.isNotEmpty) await ai.saveHfToken(token);
+    await ai.download();
+  }
+
+  Future<void> _confirmDelete(BuildContext context, LocalAiService ai) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete local model?'),
+        content: const Text('Past-quota cards go back to plain paragraphs '
+            'until you re-download it.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true) await ai.delete();
   }
 }

@@ -31,10 +31,15 @@ class CreateCardResult {
     required this.cardId,
     required this.state,
     required this.cached,
+    this.quotaDegraded = false,
   });
   final String cardId;
   final CardState state;
   final bool cached;
+
+  /// Past today's AI budget — server will produce a paragraph fallback card;
+  /// the on-device model (if installed) can upgrade it afterwards.
+  final bool quotaDegraded;
 }
 
 /// One card cited by a library-chat answer.
@@ -159,7 +164,33 @@ class ApiClient {
       cardId: (json['card_id'] as String?) ?? '',
       state: CardState.fromWire(json['state'] as String?),
       cached: (json['cached'] as bool?) ?? false,
+      quotaDegraded: (json['quota_degraded'] as bool?) ?? false,
     );
+  }
+
+  /// Stored extraction bundle of a quota-degraded card, or null when the
+  /// server has none (not degraded / already upgraded / not the owner).
+  Future<Map<String, String>?> getBundle(String cardId) async {
+    final resp =
+        await _client.get(_uri('/cards/$cardId/bundle'), headers: _ownerHeader);
+    if (resp.statusCode == 404) return null;
+    final json = _decodeMap(resp);
+    return {
+      'bundle': (json['bundle'] as String?) ?? '',
+      'transcript': (json['transcript'] as String?) ?? '',
+      'caption': (json['caption'] as String?) ?? '',
+    };
+  }
+
+  /// Upload a device-generated structured card. The server re-validates and
+  /// throws [ApiException] (422) when the payload doesn't survive validation.
+  Future<Card> uploadStructure(String cardId, Map<String, dynamic> payload) async {
+    final resp = await _client.post(
+      _uri('/cards/$cardId/structure'),
+      headers: {'content-type': 'application/json', ..._ownerHeader},
+      body: jsonEncode(payload),
+    );
+    return Card.fromJson(_decodeMap(resp));
   }
 
   Future<Card> getCard(String cardId) async {

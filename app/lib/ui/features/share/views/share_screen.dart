@@ -18,6 +18,7 @@ import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../../core/widgets/processing_glyph.dart';
 import '../../reader/views/reader_screen.dart';
+import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../view_models/share_view_model.dart';
 
 class ShareScreen extends StatelessWidget {
@@ -27,9 +28,18 @@ class ShareScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (ctx) =>
-          ShareViewModel(repository: ctx.read<CardRepository>())
-            ..submit(sharedUrl),
+      create: (ctx) {
+        LocalAiService? localAi;
+        try {
+          localAi = ctx.read<LocalAiService>();
+        } catch (_) {
+          localAi = null; // not provided (tests / stripped builds)
+        }
+        return ShareViewModel(
+          repository: ctx.read<CardRepository>(),
+          localAi: localAi,
+        )..submit(sharedUrl);
+      },
       child: _ShareView(sharedUrl: sharedUrl),
     );
   }
@@ -50,7 +60,9 @@ class _ShareViewState extends State<_ShareView> {
   Widget build(BuildContext context) {
     final vm = context.watch<ShareViewModel>();
     final theme = Theme.of(context);
-    final isProcessing = vm.status == ShareStatus.idle || vm.status == ShareStatus.processing;
+    final isProcessing = vm.status == ShareStatus.idle ||
+        vm.status == ShareStatus.processing ||
+        vm.status == ShareStatus.generatingLocally;
 
     // Auto-advance into the reader as soon as the card is ready.
     if (vm.status == ShareStatus.ready && vm.cardId != null && !_opened) {
@@ -153,6 +165,30 @@ class _ShareViewState extends State<_ShareView> {
           reason: vm.failureReason,
           onRetry: () => context.read<ShareViewModel>().submit(widget.sharedUrl),
           onCancel: () => Navigator.pop(context),
+        );
+
+      case ShareStatus.generatingLocally:
+        return _Centered(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 48, height: 48,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: 20),
+              Text('Generating on your phone…',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text(
+                'Daily AI budget used — your local model is doing the work.',
+                textAlign: TextAlign.center,
+                style: Brand.label(
+                    size: 11, color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         );
 
       case ShareStatus.ready:

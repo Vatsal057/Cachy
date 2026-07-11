@@ -20,6 +20,8 @@ class LocalStore {
   static const _userNameKey = 'user_name';
   static const _apiBaseUrlKey = 'api_base_url';
   static const _splitPaneFractionKey = 'split_pane_fraction';
+  static const _localAiEnabledKey = 'local_ai_enabled';
+  static const _hfTokenKey = 'hf_token';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
@@ -41,6 +43,18 @@ class LocalStore {
 
   String? get apiBaseUrl => _prefs.getString(_apiBaseUrlKey);
   Future<void> setApiBaseUrl(String url) => _prefs.setString(_apiBaseUrlKey, url);
+
+  /// On-device AI opt-in (V2). Model may be on disk while this is off.
+  bool get localAiEnabled => _prefs.getBool(_localAiEnabledKey) ?? false;
+  Future<void> setLocalAiEnabled(bool v) => _prefs.setBool(_localAiEnabledKey, v);
+
+  /// HuggingFace token for the license-gated local model download.
+  String? get hfToken {
+    final t = _prefs.getString(_hfTokenKey);
+    return (t == null || t.isEmpty) ? null : t;
+  }
+
+  Future<void> setHfToken(String token) => _prefs.setString(_hfTokenKey, token);
 
   /// Split-pane divider position as a fraction of available width.
   /// Defaults to ~0.35 (≈420/1200).

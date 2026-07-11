@@ -15,6 +15,7 @@ import '../../domain/models/feed.dart';
 import '../../domain/models/graph.dart';
 import '../../domain/models/pipeline_event.dart';
 import '../services/api_client.dart';
+import '../services/local_ai/local_ai_service.dart';
 import '../services/local_store.dart';
 
 class CardRepository extends ChangeNotifier {
@@ -52,6 +53,32 @@ class CardRepository extends ChangeNotifier {
       }
       notifyListeners();
       rethrow;
+    }
+  }
+
+  /// Upgrade a quota-degraded paragraph card by structuring its stored bundle
+  /// on-device and uploading the result (V2 on-device AI).
+  ///
+  /// Returns true when the card was upgraded. Every failure path returns false
+  /// silently — the paragraph card is never made worse.
+  Future<bool> upgradeOnDevice(String cardId, LocalAiService ai) async {
+    if (!ai.canStructure) return false;
+    try {
+      final stored = await _api.getBundle(cardId);
+      if (stored == null || (stored['bundle'] ?? '').isEmpty) return false;
+      final generated = await ai.structureBundle(
+        stored['bundle']!,
+        transcript: stored['transcript'] ?? '',
+        caption: stored['caption'] ?? '',
+      );
+      if (generated == null) return false;
+      final card = await _api.uploadStructure(cardId, generated);
+      await _store.cacheCard(card.cardId, _rawOf(card));
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('on-device upgrade failed for $cardId: $e');
+      return false;
     }
   }
 

@@ -15,6 +15,8 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/repositories/card_repository.dart';
+import 'data/services/local_ai/gemma_local_ai_service.dart';
+import 'data/services/local_ai/local_ai_service.dart';
 import 'data/services/api_client.dart';
 import 'data/services/highlight_store.dart';
 import 'data/services/local_store.dart';
@@ -33,11 +35,13 @@ Future<void> main() async {
   final api = ApiClient(baseUrl: await ApiClient.resolveBaseUrl(store: store), store: store);
   final repository = CardRepository(api: api, store: store);
   final appController = AppController(store);
+  final localAi = GemmaLocalAiService(store: store);
   FlutterNativeSplash.remove();
   runApp(CachyApp(
     repository: repository,
     appController: appController,
     highlightStore: highlightStore,
+    localAi: localAi,
   ));
 }
 
@@ -73,10 +77,12 @@ class CachyApp extends StatefulWidget {
     required this.repository,
     required this.appController,
     required this.highlightStore,
+    required this.localAi,
   });
   final CardRepository repository;
   final AppController appController;
   final HighlightStore highlightStore;
+  final LocalAiService localAi;
 
   @override
   State<CachyApp> createState() => _CachyAppState();
@@ -147,6 +153,7 @@ class _CachyAppState extends State<CachyApp> {
         ChangeNotifierProvider<CardRepository>.value(value: widget.repository),
         ChangeNotifierProvider<AppController>.value(value: widget.appController),
         ChangeNotifierProvider<HighlightStore>.value(value: widget.highlightStore),
+        ChangeNotifierProvider<LocalAiService>.value(value: widget.localAi),
         ChangeNotifierProvider<AgentBus>(create: (_) => AgentBus()),
       ],
       child: Consumer<AppController>(

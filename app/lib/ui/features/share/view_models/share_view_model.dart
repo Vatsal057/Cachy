@@ -9,14 +9,30 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
+import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../../../../domain/models/pipeline_event.dart';
 
-enum ShareStatus { idle, submitting, processing, ready, failed, queuedOffline }
+enum ShareStatus {
+  idle,
+  submitting,
+  processing,
+
+  /// Past quota + local model installed: structuring on the user's phone
+  /// before opening the reader (V2 on-device AI).
+  generatingLocally,
+  ready,
+  failed,
+  queuedOffline,
+}
 
 class ShareViewModel extends ChangeNotifier {
-  ShareViewModel({required CardRepository repository}) : _repository = repository;
+  ShareViewModel({required CardRepository repository, LocalAiService? localAi})
+      : _repository = repository,
+        _localAi = localAi;
 
   final CardRepository _repository;
+  final LocalAiService? _localAi;
+  bool _quotaDegraded = false;
 
   ShareStatus _status = ShareStatus.idle;
   ShareStatus get status => _status;
@@ -51,6 +67,7 @@ class ShareViewModel extends ChangeNotifier {
     try {
       final result = await _repository.share(cleaned);
       _cardId = result.cardId;
+      _quotaDegraded = result.quotaDegraded;
       if (result.cached) {
         // Deduped — card already exists; jump straight to it.
         _status = ShareStatus.ready;
@@ -85,6 +102,8 @@ class ShareViewModel extends ChangeNotifier {
           if (event.state.name == 'failed') {
             _status = ShareStatus.failed;
             _failureReason = event.reason;
+          } else if (_quotaDegraded && (_localAi?.canStructure ?? false)) {
+            _upgradeOnDevice(cardId);
           } else {
             _status = ShareStatus.ready;
           }
@@ -97,6 +116,16 @@ class ShareViewModel extends ChangeNotifier {
       },
       cancelOnError: false,
     );
+  }
+
+  /// Structure the degraded card on-device, then open it. Failure is silent —
+  /// the paragraph card is already READY and never made worse.
+  Future<void> _upgradeOnDevice(String cardId) async {
+    _status = ShareStatus.generatingLocally;
+    _safeNotify();
+    await _repository.upgradeOnDevice(cardId, _localAi!);
+    _status = ShareStatus.ready;
+    _safeNotify();
   }
 
   void _safeNotify() {
