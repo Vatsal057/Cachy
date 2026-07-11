@@ -29,13 +29,19 @@ import '../../../core/widgets/pipeline_progress.dart';
 import '../../blocks/block_renderer.dart';
 import '../../catalog/services/artifact_lookup.dart';
 import '../../concepts/views/concept_detail_screen.dart';
-import '../../presenter/agent_bus.dart';
 import '../view_models/reader_view_model.dart';
 import 'insight_section.dart';
 import 'primary_action_bar.dart';
 
 class ReaderScreen extends StatelessWidget {
-  const ReaderScreen({super.key, required this.cardId, this.embedded = false, this.onClose});
+  const ReaderScreen({
+    super.key,
+    required this.cardId,
+    this.embedded = false,
+    this.onClose,
+    this.fullscreen = false,
+    this.onToggleFullscreen,
+  });
   final String cardId;
 
   /// True when rendered inline in the desktop split pane (Library, wide
@@ -47,6 +53,16 @@ class ReaderScreen extends StatelessWidget {
   /// Clears the pane selection. Only used when [embedded] is true.
   final VoidCallback? onClose;
 
+  /// True when this reader is the fullscreen overlay promoted from the side
+  /// column — the toggle button then shows a "restore" affordance instead of
+  /// "expand".
+  final bool fullscreen;
+
+  /// Toggles between the side-column and fullscreen presentations of the
+  /// notes. In [embedded] mode it expands to fullscreen; in [fullscreen] mode
+  /// it restores to the side column. Null hides the toggle.
+  final VoidCallback? onToggleFullscreen;
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
@@ -54,93 +70,55 @@ class ReaderScreen extends StatelessWidget {
         repository: ctx.read<CardRepository>(),
         cardId: cardId,
       )..init(),
-      child: _ReaderAgentBridge(
-        child: _ReaderView(embedded: embedded, onClose: onClose),
+      child: _ReaderScrollHost(
+        child: _ReaderView(
+          embedded: embedded,
+          onClose: onClose,
+          fullscreen: fullscreen,
+          onToggleFullscreen: onToggleFullscreen,
+        ),
       ),
     );
   }
 }
 
-/// Bridges the mounted reader to the presenter agent: while a reader is on
-/// screen, the agent can toggle a checklist item or step live to show cards are
-/// interactive. Attaches on mount, detaches on unmount (AgentBus lifecycle).
-class _ReaderAgentBridge extends StatefulWidget {
-  const _ReaderAgentBridge({required this.child});
+/// Hosts the reader's scroll controller as the [PrimaryScrollController] the
+/// body's `primary: true` scroll views attach to.
+class _ReaderScrollHost extends StatefulWidget {
+  const _ReaderScrollHost({required this.child});
   final Widget child;
 
   @override
-  State<_ReaderAgentBridge> createState() => _ReaderAgentBridgeState();
+  State<_ReaderScrollHost> createState() => _ReaderScrollHostState();
 }
 
-class _ReaderAgentBridgeState extends State<_ReaderAgentBridge> {
-  AgentBus? _bus;
-  ReaderAgentHooks? _hooks;
-  ReaderViewModel? _vm;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _vm = context.read<ReaderViewModel>();
-    if (_hooks != null) return;
-    _bus = context.read<AgentBus>();
-    final hooks = ReaderAgentHooks(
-      isReady: () => _vm?.card != null,
-      toggleCheck: _toggleCheck,
-      toggleStep: _toggleStep,
-    );
-    _hooks = hooks;
-    _bus!.attachReader(hooks);
-  }
-
-  Future<bool> _toggleCheck() async {
-    final card = _vm?.card;
-    if (card == null) return false;
-    for (final b in card.rawBlocks) {
-      if (b['type'] == 'checklist') {
-        final id = b['id'] as String?;
-        final items = (b['items'] as List?) ?? const [];
-        if (id != null && items.isNotEmpty) {
-          final checked = (items.first as Map)['checked'] == true;
-          await _vm!.toggleChecklistItem(id, 0, !checked);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  Future<bool> _toggleStep() async {
-    final card = _vm?.card;
-    if (card == null) return false;
-    for (final b in card.rawBlocks) {
-      if (b['type'] == 'step_list') {
-        final id = b['id'] as String?;
-        final steps = (b['steps'] as List?) ?? const [];
-        if (id != null && steps.isNotEmpty) {
-          final checked = (steps.first as Map)['checked'] == true;
-          await _vm!.toggleStep(id, 0, !checked);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
+class _ReaderScrollHostState extends State<_ReaderScrollHost> {
+  final _scroll = ScrollController();
 
   @override
   void dispose() {
-    final h = _hooks;
-    if (h != null) _bus?.detachReader(h);
+    _scroll.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => PrimaryScrollController(
+        controller: _scroll,
+        child: widget.child,
+      );
 }
 
 class _ReaderView extends StatelessWidget {
-  const _ReaderView({required this.embedded, this.onClose});
+  const _ReaderView({
+    required this.embedded,
+    this.onClose,
+    this.fullscreen = false,
+    this.onToggleFullscreen,
+  });
   final bool embedded;
   final VoidCallback? onClose;
+  final bool fullscreen;
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
@@ -241,7 +219,8 @@ class _ReaderView extends StatelessWidget {
 
                       // Structured blocks — skeleton while building, fades in on arrival
                       if (card.blocks.isNotEmpty) ...[
-                        _fadeIn(BlockList(
+                        _fadeIn(KeyedSubtree(
+                          child: BlockList(
                           blocks: card.blocks,
                           onToggleChecklist: vm.toggleChecklistItem,
                           onToggleStep: vm.toggleStep,
@@ -255,7 +234,7 @@ class _ReaderView extends StatelessWidget {
                             ),
                           ),
                           onHighlight: card.isReady ? onHighlight : null,
-                        )),
+                        ))),
                         if (card.isProcessing) ...[
                           const SizedBox(height: 12),
                           const _SkeletonBox(height: 70, radius: Insets.radius),
@@ -274,16 +253,21 @@ class _ReaderView extends StatelessWidget {
                       if (card.isReady &&
                           card.insight != null &&
                           card.insight!.hasContent)
-                        InsightSection(
-                          insight: card.insight!,
-                          accent: accent,
-                          cardId: card.cardId,
-                          cardTitle: card.base.oneLiner,
-                          readMinutes: readMins,
+                        KeyedSubtree(
+                          child: InsightSection(
+                            insight: card.insight!,
+                            accent: accent,
+                            cardId: card.cardId,
+                            cardTitle: card.base.oneLiner,
+                            readMinutes: readMins,
+                          ),
                         ),
 
                       // Referenced catalog items
-                      if (card.isReady) _ReferencesStrip(entries: vm.artifacts),
+                      if (card.isReady)
+                        KeyedSubtree(
+                          child: _ReferencesStrip(entries: vm.artifacts),
+                        ),
 
                       // Concepts this card contributed to
                       if (card.isReady) _ConceptsStrip(entries: vm.concepts),
@@ -301,21 +285,40 @@ class _ReaderView extends StatelessWidget {
     if (embedded) {
       return Column(
         children: [
-          _EmbeddedHeader(card: card, accent: accent, onClose: onClose),
-          Expanded(child: SingleChildScrollView(child: content)),
-          if (card.isReady) PrimaryActionBar(card: card),
+          _EmbeddedHeader(
+            card: card,
+            accent: accent,
+            onClose: onClose,
+            onToggleFullscreen: onToggleFullscreen,
+          ),
+          Expanded(child: SingleChildScrollView(primary: true, child: content)),
+          if (card.isReady)
+            KeyedSubtree(
+              child: PrimaryActionBar(card: card),
+            ),
         ],
       );
     }
 
     return Scaffold(
       body: CustomScrollView(
+        primary: true,
         slivers: [
-          _FaceAppBar(card: card, api: api, accent: accent),
+          _FaceAppBar(
+            card: card,
+            api: api,
+            accent: accent,
+            fullscreen: fullscreen,
+            onToggleFullscreen: onToggleFullscreen,
+          ),
           SliverToBoxAdapter(child: content),
         ],
       ),
-      bottomSheet: card.isReady ? PrimaryActionBar(card: card) : null,
+      bottomSheet: card.isReady
+          ? KeyedSubtree(
+              child: PrimaryActionBar(card: card),
+            )
+          : null,
     );
   }
 
@@ -352,16 +355,22 @@ class _ReaderView extends StatelessWidget {
 /// embedded in the Library split pane: a close affordance plus the content
 /// type, no hero face takeover (there's no route transition to animate into).
 class _EmbeddedHeader extends StatelessWidget {
-  const _EmbeddedHeader({required this.card, required this.accent, this.onClose});
+  const _EmbeddedHeader({
+    required this.card,
+    required this.accent,
+    this.onClose,
+    this.onToggleFullscreen,
+  });
   final model.Card card;
   final ContentAccent accent;
   final VoidCallback? onClose;
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
@@ -382,6 +391,14 @@ class _EmbeddedHeader extends StatelessWidget {
               style: Brand.label(size: 11, color: scheme.onSurfaceVariant, weight: FontWeight.w700),
             ),
           ),
+          if (onToggleFullscreen != null)
+            KeyedSubtree(
+              child: IconButton(
+                tooltip: 'Fullscreen',
+                icon: const PhosphorIcon(PhosphorIconsRegular.arrowsOutSimple),
+                onPressed: onToggleFullscreen,
+              ),
+            ),
         ],
       ),
     );
@@ -397,10 +414,14 @@ class _FaceAppBar extends StatelessWidget {
     required this.card,
     required this.api,
     required this.accent,
+    this.fullscreen = false,
+    this.onToggleFullscreen,
   });
   final model.Card card;
   final dynamic api;
   final ContentAccent accent;
+  final bool fullscreen;
+  final VoidCallback? onToggleFullscreen;
 
   @override
   Widget build(BuildContext context) {
@@ -412,10 +433,28 @@ class _FaceAppBar extends StatelessWidget {
       leading: Padding(
         padding: const EdgeInsets.all(8),
         child: _CircleButton(
-          icon: PhosphorIconsRegular.arrowLeft,
-          onTap: () => Navigator.of(context).maybePop(),
+          // When promoted from the side column there's no route to pop —
+          // the toggle restores it instead.
+          icon: onToggleFullscreen != null
+              ? PhosphorIconsRegular.arrowsInSimple
+              : PhosphorIconsRegular.arrowLeft,
+          onTap: () => onToggleFullscreen != null
+              ? onToggleFullscreen!()
+              : Navigator.of(context).maybePop(),
         ),
       ),
+      actions: [
+        if (onToggleFullscreen != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: KeyedSubtree(
+              child: _CircleButton(
+                icon: PhosphorIconsRegular.arrowsInSimple,
+                onTap: onToggleFullscreen!,
+              ),
+            ),
+          ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         stretchModes: const [StretchMode.zoomBackground],
         background: Stack(
@@ -725,11 +764,13 @@ class _PulsingDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final dot = Container(
       width: 8,
       height: 8,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    )
+    );
+    if (!context.motionEnabled) return dot; // reduced motion: static dot
+    return dot
         .animate(onPlay: (c) => c.repeat(reverse: true))
         .scaleXY(
           begin: 0.5,
@@ -1282,14 +1323,16 @@ class _SkeletonBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    final box = Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(radius),
       ),
-    )
+    );
+    if (!context.motionEnabled) return box; // reduced motion: static block
+    return box
         .animate(onPlay: (c) => c.repeat())
         .shimmer(
           duration: const Duration(milliseconds: 1200),

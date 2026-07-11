@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
+import '../../../core/safe_notifier.dart';
 
 class ChatMessage {
   const ChatMessage({required this.role, required this.content});
@@ -16,7 +17,7 @@ class ChatMessage {
   Map<String, String> toWire() => {'role': role, 'content': content};
 }
 
-class ChatViewModel extends ChangeNotifier {
+class ChatViewModel extends ChangeNotifier with SafeNotifier {
   ChatViewModel({required CardRepository repository, required this.cardId})
       : _repository = repository;
 
@@ -77,7 +78,7 @@ class ChatViewModel extends ChangeNotifier {
       _messages.add(ChatMessage(role: 'assistant', content: reply));
     } on ApiException catch (e) {
       _error = e.statusCode == 503
-          ? 'Chat is unavailable — no AI backend is configured.'
+          ? 'The AI is catching its breath — try again in a moment.'
           : "Couldn't get an answer. Try again.";
     } catch (_) {
       _error = "Couldn't reach the backend.";

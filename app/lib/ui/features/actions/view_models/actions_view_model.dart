@@ -7,6 +7,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../domain/models/card.dart';
 
 enum ActionsStatus { idle, loading, ready, error, empty }
@@ -70,7 +71,7 @@ class ActionsViewModel extends ChangeNotifier {
       _status = groups.isEmpty ? ActionsStatus.empty : ActionsStatus.ready;
       _error = null;
     } catch (e) {
-      _error = e.toString();
+      _error = friendlyError(e);
       _status = ActionsStatus.error;
     }
     notifyListeners();

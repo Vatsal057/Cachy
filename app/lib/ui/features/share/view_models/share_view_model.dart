@@ -81,11 +81,11 @@ class ShareViewModel extends ChangeNotifier {
     } catch (e) {
       if (e is ApiException) {
         _status = ShareStatus.failed;
-        _failureReason = e.message;
+        _failureReason = e.friendlyMessage;
       } else {
         // Network down: repository has queued the share for later.
         _status = ShareStatus.queuedOffline;
-        _error = '$e';
+        _error = friendlyError(e);
       }
       notifyListeners();
       return null;
@@ -111,7 +111,7 @@ class ShareViewModel extends ChangeNotifier {
         _safeNotify();
       },
       onError: (e) {
-        _error = '$e';
+        _error = friendlyError(e);
         _safeNotify();
       },
       cancelOnError: false,

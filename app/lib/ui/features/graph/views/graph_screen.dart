@@ -34,7 +34,6 @@ import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/spot_art.dart';
 import '../../concepts/views/concept_detail_screen.dart';
 import '../../feed/views/connections_screen.dart';
-import '../../presenter/agent_bus.dart';
 import '../../reader/views/reader_screen.dart';
 
 // ========================================================================== //
@@ -165,11 +164,6 @@ class _GraphScreenState extends State<GraphScreen>
   // Concepts ON by default — they're the backbone hubs connecting cards by meaning.
   bool _showConcepts = true;
 
-  // Agent driving: the presenter agent operates the graph through these hooks
-  // while this screen is mounted (see AgentBus).
-  AgentBus? _bus;
-  GraphAgentHooks? _hooks;
-
   @override
   void initState() {
     super.initState();
@@ -177,130 +171,9 @@ class _GraphScreenState extends State<GraphScreen>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_hooks != null) return;
-    _bus = context.read<AgentBus>();
-    final hooks = GraphAgentHooks(
-      nodes: () => _data?.nodes ?? const [],
-      isReady: () => _data != null && !_loading,
-      focus: _agentFocus,
-      open: _agentOpen,
-      wander: _agentWander,
-      reset: _agentReset,
-      filterCluster: _agentFilterCluster,
-      toggleConcepts: _agentToggleConcepts,
-    );
-    _hooks = hooks;
-    _bus!.attachGraph(hooks);
-  }
-
-  @override
   void dispose() {
-    final h = _hooks;
-    if (h != null) _bus?.detachGraph(h);
     _ticker.dispose();
     super.dispose();
-  }
-
-  // --------------------------------------------------------------------------
-  // Agent-driven controls (mirror the manual gesture handlers)
-  // --------------------------------------------------------------------------
-
-  /// Center + select a node and dive into its neighborhood, so the audience
-  /// sees exactly what it connects to.
-  Future<void> _agentFocus(String id) async {
-    if (!mounted) return;
-    final p = _pos[id];
-    setState(() {
-      _selected = id;
-      if (p != null) _pan = -p * _zoom;
-      _localMode = true;
-      _localRoot = id;
-      _alpha = 1.0;
-      _alphaTarget = 0.0;
-    });
-    if (!_ticker.isActive) _ticker.start();
-    await Future<void>.delayed(const Duration(milliseconds: 1400));
-  }
-
-  /// Open a node's underlying card (in the reader, under the agent glyph) or
-  /// concept detail.
-  Future<void> _agentOpen(String id) async {
-    final node = _data?.nodes.where((n) => n.id == id).firstOrNull;
-    if (node == null) return;
-    if (node.isCard) {
-      await _bus?.onOpenCard?.call(node.id);
-    } else if (node.isConcept && mounted) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ConceptDetailScreen(
-            entry: ConceptEntry(id: node.id, name: node.label),
-          ),
-        ),
-      );
-    }
-  }
-
-  /// Reheat the physics and drift the view so the layout visibly comes alive.
-  Future<void> _agentWander() async {
-    if (!mounted) return;
-    setState(() {
-      _localMode = false;
-      _localRoot = null;
-      _alpha = 1.0;
-      _alphaTarget = 0.0;
-    });
-    if (!_ticker.isActive) _ticker.start();
-    const steps = 22;
-    for (var i = 0; i < steps; i++) {
-      if (!mounted) return;
-      final angle = (i / steps) * 2 * math.pi;
-      setState(() => _pan = Offset(math.cos(angle), math.sin(angle)) * 26);
-      await Future<void>.delayed(const Duration(milliseconds: 95));
-    }
-    if (mounted) setState(() => _pan = Offset.zero);
-  }
-
-  /// Exit ego/local mode and recenter.
-  void _agentReset() {
-    if (!mounted) return;
-    setState(() {
-      _localMode = false;
-      _localRoot = null;
-      _selected = null;
-      _pan = Offset.zero;
-      _alpha = 1.0;
-      _alphaTarget = 0.0;
-    });
-    if (!_ticker.isActive) _ticker.start();
-  }
-
-  /// Filter the graph down to a single community cluster.
-  Future<void> _agentFilterCluster() async {
-    final data = _data;
-    if (!mounted || data == null || data.clusters.isEmpty) return;
-    setState(() {
-      _localMode = false;
-      _localRoot = null;
-      _activeCluster = data.clusters.first.id;
-      _alpha = 1.0;
-      _alphaTarget = 0.0;
-    });
-    if (!_ticker.isActive) _ticker.start();
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
-  }
-
-  /// Toggle the concept hub nodes on/off so the audience sees their effect.
-  Future<void> _agentToggleConcepts() async {
-    if (!mounted) return;
-    setState(() {
-      _showConcepts = !_showConcepts;
-      _alpha = 1.0;
-      _alphaTarget = 0.0;
-    });
-    if (!_ticker.isActive) _ticker.start();
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
   }
 
   Future<void> _load() async {

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import discovery
 from app.config import get_settings
-from app.api import auth_routes, cards, catalog, collections, concepts, connections, feed, graph, library_chat, me, presenter, search
+from app.api import auth_routes, cards, catalog, collections, concepts, connections, feed, graph, library_chat, me, search
 from app.logging_config import configure_logging
 from app.models.card import SCHEMA_VERSION
 from app.pipeline import worker
@@ -98,7 +98,6 @@ app.include_router(search.router)
 app.include_router(graph.router)
 app.include_router(feed.router)
 app.include_router(connections.router)
-app.include_router(presenter.router)
 app.include_router(me.router)
 app.include_router(auth_routes.router)
 

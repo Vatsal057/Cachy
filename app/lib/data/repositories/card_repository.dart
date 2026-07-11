@@ -186,6 +186,9 @@ class CardRepository extends ChangeNotifier {
     return card;
   }
 
+  /// Clear all locally cached cards. Returns how many were removed.
+  Future<int> clearCardCache() => _store.clearCardCache();
+
   Future<void> delete(String cardId) async {
     await _store.removeCard(cardId);
     try {

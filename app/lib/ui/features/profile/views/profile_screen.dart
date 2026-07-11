@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../data/services/local_ai/gemma_local_ai_service.dart';
 import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../../../../data/services/obsidian_export.dart';
@@ -19,6 +20,10 @@ import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/stat_strip.dart';
+
+// ponytail: client-side gate only (extractable from the APK) — it hides the
+// developer server controls from casual users, it is not real security.
+const _kDeveloperPassword = 'vatxzz';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -31,7 +36,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late Future<List<model.Card>> _cards;
   late Future<List<CatalogEntry>> _catalog;
   bool _exporting = false;
-  bool _discovering = false;
+
+  // Hidden developer gate: tapping the version row seven times prompts for a
+  // password before revealing the server-connection controls.
+  int _versionTaps = 0;
 
   @override
   void initState() {
@@ -44,7 +52,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final repo = context.watch<CardRepository>();
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('You')),
@@ -56,20 +63,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 28),
           _sectionLabel(theme, 'Appearance'),
           const _ThemePicker(),
-          const SizedBox(height: 24),
-          _sectionLabel(theme, 'Server Connection'),
-          _Tile(
-            icon: PhosphorIconsRegular.hardDrives,
-            title: 'Active Server endpoint',
-            subtitle: repo.api.baseUrl,
-            onTap: _editServerUrl,
-          ),
-          _Tile(
-            icon: PhosphorIconsRegular.broadcast,
-            title: _discovering ? 'Searching local WiFi…' : 'Discover LAN Server',
-            subtitle: 'Scan local network for a Cachy backend running ./start.py.',
-            onTap: _discovering ? null : _discoverServer,
-          ),
           const SizedBox(height: 24),
           const _OfflineAiSection(),
           _sectionLabel(theme, 'Library'),
@@ -93,10 +86,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: 'Turn the reels you save into things you can actually use. '
                 'Cards live on this device.',
           ),
-          const _Tile(
+          _Tile(
             icon: PhosphorIconsRegular.hash,
             title: 'Version',
             subtitle: '1.0.0',
+            showChevron: false, // hidden developer gate — looks inert
+            onTap: _onVersionTap,
+          ),
+          const SizedBox(height: 24),
+          _sectionLabel(theme, 'Account'),
+          _Tile(
+            icon: PhosphorIconsRegular.signOut,
+            title: 'Sign out',
+            subtitle: 'Clear your name and reset the app to the setup screen.',
+            onTap: _confirmSignOut,
+            destructive: true,
           ),
         ],
       ),
@@ -157,57 +161,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
 
-  Future<void> _discoverServer() async {
-    setState(() => _discovering = true);
-    final repo = context.read<CardRepository>();
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final found = await repo.discoverServer();
-      if (mounted) {
-        if (found != null) {
-          messenger.showSnackBar(SnackBar(content: Text('Connected to backend at $found')));
-        } else {
-          messenger.showSnackBar(const SnackBar(content: Text('No server found on LAN')));
-        }
-      }
-    } finally {
-      if (mounted) setState(() => _discovering = false);
+  /// Count taps on the version row; the seventh opens the password prompt.
+  void _onVersionTap() {
+    _versionTaps++;
+    if (_versionTaps >= 7) {
+      _versionTaps = 0;
+      _promptDeveloperAccess();
     }
   }
 
-  Future<void> _editServerUrl() async {
-    final repo = context.read<CardRepository>();
-    final controller = TextEditingController(text: repo.api.baseUrl);
-    final url = await showDialog<String>(
+  Future<void> _promptDeveloperAccess() async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Configure Server URL'),
+        title: const Text('Developer access'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'http://192.168.1.5:8000',
-            labelText: 'Backend URL',
-          ),
-          keyboardType: TextInputType.url,
+          obscureText: true,
           autofocus: true,
+          decoration: const InputDecoration(labelText: 'Password'),
+          onSubmitted: (_) =>
+              Navigator.pop(ctx, controller.text == _kDeveloperPassword),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx), // null = cancelled
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save'),
+            onPressed: () =>
+                Navigator.pop(ctx, controller.text == _kDeveloperPassword),
+            child: const Text('Unlock'),
           ),
         ],
       ),
     );
-    if (url != null && url.isNotEmpty && mounted) {
-      repo.updateBaseUrl(url);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Server URL updated to $url')),
+    if (!mounted) return;
+    if (ok == true) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const _DeveloperScreen()),
       );
+    } else if (ok == false) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Incorrect password')));
     }
   }
 
@@ -255,9 +252,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (ok == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline cache cleared')),
-      );
+      final removed = await context.read<CardRepository>().clearCardCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(removed == 0
+                ? 'Nothing cached yet'
+                : 'Cleared $removed offline ${removed == 1 ? 'card' : 'cards'}'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmSignOut() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+            'Your name will be cleared and you\'ll be taken back to the setup screen. '
+            'Your cards on the server are not affected.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      await context.read<AppController>().logout();
     }
   }
 }
@@ -296,16 +328,24 @@ class _Tile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
+    this.destructive = false,
+    this.showChevron = true,
   });
 
   final PhosphorIconData icon;
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
+  final bool destructive;
+
+  /// Show the trailing chevron for tappable tiles. Off for the hidden
+  /// developer gate so the row reads as inert.
+  final bool showChevron;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final color = destructive ? scheme.error : scheme.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
@@ -314,11 +354,13 @@ class _Tile extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          leading: PhosphorIcon(icon, color: scheme.primary),
+          leading: PhosphorIcon(icon, color: color),
           title: Text(title,
-              style: Theme.of(context).textTheme.titleMedium),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: destructive ? scheme.error : null,
+                  )),
           subtitle: Text(subtitle),
-          trailing: onTap != null
+          trailing: (onTap != null && showChevron)
               ? const PhosphorIcon(PhosphorIconsRegular.caretRight)
               : null,
         ),
@@ -326,7 +368,6 @@ class _Tile extends StatelessWidget {
     );
   }
 }
-
 
 /// Offline AI (V2): download/enable/delete the on-device model. Hidden on
 /// platforms that can't run it. Honest copy — size, speed, trade-offs.
@@ -495,5 +536,122 @@ class _OfflineAiSection extends StatelessWidget {
       ),
     );
     if (ok == true) await ai.delete();
+  }
+}
+
+// ── Developer settings (hidden behind the version-tap gate) ───────────────── //
+
+/// Manual server-connection controls. Reachable only after unlocking the
+/// developer gate on the profile screen. End users never see this — the app
+/// connects to the hosted backend by default.
+class _DeveloperScreen extends StatefulWidget {
+  const _DeveloperScreen();
+
+  @override
+  State<_DeveloperScreen> createState() => _DeveloperScreenState();
+}
+
+class _DeveloperScreenState extends State<_DeveloperScreen> {
+  bool _discovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final repo = context.watch<CardRepository>();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Developer')),
+      body: ListView(
+        padding: const EdgeInsets.all(Insets.page),
+        children: [
+          _Tile(
+            icon: PhosphorIconsRegular.hardDrives,
+            title: 'Active server endpoint',
+            subtitle: repo.api.baseUrl.isEmpty
+                ? '(same origin)'
+                : repo.api.baseUrl,
+            onTap: _editServerUrl,
+          ),
+          _Tile(
+            icon: PhosphorIconsRegular.broadcast,
+            title: _discovering ? 'Searching local WiFi…' : 'Discover LAN server',
+            subtitle: 'Scan the local network for a Cachy backend running ./start.py.',
+            onTap: _discovering ? null : _discoverServer,
+          ),
+          _Tile(
+            icon: PhosphorIconsRegular.arrowCounterClockwise,
+            title: 'Reset to default backend',
+            subtitle: 'Clear the override and reconnect to the hosted Space.',
+            onTap: () => _setUrl(repo, ApiClient.defaultBaseUrl),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Changes take effect immediately and persist across launches.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _setUrl(CardRepository repo, String url) {
+    repo.updateBaseUrl(url);
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Backend set to ${url.isEmpty ? '(same origin)' : url}')),
+    );
+  }
+
+  Future<void> _discoverServer() async {
+    setState(() => _discovering = true);
+    final repo = context.read<CardRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final found = await repo.discoverServer();
+      if (mounted) {
+        setState(() {});
+        messenger.showSnackBar(SnackBar(
+          content: Text(found != null
+              ? 'Connected to backend at $found'
+              : 'No server found on LAN'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _discovering = false);
+    }
+  }
+
+  Future<void> _editServerUrl() async {
+    final repo = context.read<CardRepository>();
+    final controller = TextEditingController(text: repo.api.baseUrl);
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Configure server URL'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'http://192.168.1.5:8000',
+            labelText: 'Backend URL',
+          ),
+          keyboardType: TextInputType.url,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (url != null && url.isNotEmpty && mounted) {
+      _setUrl(repo, url);
+    }
   }
 }

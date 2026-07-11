@@ -4,7 +4,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
@@ -87,26 +86,13 @@ class _NameScreenState extends State<NameScreen> {
                   const SizedBox(height: 32),
                   RichText(
                     text: TextSpan(
-                      style: GoogleFonts.fraunces(
-                        fontSize: 42,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1.0,
-                        height: 1.1,
-                        color: scheme.onSurface,
-                      ),
+                      style: theme.textTheme.displaySmall
+                          ?.copyWith(color: scheme.onSurface),
                       children: [
                         const TextSpan(text: "What's\nyour "),
                         TextSpan(
                           text: 'name?',
-                          style: TextStyle(
-                            color: scheme.primary,
-                            shadows: [
-                              Shadow(
-                                color: scheme.primary.withValues(alpha: 0.35),
-                                blurRadius: 24,
-                              ),
-                            ],
-                          ),
+                          style: TextStyle(color: scheme.primary),
                         ),
                       ],
                     ),

@@ -56,6 +56,13 @@ class LocalStore {
 
   Future<void> setHfToken(String token) => _prefs.setString(_hfTokenKey, token);
 
+  /// Clears user identity and onboarding state, effectively signing the user
+  /// out and forcing them back through the name-entry gate on next launch.
+  Future<void> clearUser() async {
+    await _prefs.remove(_userNameKey);
+    await _prefs.remove(_seenOnboardingKey);
+  }
+
   /// Split-pane divider position as a fraction of available width.
   /// Defaults to ~0.35 (≈420/1200).
   double get splitPaneFraction =>
@@ -95,6 +102,16 @@ class LocalStore {
     await _prefs.remove('$_cardPrefix$cardId');
     final index = cachedCardIds().toSet()..remove(cardId);
     await _prefs.setStringList(_indexKey, index.toList());
+  }
+
+  /// Remove every cached card and the index. Returns how many were removed.
+  Future<int> clearCardCache() async {
+    final ids = cachedCardIds();
+    for (final id in ids) {
+      await _prefs.remove('$_cardPrefix$id');
+    }
+    await _prefs.remove(_indexKey);
+    return ids.length;
   }
 
   // --------------------------------------------------------------------- //

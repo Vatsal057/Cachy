@@ -17,6 +17,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/pipeline_progress.dart';
 import '../../../core/widgets/processing_glyph.dart';
+import '../../../core/ui_bus.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../view_models/share_view_model.dart';
@@ -144,10 +145,11 @@ class _ShareViewState extends State<_ShareView> {
             children: [
               const PhosphorIcon(PhosphorIconsRegular.cloudSlash, size: 48),
               const SizedBox(height: 14),
-              Text('Saved offline', style: theme.textTheme.titleLarge),
+              Text('Saved — will process shortly', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
               const Text(
-                "We'll process this reel as soon as you're back online.",
+                "We'll process this as soon as Cachy is reachable — the free "
+                'server can take ~30s to wake up.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
@@ -323,8 +325,26 @@ class _ShareViewState extends State<_ShareView> {
   }
 
   void _openReader(BuildContext context, String cardId) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => ReaderScreen(cardId: cardId)),
+    // Push the reader. On a wide layout give it a minimize toggle that pops
+    // back and drops the finished card into the library side column, so it
+    // matches the rest of the app (not just a bare back arrow).
+    final wide = MediaQuery.sizeOf(context).width >= Insets.splitPane;
+    final navigator = Navigator.of(context);
+    final bus = context.read<UiBus>();
+    navigator.pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          cardId: cardId,
+          fullscreen: wide,
+          onToggleFullscreen: wide
+              ? () {
+                  navigator.maybePop();
+                  bus.onLibraryTab?.call(0);
+                  bus.onSelectLibraryCard?.call(cardId);
+                }
+              : null,
+        ),
+      ),
     );
   }
 }

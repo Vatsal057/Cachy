@@ -73,7 +73,7 @@ class _ProcessingGlyphState extends State<ProcessingGlyph>
         child: TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
           duration: const Duration(milliseconds: 600),
-          curve: Curves.easeOutBack,
+          curve: Curves.easeOutCubic,
           builder: (context, t, _) {
             final pulse = 1.0 + 0.04 * (1 - (2 * (_c.value) - 1).abs());
             return Transform.scale(

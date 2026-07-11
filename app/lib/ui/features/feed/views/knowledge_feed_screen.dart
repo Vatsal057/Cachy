@@ -23,7 +23,6 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/rich_text.dart';
-import '../../presenter/agent_bus.dart';
 import '../../reader/views/rabbit_hole_screen.dart';
 import '../../reader/views/reader_screen.dart';
 import '../view_models/knowledge_feed_view_model.dart';
@@ -58,36 +57,8 @@ class _FeedViewState extends State<_FeedView> {
   final _focusNode = FocusNode(debugLabel: 'KnowledgeFeed');
   int _page = 0;
 
-  // Agent driving: expose feed paging to the presenter agent while mounted.
-  AgentBus? _bus;
-  FeedAgentHooks? _hooks;
-
-  int get _total {
-    if (!mounted) return 0;
-    return context.read<KnowledgeFeedViewModel>().items.length;
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_hooks != null) return;
-    _bus = context.read<AgentBus>();
-    final hooks = FeedAgentHooks(
-      next: () => _next(_total),
-      prev: () => _prev(_total),
-      count: () => _total,
-      shuffle: () {
-        if (mounted) context.read<KnowledgeFeedViewModel>().refresh();
-      },
-    );
-    _hooks = hooks;
-    _bus!.attachFeed(hooks);
-  }
-
   @override
   void dispose() {
-    final h = _hooks;
-    if (h != null) _bus?.detachFeed(h);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -670,14 +641,16 @@ class _SwipeHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(
+    final hint = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         PhosphorIcon(PhosphorIconsRegular.caretUp, size: 18, color: scheme.onSurfaceVariant),
         Text('SWIPE UP',
             style: Brand.label(size: 9, color: scheme.onSurfaceVariant, weight: FontWeight.w600)),
       ],
-    )
+    );
+    if (!context.motionEnabled) return hint; // reduced motion: static hint
+    return hint
         .animate(onPlay: (c) => c.repeat(reverse: true))
         .moveY(begin: 4, end: -4, duration: 900.ms, curve: Curves.easeInOut);
   }

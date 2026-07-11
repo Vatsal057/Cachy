@@ -21,10 +21,28 @@ import '../../domain/models/pipeline_event.dart';
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
   final int statusCode;
-  final String message;
+  final String message; // raw body — for logs only, never for UI
+
+  /// What users see. Raw bodies (which may include server details or
+  /// tracebacks) never leave the data layer.
+  String get friendlyMessage => switch (statusCode) {
+        401 || 403 => 'Session expired — please sign in again.',
+        404 => "That card isn't there anymore.",
+        429 => "You've hit today's limit. It resets at midnight UTC.",
+        >= 500 => 'Something went wrong on our side. Try again in a moment.',
+        _ => "That didn't work. Try again.",
+      };
+
   @override
   String toString() => 'ApiException($statusCode): $message';
 }
+
+/// UI-safe message for any thrown object. The only thing view-models should
+/// ever store in a user-visible error field.
+String friendlyError(Object e) => switch (e) {
+      ApiException api => api.friendlyMessage,
+      _ => "Can't reach Cachy. Check your connection.",
+    };
 
 class CreateCardResult {
   const CreateCardResult({
@@ -75,27 +93,27 @@ class ApiClient {
         _client = client ?? http.Client(),
         _store = store;
 
-  /// Override at build time: `--dart-define=CACHY_API_BASE=https://host`.
-  /// Default targets the Android emulator's host loopback; iOS sim uses
-  /// localhost so override there if needed.
-  static const String _emulatorDefault = 'http://10.0.2.2:8000';
+  /// Default backend for end users: the hosted Hugging Face Space, so a plain
+  /// `flutter build apk` connects with zero config. Override at build time with
+  /// `--dart-define=CACHY_API_BASE=https://host` (empty = same-origin, for the
+  /// web deploy).
+  static const String _hostedDefault = 'https://vatxzz-cachy.hf.space';
   static const String _defaultBaseUrl = String.fromEnvironment(
     'CACHY_API_BASE',
-    defaultValue: _emulatorDefault,
+    defaultValue: _hostedDefault,
   );
 
-  /// Resolve the backend URL at launch. An explicit `CACHY_API_BASE` (a real
-  /// deploy, e.g. Hugging Face) always wins and skips discovery. Otherwise try
-  /// LAN auto-connect for a backend on the same WiFi, falling back to cached
-  /// preference or the emulator loopback.
+  /// The build-time default backend (hosted Space, or a `--dart-define`), used
+  /// by Developer settings to reset a manual override.
+  static String get defaultBaseUrl => _defaultBaseUrl;
+
+  /// Resolve the backend URL at launch. A manual override set in Developer
+  /// settings (persisted) wins so it sticks across launches; otherwise use the
+  /// build-time default (the hosted Space, or a `--dart-define` for local dev).
   static Future<String> resolveBaseUrl({LocalStore? store}) async {
-    if (_defaultBaseUrl != _emulatorDefault) return _defaultBaseUrl;
-    final discovered = await discoverBackend();
-    if (discovered != null) {
-      if (store != null) unawaited(store.setApiBaseUrl(discovered));
-      return discovered;
-    }
-    return store?.apiBaseUrl ?? _defaultBaseUrl;
+    final stored = store?.apiBaseUrl;
+    if (stored != null && stored.isNotEmpty) return stored;
+    return _defaultBaseUrl;
   }
 
   String baseUrl;
@@ -129,24 +147,6 @@ class ApiClient {
     if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
     final path = ref.startsWith('/') ? ref : '/$ref';
     return '$baseUrl$path';
-  }
-
-  // ------------------------------------------------------------------------- //
-  // Presenter (in-app "Present" mode Q&A — the LLM runs server-side)
-  // ------------------------------------------------------------------------- //
-
-  /// Ask the presenting agent a question or hand it a task. Returns an ordered
-  /// list of "beats" — each an optional line to `say` and an optional `action`
-  /// to perform — so the agent answers by *doing*, not just describing.
-  Future<List<Map<String, dynamic>>> presenterAsk(String question) async {
-    final resp = await _client.post(
-      _uri('/presenter/ask'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'question': question}),
-    );
-    final json = _decodeMap(resp);
-    final steps = (json['steps'] as List?) ?? const [];
-    return steps.whereType<Map<String, dynamic>>().toList();
   }
 
   // ------------------------------------------------------------------------- //

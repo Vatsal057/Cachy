@@ -31,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen>
     );
     _drop = CurvedAnimation(
       parent: _c,
-      curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
     );
     _wordmark = CurvedAnimation(
       parent: _c,

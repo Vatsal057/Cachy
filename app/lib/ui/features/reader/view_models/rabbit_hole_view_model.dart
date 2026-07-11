@@ -8,8 +8,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
+import '../../../core/safe_notifier.dart';
 
-class RabbitHoleViewModel extends ChangeNotifier {
+class RabbitHoleViewModel extends ChangeNotifier with SafeNotifier {
   RabbitHoleViewModel({required CardRepository repository, required this.cardId})
       : _repository = repository;
 
@@ -84,7 +85,7 @@ class RabbitHoleViewModel extends ChangeNotifier {
     } on ApiException catch (e) {
       _failedTopic = trimmed;
       _error = e.statusCode == 503
-          ? 'The rabbit hole is unavailable — no AI backend is configured.'
+          ? 'The rabbit hole is catching its breath — try again in a moment.'
           : "Couldn't explore that thread. Try again.";
     } catch (_) {
       _failedTopic = trimmed;

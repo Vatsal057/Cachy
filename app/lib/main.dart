@@ -23,7 +23,7 @@ import 'data/services/local_store.dart';
 import 'ui/core/app_controller.dart';
 import 'ui/core/root_gate.dart';
 import 'ui/core/theme.dart';
-import 'ui/features/presenter/agent_bus.dart';
+import 'ui/core/ui_bus.dart';
 import 'ui/features/share/views/share_screen.dart';
 
 Future<void> main() async {
@@ -154,7 +154,7 @@ class _CachyAppState extends State<CachyApp> {
         ChangeNotifierProvider<AppController>.value(value: widget.appController),
         ChangeNotifierProvider<HighlightStore>.value(value: widget.highlightStore),
         ChangeNotifierProvider<LocalAiService>.value(value: widget.localAi),
-        ChangeNotifierProvider<AgentBus>(create: (_) => AgentBus()),
+        ChangeNotifierProvider<UiBus>(create: (_) => UiBus()),
       ],
       child: Consumer<AppController>(
         builder: (context, app, _) => MaterialApp(

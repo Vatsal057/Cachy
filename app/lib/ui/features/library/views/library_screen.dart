@@ -1,9 +1,9 @@
 /// The library: a browsable wall of card faces (docs/06), not a feed of text.
-/// Two segments — Cards (the grid) and To-do (actions followed off reels, folded
-/// in from the old Actions tab). Branded chrome (wordmark, gradient tab
-/// indicator), designed empty/loading/error/offline states, and a staggered
-/// tile entrance. Capture lives in the shell's center button; search opens a
-/// dedicated screen. Tap a tile → reader via a shared-element face transition.
+/// Three segments — Cards (the grid), Concepts, and Catalog. Branded chrome
+/// (wordmark, gradient tab indicator), designed empty/loading/waking/error/
+/// offline states, and a staggered tile entrance. Capture lives in the shell's
+/// center button; search opens a dedicated screen. Tap a tile → reader via a
+/// shared-element face transition.
 library;
 
 import 'dart:io' show Platform;
@@ -21,7 +21,6 @@ import '../../../../domain/models/highlight.dart';
 import '../../../core/app_controller.dart';
 import '../../../core/brand.dart';
 import '../../../core/theme.dart';
-import '../../../core/widgets/adaptive_modal.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_tiles.dart';
@@ -30,13 +29,16 @@ import '../../../core/widgets/split_pane.dart';
 import '../../../core/widgets/spot_art.dart';
 import '../../capture/views/capture_sheet.dart';
 import '../../catalog/views/catalog_screen.dart';
+import '../../collections/views/folder_picker_sheet.dart';
 import '../../concepts/views/concepts_screen.dart';
 import '../../graph/views/graph_screen.dart';
 import '../../library/views/library_chat_screen.dart';
+import '../../../core/ui_bus.dart';
 import '../../reader/views/reader_screen.dart';
 import '../../search/views/search_screen.dart';
 import '../view_models/library_view_model.dart';
 import 'card_tile.dart';
+import 'library_dialogs.dart';
 import 'grid_navigation.dart';
 
 class LibraryScreen extends StatelessWidget {
@@ -50,8 +52,36 @@ class LibraryScreen extends StatelessWidget {
   }
 }
 
-class _LibraryView extends StatelessWidget {
+class _LibraryView extends StatefulWidget {
   const _LibraryView();
+
+  @override
+  State<_LibraryView> createState() => _LibraryViewState();
+}
+
+class _LibraryViewState extends State<_LibraryView>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 3, vsync: this);
+
+  // The share pipeline flips the library's top segment through the bus.
+  UiBus? _bus;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bus != null) return;
+    _bus = context.read<UiBus>()
+      ..onLibraryTab = (i) {
+        if (i >= 0 && i < _tabs.length) _tabs.animateTo(i);
+      };
+  }
+
+  @override
+  void dispose() {
+    _bus?.onLibraryTab = null;
+    _tabs.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +89,7 @@ class _LibraryView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isDesktop = MediaQuery.sizeOf(context).width >= Insets.desktop;
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           titleSpacing: Insets.page,
@@ -113,6 +141,7 @@ class _LibraryView extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: TabBar(
+                      controller: _tabs,
                       dividerColor: Colors.transparent,
                       indicator: BoxDecoration(
                         color: scheme.surface,
@@ -127,10 +156,10 @@ class _LibraryView extends StatelessWidget {
                       unselectedLabelColor: scheme.onSurfaceVariant,
                       labelStyle: Brand.label(size: 12, weight: FontWeight.w700),
                       unselectedLabelStyle: Brand.label(size: 12, weight: FontWeight.w500),
-                      tabs: const [
-                        Tab(text: 'CARDS'),
-                        Tab(text: 'CONCEPTS'),
-                        Tab(text: 'CATALOG'),
+                      tabs: [
+                        const Tab(text: 'CARDS'),
+                        const Tab(text: 'CONCEPTS'),
+                        const Tab(text: 'CATALOG'),
                       ],
                     ),
                   ),
@@ -139,15 +168,15 @@ class _LibraryView extends StatelessWidget {
             ),
           ),
         ),
-        body: const TabBarView(
-          children: [
+        body: TabBarView(
+          controller: _tabs,
+          children: const [
             _CardsTab(),
             ConceptsScreen(),
             CatalogScreen(),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -167,10 +196,28 @@ class _CardsTabState extends State<_CardsTab> {
   /// The grid index that most recently received keyboard focus.
   int _lastFocusedIndex = 0;
 
+  final _gridScroll = ScrollController();
+  UiBus? _bus;
+
   @override
   void initState() {
     super.initState();
     _fraction = context.read<AppController>().splitPaneFraction;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bus != null) return;
+    // The share pipeline selects the card it just created into the side column.
+    _bus = context.read<UiBus>()..onSelectLibraryCard = _selectCard;
+  }
+
+  /// Open a card into the side column, exactly like a user tap. Used by the
+  /// share pipeline after a capture finishes.
+  Future<void> _selectCard(String cardId) async {
+    if (!mounted) return;
+    context.read<LibraryViewModel>().selectCard(cardId);
   }
 
   /// Grows or shrinks [_focusNodes] to exactly [count] nodes.
@@ -192,6 +239,8 @@ class _CardsTabState extends State<_CardsTab> {
 
   @override
   void dispose() {
+    _bus?.onSelectLibraryCard = null;
+    _gridScroll.dispose();
     for (final node in _focusNodes) {
       node.dispose();
     }
@@ -232,6 +281,8 @@ class _CardsTabState extends State<_CardsTab> {
                       cardId: vm.selectedCardId!,
                       embedded: true,
                       onClose: () => vm.selectCard(null),
+                      onToggleFullscreen: () =>
+                          _bus?.onEnterCardFullscreen?.call(vm.selectedCardId!),
                     ),
               onFractionChanged: (f) {
                 setState(() => _fraction = f);
@@ -262,60 +313,28 @@ class _CardsTabState extends State<_CardsTab> {
           child: SelectionActionBar(
             selectedCount: vm.selectedCount,
             onClose: () => context.read<LibraryViewModel>().clearSelection(),
-            onMoveToFolder: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Move to Folder coming soon')),
-              );
-            },
-            onDeleteSelected: () => _confirmBulkDelete(context),
+            onMoveToFolder: () =>
+                showFolderPicker(context, context.read<LibraryViewModel>()),
+            onDeleteSelected: () => confirmBulkDelete(context, vm),
           ),
         ),
       ],
     );
   }
 
-  Future<void> _confirmBulkDelete(BuildContext context) async {
-    final vm = context.read<LibraryViewModel>();
-    final count = vm.selectedCount;
-    final ok = await showAdaptiveModal<bool>(
-      context: context,
-      builder: (ctx, dialog) => AlertDialog(
-        title: Text('Delete $count ${count == 1 ? 'card' : 'cards'}?'),
-        content: const Text(
-            'This removes the cards and their media. This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await context.read<LibraryViewModel>().bulkDelete();
-      // If bulkDelete surfaced an error (vm.error != null), show it.
-      if (context.mounted) {
-        final error = context.read<LibraryViewModel>().error;
-        if (error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Delete failed: $error')),
-          );
-        }
-      }
-    }
-  }
-
   Widget _body(BuildContext context, LibraryViewModel vm, dynamic api) {
     switch (vm.status) {
       case LibraryStatus.loading:
         return const LoadingTiles();
+      case LibraryStatus.waking:
+        return _scrollable(
+          const EmptyState(
+            showGlyph: true,
+            title: 'Waking Cachy up…',
+            message: 'The free server naps when idle. First load takes about '
+                '30 seconds — your library is on its way.',
+          ),
+        );
       case LibraryStatus.error:
         return _scrollable(
           ErrorState(
@@ -426,6 +445,7 @@ class _CardsTabState extends State<_CardsTab> {
             child: FocusTraversalGroup(
               policy: OrderedTraversalPolicy(),
               child: GridView.builder(
+                controller: _gridScroll,
                 padding: const EdgeInsets.fromLTRB(Insets.page, 8, Insets.page, 96),
                 physics: const AlwaysScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -444,7 +464,7 @@ class _CardsTabState extends State<_CardsTab> {
                       (Platform.isMacOS ||
                           Platform.isWindows ||
                           Platform.isLinux);
-                  return CardTile(
+                  final tile = CardTile(
                     focusNode: _focusNodes[i],
                     card: card,
                     api: api,
@@ -493,6 +513,7 @@ class _CardsTabState extends State<_CardsTab> {
                     },
                     onDelete: () => vm.delete(card.cardId),
                   );
+                  return tile;
                 },
               ),
             ),

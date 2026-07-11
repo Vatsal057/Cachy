@@ -14,6 +14,7 @@ class LoadingTiles extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final animate = context.motionEnabled;
     return GridView.count(
       padding: const EdgeInsets.all(Insets.page),
       physics: const NeverScrollableScrollPhysics(),
@@ -23,18 +24,23 @@ class LoadingTiles extends StatelessWidget {
       childAspectRatio: 0.72,
       children: [
         for (var i = 0; i < count; i++)
-          Container(
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(Insets.radius),
-            ),
-          )
-              .animate(onPlay: (c) => c.repeat())
-              .shimmer(
-                duration: const Duration(milliseconds: 1100),
-                delay: Duration(milliseconds: i * 90),
-                color: scheme.surfaceContainerHighest,
+          () {
+            final tile = Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(Insets.radius),
               ),
+            );
+            // Reduced motion: a static placeholder, no looping shimmer.
+            if (!animate) return tile;
+            return tile
+                .animate(onPlay: (c) => c.repeat())
+                .shimmer(
+                  duration: const Duration(milliseconds: 1100),
+                  delay: Duration(milliseconds: i * 90),
+                  color: scheme.surfaceContainerHighest,
+                );
+          }(),
       ],
     );
   }

@@ -148,7 +148,17 @@ class Motion {
   static const slow = Duration(milliseconds: 420);
   static const stagger = Duration(milliseconds: 45);
   static const curve = Curves.easeOutCubic;
-  static const spring = Curves.easeOutBack;
+  // Ease-out with no overshoot: the product register bans bounce/elastic.
+  static const spring = Curves.easeOutCubic;
+}
+
+/// Reduced-motion gate: animations collapse to zero duration when the OS asks
+/// for reduced motion, honouring the accessibility setting everywhere at once.
+extension MotionGate on BuildContext {
+  bool get motionEnabled => !MediaQuery.of(this).disableAnimations;
+
+  /// [d] when motion is allowed, otherwise [Duration.zero] (instant).
+  Duration gated(Duration d) => motionEnabled ? d : Duration.zero;
 }
 
 /// Layout tokens: generous editorial margins.
