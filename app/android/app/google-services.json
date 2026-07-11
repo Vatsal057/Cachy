@@ -12,7 +12,20 @@
           "package_name": "com.vatxzz.cachy"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "65028456728-4tv0numjknaj6g1b715kjk4hbtv8367f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vatxzz.cachy",
+            "certificate_hash": "e85b9f82bf25b0e23c9277d8063b8f90f7d1b7b0"
+          }
+        },
+        {
+          "client_id": "65028456728-bgjb83ih02m3gsj5goedsdomaj76h55a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAQsQvYezQpozLGZENB9gquVlYlNt5NBJo"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "65028456728-bgjb83ih02m3gsj5goedsdomaj76h55a.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
