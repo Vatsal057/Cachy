@@ -21,6 +21,19 @@ void main() {
     expect(seenAuth, 'Bearer tok-1');
   });
 
+  test('mediaHeaders: bearer for /media proxy, none for external', () async {
+    final mock = MockClient((req) async => http.Response(jsonEncode([]), 200));
+    final api = ApiClient(
+      baseUrl: 'http://x',
+      client: mock,
+      tokenProvider: ({bool forceRefresh = false}) async => 'tok-1',
+    );
+    await api.listCards(); // warms the cached token
+    expect(api.mediaHeaders('http://x/media/c1/thumb.jpg'),
+        {'authorization': 'Bearer tok-1'});
+    expect(api.mediaHeaders('https://commons.example/pic.png'), isEmpty);
+  });
+
   test('one forced-refresh retry on 401', () async {
     var calls = 0;
     final mock = MockClient((req) async {

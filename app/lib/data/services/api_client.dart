@@ -109,7 +109,11 @@ class ApiClient {
     this.tokenProvider,
   })  : baseUrl = (baseUrl ?? _defaultBaseUrl).replaceAll(RegExp(r'/+$'), ''),
         _client = client ?? http.Client(),
-        _store = store;
+        _store = store {
+    // Warm the token so the first thumbnails (rendered from cache before any
+    // API call) can carry the bearer header for the /media proxy.
+    if (tokenProvider != null) unawaited(_authHeader());
+  }
 
   /// Supplies the Firebase ID token (uid = backend owner_id). `forceRefresh`
   /// mints a fresh token after a 401. Null when signed out.
@@ -153,10 +157,28 @@ class ApiClient {
     return discovered;
   }
 
+  /// Most recent bearer token seen by [_authHeader]. Lets [mediaHeaders] attach
+  /// auth synchronously (cached_network_image needs sync headers).
+  String? _lastToken;
+
   Future<Map<String, String>> _authHeader({bool forceRefresh = false}) async {
     final token = await tokenProvider?.call(forceRefresh: forceRefresh);
     if (token == null || token.isEmpty) return const {};
+    _lastToken = token;
     return {'authorization': 'Bearer $token'};
+  }
+
+  /// Auth headers for a resolved media URL. The owner-checked `/media/` proxy
+  /// needs the bearer token; external artifact images get none. Uses the most
+  /// recent token (refreshed on every API call) — fine because tokens last ~1h
+  /// and images are disk-cached, so at worst one thumbnail retries after the
+  /// next API call refreshes the token.
+  Map<String, String> mediaHeaders(String resolvedUrl) {
+    if (_lastToken == null) return const {};
+    final path = Uri.tryParse(resolvedUrl)?.path ?? '';
+    final isProxy =
+        resolvedUrl.startsWith(baseUrl) && path.startsWith('/media/');
+    return isProxy ? {'authorization': 'Bearer $_lastToken'} : const {};
   }
 
   /// All verbs funnel through here: auth header + one refresh-retry on 401.

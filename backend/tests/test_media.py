@@ -17,6 +17,25 @@ async def _make_card(owner_id: str) -> str:
         return row.id
 
 
+def test_to_media_url_normalisation() -> None:
+    """Every historical storage shape maps to the /media proxy path."""
+    from app.store.media import to_media_url
+
+    assert to_media_url(None) is None
+    # New scheme passes through.
+    assert to_media_url("/media/abc/thumb.jpg") == "/media/abc/thumb.jpg"
+    # Legacy absolute HF URL -> proxy path (survives the repo going private).
+    legacy = (
+        "https://huggingface.co/datasets/Vatxzz/cachy-media/resolve/main/"
+        "media/abc/thumb.jpg"
+    )
+    assert to_media_url(legacy) == "/media/abc/thumb.jpg"
+    # Non-HF external image is left alone.
+    assert to_media_url("https://example.com/pic.png") == "https://example.com/pic.png"
+    # Legacy local scratch path -> proxy path.
+    assert to_media_url("/tmp/cachy_abc/thumb.jpg") == "/media/abc/thumb.jpg"
+
+
 async def test_media_anonymous_401(client) -> None:
     """No verified identity -> rejected (401 bad token / 503 auth unconfigured)."""
     from app.auth import get_owner

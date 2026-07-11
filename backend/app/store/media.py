@@ -27,28 +27,34 @@ def job_dir_for_card(card_id: str) -> str:
 
 
 def to_media_url(path: str | None) -> str | None:
-    """Return a publicly accessible URL for a media path.
+    """Normalise a stored media ref to the owner-checked proxy path.
 
-    - http(s) refs pass through as-is (already an HF URL or external link).
-    - Local paths reconstruct the HF Dataset URL from the card_id embedded in the
-      path (handles old rows that still have a local path in the DB).
-    - Returns None if no HF repo is configured or the path can't be resolved."""
+    Media now streams through `GET /media/{card_id}/{filename}` (auth-gated) so
+    the HF dataset can stay private. This maps every historical storage shape to
+    that scheme:
+    - `/media/...` proxy paths pass through unchanged (new scheme).
+    - Legacy absolute HF dataset URLs are rewritten to the proxy path so they
+      still resolve after the repo goes private.
+    - Other external image URLs (non-HF) pass through untouched.
+    - Legacy local scratch paths like `/tmp/cachy_<card_id>/thumb.jpg` are
+      rebuilt into the proxy path from the embedded card_id.
+    - Returns None when the path can't be resolved."""
     if not path:
         return None
-    if path.startswith("http://") or path.startswith("https://"):
+    if path.startswith("/media/"):
         return path
-    # Reconstruct HF URL from a legacy local path like /tmp/cachy_<card_id>/thumb.jpg
-    s = get_settings()
-    if s.hf_media_repo:
-        parts = path.replace("\\", "/").split("/")
-        card_id = None
-        for p in parts:
-            if p.startswith("cachy_"):
-                card_id = p[len("cachy_"):]
-                break
-        if card_id:
-            filename = Path(path).name
-            return f"https://huggingface.co/datasets/{s.hf_media_repo}/resolve/main/media/{card_id}/{filename}"
+    if path.startswith("http://") or path.startswith("https://"):
+        marker = "/resolve/main/media/"
+        if "huggingface.co/datasets/" in path and marker in path:
+            return "/media/" + path.split(marker, 1)[1]
+        return path
+    # Legacy local path like /tmp/cachy_<card_id>/thumb.jpg
+    parts = path.replace("\\", "/").split("/")
+    card_id = next(
+        (p[len("cachy_"):] for p in parts if p.startswith("cachy_")), None
+    )
+    if card_id:
+        return f"/media/{card_id}/{Path(path).name}"
     return None
 
 
@@ -94,7 +100,9 @@ def upload_file(local_path: str, card_id: str) -> str | None:
             repo_type="dataset",
             commit_message="media upload",
         )
-        return f"https://huggingface.co/datasets/{s.hf_media_repo}/resolve/main/{path_in_repo}"
+        # Store the owner-checked proxy path, not the raw HF URL — the client
+        # fetches media through GET /media/{card_id}/{filename} (auth-gated).
+        return f"/media/{card_id}/{Path(local_path).name}"
     except Exception as exc:
         log.warning("HF media upload failed for %s: %s", local_path, exc)
         return None

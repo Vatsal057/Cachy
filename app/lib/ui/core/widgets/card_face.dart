@@ -30,8 +30,10 @@ class CardFace extends StatelessWidget {
     if (thumb == null || thumb.isEmpty) {
       return _AccentFace(accent: accent);
     }
+    final url = api.resolveMedia(thumb);
     return CachedNetworkImage(
-      imageUrl: api.resolveMedia(thumb),
+      imageUrl: url,
+      httpHeaders: api.mediaHeaders(url),
       fit: fit,
       fadeInDuration: const Duration(milliseconds: 200),
       placeholder: (_, _) => _AccentFace(accent: accent, dim: true),
