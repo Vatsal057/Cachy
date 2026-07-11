@@ -11,5 +11,10 @@ downloads/
 smoke_media/
 temp_images/
 
+# Scratch: Instagram extractor experiment + its output, local skill docs
+ig_scrape.py
+ig_downloads/
+docs/
+
 # Env
 .env
