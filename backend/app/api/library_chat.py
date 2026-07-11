@@ -56,7 +56,7 @@ async def library_chat(
         raise HTTPException(status_code=422, detail="last message must be from user")
 
     history = [m.model_dump() for m in req.messages]
-    result = await llm_library_chat.answer(history)
+    result = await llm_library_chat.answer(history, owner_id)
     if result is None:
         raise HTTPException(
             status_code=503, detail="chat is unavailable (no LLM backend configured)"

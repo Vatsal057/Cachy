@@ -1,11 +1,13 @@
-/// Login gate, shown after onboarding + name. Google is primary; anonymous is
-/// a quiet escape hatch with an honest data-loss caveat.
+/// Login gate, shown right after onboarding. Google is primary; "use without
+/// login" runs anonymous auth and can be upgraded to Google later (the uid is
+/// preserved via account linking, so guest data carries over).
 library;
 
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/auth_service.dart';
 import '../../../core/brand.dart';
 import '../../../core/widgets/responsive_center.dart';
@@ -85,7 +87,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _busy
                         ? null
                         : () => _run(() async {
-                              await auth.signInWithGoogle();
+                              final api = context.read<CardRepository>().api;
+                              await auth.signInWithGoogle(
+                                mergeGuestData: api.mergeGuestLibrary,
+                              );
                             }),
                     icon: const PhosphorIcon(PhosphorIconsRegular.googleLogo,
                         size: 20),

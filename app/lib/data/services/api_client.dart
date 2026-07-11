@@ -233,13 +233,31 @@ class ApiClient {
     return (_decodeMap(resp)['claimed'] as num?)?.toInt() ?? 0;
   }
 
+  /// Fold a guest (anonymous) account's data into the caller's account. The
+  /// request is authenticated as the destination (Google) uid; [guestToken] is
+  /// the guest's own ID token, captured before switching identities, and proves
+  /// ownership of the source. Returns the number of rows moved.
+  Future<int> mergeGuestLibrary(String guestToken) async {
+    final resp = await _send(
+      (h) => _client.post(_uri('/auth/merge'),
+          headers: h, body: jsonEncode({'guest_token': guestToken})),
+      extra: const {'content-type': 'application/json'},
+    );
+    return (_decodeMap(resp)['merged'] as num?)?.toInt() ?? 0;
+  }
+
   // ------------------------------------------------------------------------- //
   // Cards
   // ------------------------------------------------------------------------- //
 
-  Future<CreateCardResult> createCard(String url) async {
+  Future<CreateCardResult> createCard(String url, {bool preferLocal = false}) async {
     final resp = await _send(
-      (h) => _client.post(_uri('/cards'), headers: h, body: jsonEncode({'url': url})),
+      (h) => _client.post(_uri('/cards'),
+          headers: h,
+          body: jsonEncode({
+            'url': url,
+            if (preferLocal) 'prefer_local': true,
+          })),
       extra: const {'content-type': 'application/json'},
     );
     final json = _decodeMap(resp);

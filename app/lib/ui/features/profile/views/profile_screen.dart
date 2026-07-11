@@ -326,14 +326,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _accountRow(theme, user)
         else
           _backupBanner(theme),
-        if (signedIn &&
-            (context.read<AppController>().userName ?? '').isNotEmpty)
+        if (signedIn)
           _Tile(
             icon: PhosphorIconsRegular.clockCounterClockwise,
             title: 'Restore old library',
-            subtitle: 'Bring in cards saved under your name before sign-in.',
-            onTap: () =>
-                _offerClaim(context.read<AppController>().userName!),
+            subtitle: 'Used Cachy before with a name? Bring those cards in.',
+            onTap: _promptRestoreByName,
           ),
         _Tile(
           icon: PhosphorIconsRegular.signOut,
@@ -434,9 +432,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _signInAndMaybeClaim() async {
     setState(() => _signingIn = true);
     final app = context.read<AppController>();
+    final api = context.read<CardRepository>().api;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await app.signInWithGoogle();
+      await app.signInWithGoogle(mergeGuestData: api.mergeGuestLibrary);
     } catch (_) {
       messenger.showSnackBar(
           const SnackBar(content: Text("Couldn't sign in. Try again.")));
@@ -466,6 +465,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (restore != true || !mounted) return;
+    await _runClaim(name);
+  }
+
+  /// Legacy rescue for the old name-keyed build: the user types the name they
+  /// saved under and those rows re-point onto this account. First claim wins.
+  Future<void> _promptRestoreByName() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore old library'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+                'Enter the name you used in the old version of Cachy. The cards '
+                'saved under it will move into this account.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                hintText: 'Your old name',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Restore')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    await _runClaim(name);
+  }
+
+  Future<void> _runClaim(String name) async {
     final api = context.read<CardRepository>().api;
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -755,12 +802,66 @@ class _DeveloperScreenState extends State<_DeveloperScreen> {
             subtitle: 'Clear the override and reconnect to the hosted Space.',
             onTap: () => _setUrl(repo, ApiClient.defaultBaseUrl),
           ),
+          const SizedBox(height: 20),
+          Text('AI model', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          _localModelToggle(theme, repo),
           const SizedBox(height: 12),
           Text(
             'Changes take effect immediately and persist across launches.',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _localModelToggle(ThemeData theme, CardRepository repo) {
+    final scheme = theme.colorScheme;
+    LocalAiService? ai;
+    try {
+      ai = context.watch<LocalAiService>();
+    } catch (_) {
+      ai = null;
+    }
+    final ready = ai?.canStructure ?? false;
+    final on = repo.preferLocalModel;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        children: [
+          SwitchListTile(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            secondary: const PhosphorIcon(PhosphorIconsRegular.cpu),
+            title: const Text('Use on-device model'),
+            subtitle: const Text(
+                'Structure new cards with the local model instead of the '
+                'server LLM.'),
+            value: on,
+            onChanged: (v) => repo.setPreferLocalModel(v),
+          ),
+          if (on && !ready)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Row(
+                children: [
+                  PhosphorIcon(PhosphorIconsRegular.warning,
+                      size: 16, color: scheme.error),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'On-device model not ready — download and enable it in '
+                      'Settings first. New cards use the server until then.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.error),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

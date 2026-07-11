@@ -21,7 +21,9 @@ class FakeAuthService implements AuthService {
   }
 
   @override
-  Future<AuthUser> signInWithGoogle() async {
+  Future<AuthUser> signInWithGoogle({
+    Future<void> Function(String guestIdToken)? mergeGuestData,
+  }) async {
     // Linking keeps the uid when the current user is anonymous.
     final uid = _user?.isAnonymous == true ? _user!.uid : 'google-1';
     _user = AuthUser(uid: uid, isAnonymous: false, email: 'a@b.c', displayName: 'A');

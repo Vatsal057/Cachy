@@ -128,9 +128,9 @@ async def _data_fingerprint(owner_id: str | None) -> str:
         card_agg = (await session.execute(card_stmt)).one()
         art_agg = (
             await session.execute(
-                select(func.count(), func.max(db.ArtifactRow.updated_at)).where(
-                    db.ArtifactRow.saved.is_(True)
-                )
+                select(
+                    func.count(), func.max(db.ArtifactSaveRow.created_at)
+                ).where(db.ArtifactSaveRow.owner_id == owner_id)
             )
         ).one()
         col_count = (
@@ -324,15 +324,13 @@ async def get_graph(
 
         user_card_ids = {r.id for r in card_rows}
 
-        all_artifact_rows = (
-            await session.execute(
-                select(db.ArtifactRow).where(db.ArtifactRow.saved.is_(True))
-            )
-        ).scalars().all()
-        artifact_rows = [
-            a for a in all_artifact_rows
-            if bool(set(a.source_card_ids or []) & user_card_ids)
-        ]
+        saved_ids = await db.owner_saved_artifact_ids(session, owner_id)
+        artifact_rows = (
+            (await session.execute(
+                select(db.ArtifactRow).where(db.ArtifactRow.id.in_(saved_ids))
+            )).scalars().all()
+            if saved_ids else []
+        )
 
         all_concept_rows = (await session.execute(select(db.ConceptRow))).scalars().all()
         concept_rows = [

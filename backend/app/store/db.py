@@ -16,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    delete,
     func,
     inspect as sa_inspect,
     select,
@@ -191,7 +192,9 @@ class ArtifactRow(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_card_ids: Mapped[list] = mapped_column(JSON, default=list)
-    # Only saved rows show in the catalog tab; unsaved rows are card references only.
+    # Deprecated: catalog-tab membership is now per-owner (see [ArtifactSaveRow]).
+    # Kept so old rows/DBs still load; no longer read for filtering. Always False.
+    # ponytail: leave the dead column, drop it in a later real migration.
     saved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # On-demand LLM detail ("what is this"), filled via the Fetch info action.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -213,6 +216,18 @@ class ArtifactRow(Base):
             saved=bool(self.saved),
             description=self.description,
         )
+
+
+class ArtifactSaveRow(Base):
+    """Per-owner catalog membership: one row = this owner saved this artifact into
+    their catalog tab. Replaces the shared artifacts.saved flag so one user
+    saving/removing a catalog item never touches another user's catalog."""
+
+    __tablename__ = "artifact_saves"
+
+    owner_id: Mapped[str] = mapped_column(String, primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class ConceptRow(Base):
@@ -373,6 +388,23 @@ async def claim_owner(db_session: AsyncSession, *, name: str, uid: str) -> int |
     return total
 
 
+async def merge_owner(db_session: AsyncSession, *, from_uid: str, to_uid: str) -> int:
+    """Fold a guest account's rows into another account: re-point everything
+    owned by `from_uid` to `to_uid`. Used when a guest signs into a Google
+    account that already has a Cachy identity, so linking isn't possible and the
+    guest's data would otherwise be orphaned. Returns rows moved."""
+    if from_uid == to_uid:
+        return 0
+    total = 0
+    for model in (CardRow, CollectionRow, ConversationRow, ConnectionRow):
+        res = await db_session.execute(
+            update(model).where(model.owner_id == from_uid).values(owner_id=to_uid)
+        )
+        total += res.rowcount or 0
+    await db_session.commit()
+    return total
+
+
 # --------------------------------------------------------------------------- #
 # Engine / session lifecycle
 # --------------------------------------------------------------------------- #
@@ -509,8 +541,33 @@ def session() -> AsyncSession:
 # Convenience queries used across the app
 # --------------------------------------------------------------------------- #
 
-async def get_card_row(db: AsyncSession, card_id: str) -> CardRow | None:
-    return await db.get(CardRow, card_id)
+async def get_card_row(
+    db: AsyncSession, card_id: str, owner_id: str | None = None
+) -> CardRow | None:
+    """Fetch a card by id. When `owner_id` is given, a card owned by anyone else
+    reads as absent (None) — so callers can 404 without leaking existence."""
+    row = await db.get(CardRow, card_id)
+    if row is None:
+        return None
+    if owner_id is not None and row.owner_id != owner_id:
+        return None
+    return row
+
+
+async def owner_owns_any_card(
+    db: AsyncSession, owner_id: str, card_ids: list[str] | set[str]
+) -> bool:
+    """True when `owner_id` owns at least one of `card_ids`. Used to gate access
+    to shared artifact/concept rows, which are owned only through their source
+    cards (no owner_id column of their own)."""
+    if not card_ids:
+        return False
+    res = await db.execute(
+        select(CardRow.id)
+        .where(CardRow.owner_id == owner_id, CardRow.id.in_(list(card_ids)))
+        .limit(1)
+    )
+    return res.scalar_one_or_none() is not None
 
 
 async def find_card_by_url(
@@ -536,10 +593,12 @@ async def upsert_artifact(
     creator: str | None,
     year: int | None,
     thumbnail: str | None,
-    saved: bool = False,
 ) -> ArtifactRow:
     """Insert a catalog item or merge into the existing one (dedupe by type+title).
-    Appends card_id to source_card_ids and backfills a missing thumbnail."""
+    Appends card_id to source_card_ids and backfills a missing thumbnail.
+
+    Catalog-tab membership is per-owner (see [ArtifactSaveRow]); this only records
+    the shared reference, never who saved it."""
     norm = _norm_title(title)
     res = await db.execute(
         select(ArtifactRow).where(
@@ -556,12 +615,9 @@ async def upsert_artifact(
             year=year,
             thumbnail=thumbnail,
             source_card_ids=[card_id],
-            saved=saved,
         )
         db.add(row)
     else:
-        if saved:
-            row.saved = True
         if card_id not in (row.source_card_ids or []):
             row.source_card_ids = [*(row.source_card_ids or []), card_id]
             flag_modified(row, "source_card_ids")
@@ -576,24 +632,52 @@ async def upsert_artifact(
 
 
 async def set_artifact_saved(
-    db: AsyncSession, artifact_id: str, saved: bool
+    db: AsyncSession, artifact_id: str, saved: bool, owner_id: str
 ) -> ArtifactRow | None:
-    """Toggle whether an artifact appears in the catalog tab. Unsaving keeps the
-    row (it still backs per-card references); it just leaves the catalog."""
+    """Add/remove this owner's catalog membership for an artifact. The caller must
+    own one of the artifact's source cards, else the row reads as absent (None).
+    Unsaving keeps the shared row (it still backs per-card references)."""
     row = await db.get(ArtifactRow, artifact_id)
-    if row is None:
+    if row is None or not await owner_owns_any_card(
+        db, owner_id, row.source_card_ids or []
+    ):
         return None
-    row.saved = saved
+    membership = await db.get(ArtifactSaveRow, (owner_id, artifact_id))
+    if saved and membership is None:
+        db.add(ArtifactSaveRow(owner_id=owner_id, artifact_id=artifact_id))
+    elif not saved and membership is not None:
+        await db.delete(membership)
     await db.commit()
     return row
 
 
+async def owner_saved_artifact_ids(db: AsyncSession, owner_id: str) -> set[str]:
+    """Artifact ids this owner has saved into their catalog tab."""
+    res = await db.execute(
+        select(ArtifactSaveRow.artifact_id).where(
+            ArtifactSaveRow.owner_id == owner_id
+        )
+    )
+    return set(res.scalars().all())
+
+
+async def is_artifact_saved_by(
+    db: AsyncSession, artifact_id: str, owner_id: str
+) -> bool:
+    return await db.get(ArtifactSaveRow, (owner_id, artifact_id)) is not None
+
+
 async def set_artifact_description(
-    db: AsyncSession, artifact_id: str, description: str
+    db: AsyncSession, artifact_id: str, description: str,
+    owner_id: str | None = None,
 ) -> ArtifactRow | None:
     """Persist the on-demand LLM detail for an artifact (Fetch info)."""
     row = await db.get(ArtifactRow, artifact_id)
     if row is None:
+        return None
+    if owner_id is not None and not await owner_owns_any_card(
+        db, owner_id, row.source_card_ids or []
+    ):
         return None
     row.description = description
     await db.commit()
@@ -629,6 +713,12 @@ async def get_or_create_collection(
         db_session.add(row)
         await db_session.commit()
     return row
+
+
+async def get_collection_row(
+    db_session: AsyncSession, collection_id: str
+) -> CollectionRow | None:
+    return await db_session.get(CollectionRow, collection_id)
 
 
 async def list_collections(
@@ -668,10 +758,11 @@ async def create_custom_collection(
 
 
 async def rename_collection(
-    db_session: AsyncSession, collection_id: str, name: str
+    db_session: AsyncSession, collection_id: str, name: str,
+    owner_id: str | None = None,
 ) -> CollectionRow | None:
     row = await db_session.get(CollectionRow, collection_id)
-    if row is None:
+    if row is None or (owner_id is not None and row.owner_id != owner_id):
         return None
     row.name = name.strip()
     await db_session.commit()
@@ -679,11 +770,14 @@ async def rename_collection(
 
 
 async def delete_collection(
-    db_session: AsyncSession, collection_id: str
+    db_session: AsyncSession, collection_id: str, owner_id: str | None = None
 ) -> bool:
-    """Delete a custom collection; returns False if not found or not custom."""
+    """Delete a custom collection; returns False if not found, not custom, or not
+    owned by `owner_id`."""
     row = await db_session.get(CollectionRow, collection_id)
     if row is None or not row.is_custom:
+        return False
+    if owner_id is not None and row.owner_id != owner_id:
         return False
     # Detach cards from this collection before deleting.
     from sqlalchemy import update as sa_update
@@ -698,11 +792,16 @@ async def delete_collection(
 
 
 async def move_card_to_collection(
-    db_session: AsyncSession, card_id: str, collection_id: str | None
+    db_session: AsyncSession, card_id: str, collection_id: str | None,
+    owner_id: str | None = None,
 ) -> CardRow | None:
     row = await db_session.get(CardRow, card_id)
-    if row is None:
+    if row is None or (owner_id is not None and row.owner_id != owner_id):
         return None
+    if collection_id is not None and owner_id is not None:
+        dest = await db_session.get(CollectionRow, collection_id)
+        if dest is None or dest.owner_id != owner_id:
+            return None
     row.collection_id = collection_id
     await db_session.commit()
     return row
@@ -778,6 +877,35 @@ async def set_concept_definition(
     return row
 
 
+async def remove_owner_from_concept(
+    db: AsyncSession, concept_id: str, owner_id: str
+) -> bool:
+    """Detach `owner_id`'s cards from a shared concept. If no source cards remain
+    (from anyone), delete the row. Returns False when the concept doesn't exist
+    or the caller owns none of its source cards (so nothing was removed)."""
+    row = await db.get(ConceptRow, concept_id)
+    if row is None:
+        return False
+    current = list(row.source_card_ids or [])
+    if not await owner_owns_any_card(db, owner_id, current):
+        return False
+    mine = set(
+        (await db.execute(
+            select(CardRow.id).where(
+                CardRow.owner_id == owner_id, CardRow.id.in_(current)
+            )
+        )).scalars().all()
+    )
+    remaining = [c for c in current if c not in mine]
+    if remaining:
+        row.source_card_ids = remaining
+        flag_modified(row, "source_card_ids")
+    else:
+        await db.delete(row)
+    await db.commit()
+    return True
+
+
 async def cleanup_after_card_deletion(
     db: AsyncSession, card_id: str
 ) -> None:
@@ -805,6 +933,11 @@ async def cleanup_after_card_deletion(
         if card_id in current_ids:
             new_ids = [c for c in current_ids if c != card_id]
             if not new_ids:
+                await db.execute(
+                    delete(ArtifactSaveRow).where(
+                        ArtifactSaveRow.artifact_id == art.id
+                    )
+                )
                 await db.delete(art)
             else:
                 art.source_card_ids = new_ids

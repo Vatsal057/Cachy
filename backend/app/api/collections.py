@@ -69,13 +69,13 @@ async def create_collection(
 
 @router.patch("/{collection_id}", response_model=CollectionOut)
 async def rename_collection(
-    collection_id: str, req: RenameCollectionRequest
+    collection_id: str, req: RenameCollectionRequest, owner_id: OwnerDep
 ) -> CollectionOut:
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name is required")
     async with db.session() as session:
-        row = await db.rename_collection(session, collection_id, name)
+        row = await db.rename_collection(session, collection_id, name, owner_id=owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail="collection not found")
         pairs = await db.list_collections(session, owner_id=row.owner_id)
@@ -84,9 +84,9 @@ async def rename_collection(
 
 
 @router.delete("/{collection_id}", response_class=Response, status_code=204)
-async def delete_collection(collection_id: str) -> Response:
+async def delete_collection(collection_id: str, owner_id: OwnerDep) -> Response:
     async with db.session() as session:
-        ok = await db.delete_collection(session, collection_id)
+        ok = await db.delete_collection(session, collection_id, owner_id=owner_id)
         if not ok:
             raise HTTPException(
                 status_code=404,
@@ -96,9 +96,13 @@ async def delete_collection(collection_id: str) -> Response:
 
 
 @router.post("/cards/{card_id}/move", response_model=dict)
-async def move_card(card_id: str, req: MoveCardRequest) -> dict:
+async def move_card(
+    card_id: str, req: MoveCardRequest, owner_id: OwnerDep
+) -> dict:
     async with db.session() as session:
-        row = await db.move_card_to_collection(session, card_id, req.collection_id)
+        row = await db.move_card_to_collection(
+            session, card_id, req.collection_id, owner_id=owner_id
+        )
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         return {"card_id": card_id, "collection_id": row.collection_id}

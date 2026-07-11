@@ -65,7 +65,12 @@ class ShareViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _repository.share(cleaned);
+      // Dev toggle: route through the on-device model, but only when it can
+      // actually structure — otherwise fall back to the server LLM so we never
+      // strand a card as a paragraph with no upgrade path.
+      final preferLocal =
+          _repository.preferLocalModel && (_localAi?.canStructure ?? false);
+      final result = await _repository.share(cleaned, preferLocal: preferLocal);
       _cardId = result.cardId;
       _quotaDegraded = result.quotaDegraded;
       if (result.cached) {

@@ -28,6 +28,14 @@ class CardRepository extends ChangeNotifier {
 
   ApiClient get api => _api;
 
+  /// Developer toggle (persisted): route new cards through the on-device model
+  /// instead of the server LLM. Callers still gate on the model being ready.
+  bool get preferLocalModel => _store.preferLocalModel;
+  Future<void> setPreferLocalModel(bool value) async {
+    await _store.setPreferLocalModel(value);
+    notifyListeners();
+  }
+
   void updateBaseUrl(String url) {
     _api.setBaseUrl(url);
     notifyListeners();
@@ -41,9 +49,9 @@ class CardRepository extends ChangeNotifier {
 
   /// Submit a shared URL. On network failure the URL is queued locally and the
   /// caller is told it is pending (offline share queue, docs/06).
-  Future<CreateCardResult> share(String url) async {
+  Future<CreateCardResult> share(String url, {bool preferLocal = false}) async {
     try {
-      final result = await _api.createCard(url);
+      final result = await _api.createCard(url, preferLocal: preferLocal);
       await flushPendingShares();
       notifyListeners();
       return result;

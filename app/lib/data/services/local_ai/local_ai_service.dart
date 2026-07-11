@@ -60,9 +60,20 @@ abstract class LocalAiService extends ChangeNotifier {
   });
 }
 
+/// Char cap on the bundle fed to the on-device model. The Gemma session runs
+/// with maxTokens: 2048 covering prompt + output; at ~4 chars/token the fixed
+/// scaffold plus a full JSON card leaves room for roughly this much input. A fat
+/// bundle (long transcript) would otherwise overflow the window and the model
+/// throws — silently keeping the paragraph card it was meant to upgrade.
+const kLocalAiBundleCharCap = 4000;
+
 /// Prompt tuned for 1B models: short instruction, one few-shot example,
 /// strict JSON-only suffix.
-String buildStructurePrompt(String bundle) => '''
+String buildStructurePrompt(String bundle) {
+  if (bundle.length > kLocalAiBundleCharCap) {
+    bundle = bundle.substring(0, kLocalAiBundleCharCap);
+  }
+  return '''
 You turn a video's raw text into one JSON knowledge card. Reply with JSON only, no prose, no markdown fences.
 
 Schema:
@@ -78,6 +89,7 @@ Input:
 $bundle
 
 Output (JSON only):''';
+}
 
 /// Parse + minimally validate model output into card JSON.
 ///

@@ -31,11 +31,15 @@ class AppController extends ChangeNotifier {
   /// signed out. Drives the login gate and the profile account section.
   AuthUser? get authUser => _authUser;
 
-  /// True once the user has cleared onboarding + name but has no Firebase
-  /// identity yet — the one moment [RootGate] shows the login screen.
-  bool get needsLogin => seenOnboarding && hasUserName && _authUser == null;
+  /// True once the user has cleared onboarding but has no Firebase identity
+  /// yet — the one moment [RootGate] shows the login screen. Identity is now
+  /// the Firebase uid (Google or anonymous); no name is collected up front.
+  bool get needsLogin => seenOnboarding && _authUser == null;
 
-  Future<void> signInWithGoogle() => _auth.signInWithGoogle();
+  Future<void> signInWithGoogle({
+    Future<void> Function(String guestIdToken)? mergeGuestData,
+  }) =>
+      _auth.signInWithGoogle(mergeGuestData: mergeGuestData);
   Future<void> continueAnonymously() => _auth.signInAnonymously();
 
   ThemeMode _themeMode;

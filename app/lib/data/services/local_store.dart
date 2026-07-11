@@ -21,6 +21,7 @@ class LocalStore {
   static const _apiBaseUrlKey = 'api_base_url';
   static const _splitPaneFractionKey = 'split_pane_fraction';
   static const _localAiEnabledKey = 'local_ai_enabled';
+  static const _preferLocalModelKey = 'prefer_local_model';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
@@ -47,8 +48,16 @@ class LocalStore {
   bool get localAiEnabled => _prefs.getBool(_localAiEnabledKey) ?? false;
   Future<void> setLocalAiEnabled(bool v) => _prefs.setBool(_localAiEnabledKey, v);
 
+  /// Developer toggle: route new cards through the on-device model instead of
+  /// the server LLM (backend skips structuring, phone structures the bundle).
+  bool get preferLocalModel => _prefs.getBool(_preferLocalModelKey) ?? false;
+  Future<void> setPreferLocalModel(bool v) =>
+      _prefs.setBool(_preferLocalModelKey, v);
+
   /// Clears user identity and onboarding state, effectively signing the user
-  /// out and forcing them back through the name-entry gate on next launch.
+  /// out and forcing them back through onboarding + the login gate on next
+  /// launch. The legacy name key is cleared too (it only lingers for users
+  /// upgrading from the old name-based build).
   Future<void> clearUser() async {
     await _prefs.remove(_userNameKey);
     await _prefs.remove(_seenOnboardingKey);

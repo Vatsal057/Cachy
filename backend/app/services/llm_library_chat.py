@@ -42,23 +42,26 @@ Use it sparingly. No other markdown (no headers, no links).
 --- END CARDS ---"""
 
 
-async def retrieve(question: str, limit: int = _TOP_K) -> list[Card]:
-    """Top cards for a question: semantic when embeddings are on, else full-text."""
+async def retrieve(question: str, owner_id: str, limit: int = _TOP_K) -> list[Card]:
+    """Top cards for a question, scoped to this owner: semantic when embeddings
+    are on, else full-text."""
     if embeddings.embeddings_enabled():
-        semantic = await _retrieve_semantic(question, limit)
+        semantic = await _retrieve_semantic(question, owner_id, limit)
         if semantic:
             return semantic
-    return await _retrieve_text(question, limit)
+    return await _retrieve_text(question, owner_id, limit)
 
 
-async def _retrieve_semantic(question: str, limit: int) -> list[Card]:
+async def _retrieve_semantic(question: str, owner_id: str, limit: int) -> list[Card]:
     query_vec = embeddings.embed(question)
     if not query_vec:
         return []
     async with db.session() as session:
         rows = (
             await session.execute(
-                select(db.CardRow).where(db.CardRow.state == CardState.READY.value)
+                select(db.CardRow)
+                .where(db.CardRow.state == CardState.READY.value)
+                .where(db.CardRow.owner_id == owner_id)
             )
         ).scalars().all()
     scored = [
@@ -71,13 +74,14 @@ async def _retrieve_semantic(question: str, limit: int) -> list[Card]:
     return [r.to_card() for _, r in scored[:limit]]
 
 
-async def _retrieve_text(question: str, limit: int) -> list[Card]:
+async def _retrieve_text(question: str, owner_id: str, limit: int) -> list[Card]:
     needle = f"%{question.lower()}%"
     async with db.session() as session:
         rows = (
             await session.execute(
                 select(db.CardRow)
                 .where(db.CardRow.state == CardState.READY.value)
+                .where(db.CardRow.owner_id == owner_id)
                 .where(
                     or_(
                         db.CardRow.one_liner.ilike(needle),
@@ -98,6 +102,7 @@ async def _retrieve_text(question: str, limit: int) -> list[Card]:
             await session.execute(
                 select(db.CardRow)
                 .where(db.CardRow.state == CardState.READY.value)
+                .where(db.CardRow.owner_id == owner_id)
                 .order_by(db.CardRow.created_at.desc())
                 .limit(limit)
             )
@@ -126,10 +131,12 @@ def _latest_question(history: list[dict]) -> str:
     return ""
 
 
-async def answer(history: list[dict]) -> tuple[str, list[Card]] | None:
+async def answer(
+    history: list[dict], owner_id: str
+) -> tuple[str, list[Card]] | None:
     """Return (reply, source_cards) or None if no LLM backend is configured.
-    Retrieval is grounded on the latest user question."""
-    cards = await retrieve(_latest_question(history))
+    Retrieval is grounded on the latest user question, scoped to this owner."""
+    cards = await retrieve(_latest_question(history), owner_id)
     reply = await _generate(_context(cards), history)
     if reply is None:
         return None

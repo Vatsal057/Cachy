@@ -33,6 +33,10 @@ router = APIRouter(prefix="/cards", tags=["cards"])
 
 class CreateCardRequest(BaseModel):
     url: str
+    # Dev/testing: skip server-side LLM structuring and hand the raw bundle to
+    # the owner's device so the on-device model structures the card instead.
+    # Reuses the quota-degrade path (paragraph fallback + stored bundle).
+    prefer_local: bool = False
 
 
 class CreateCardResponse(BaseModel):
@@ -129,6 +133,9 @@ async def create_card(
             )
 
         within = await quota.card_budget(owner_id, request)
+        # Degrade (skip server LLM, keep the bundle for on-device structuring)
+        # when past quota OR when the client explicitly prefers the local model.
+        degraded = (not within) or req.prefer_local
         card = db.CardRow(
             source_url=url,
             platform=_platform_for(url),
@@ -138,11 +145,11 @@ async def create_card(
         )
         session.add(card)
         await session.flush()  # assign card.id
-        job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value, degraded=not within)
+        job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value, degraded=degraded)
         session.add(job)
         await session.commit()
         return CreateCardResponse(
-            card_id=card.id, state=CardState.QUEUED, quota_degraded=not within
+            card_id=card.id, state=CardState.QUEUED, quota_degraded=degraded
         )
 
 
@@ -226,9 +233,9 @@ async def import_cards(
 
 
 @router.get("/{card_id}", response_model=Card)
-async def get_card(card_id: str) -> Card:
+async def get_card(card_id: str, owner_id: OwnerDep) -> Card:
     async with db.session() as session:
-        row = await db.get_card_row(session, card_id)
+        row = await db.get_card_row(session, card_id, owner_id=owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         return row.to_card()
@@ -258,9 +265,11 @@ async def list_cards(
 
 
 @router.patch("/{card_id}", response_model=Card)
-async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
+async def patch_card(
+    card_id: str, req: PatchCardRequest, owner_id: OwnerDep
+) -> Card:
     async with db.session() as session:
-        row = await db.get_card_row(session, card_id)
+        row = await db.get_card_row(session, card_id, owner_id=owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         if req.blocks is not None:
@@ -268,6 +277,9 @@ async def patch_card(card_id: str, req: PatchCardRequest) -> Card:
         if req.action_items is not None:
             row.action_items = req.action_items  # follow toggle + per-item done state
         if req.collection_id is not None:
+            dest = await db.get_collection_row(session, req.collection_id)
+            if dest is None or dest.owner_id != owner_id:
+                raise HTTPException(status_code=404, detail="collection not found")
             row.collection_id = req.collection_id
         await session.commit()
         await session.refresh(row)
@@ -289,7 +301,7 @@ async def chat_card(
         raise HTTPException(status_code=422, detail="last message must be from user")
 
     async with db.session() as session:
-        row = await db.get_card_row(session, card_id)
+        row = await db.get_card_row(session, card_id, owner_id=owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         if row.state != CardState.READY.value:
@@ -350,7 +362,7 @@ async def explore_rabbithole(
     root = (req.root or topic).strip()
 
     async with db.session() as session:
-        row = await db.get_card_row(session, card_id)
+        row = await db.get_card_row(session, card_id, owner_id=owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         if row.state != CardState.READY.value:
@@ -492,9 +504,9 @@ async def upload_structure(card_id: str, payload: dict, owner_id: OwnerDep) -> C
 
 
 @router.delete("/{card_id}")
-async def delete_card(card_id: str) -> dict:
+async def delete_card(card_id: str, owner_id: OwnerDep) -> dict:
     async with db.session() as session:
-        row = await db.get_card_row(session, card_id)
+        row = await db.get_card_row(session, card_id, owner_id=owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         thumb = row.thumbnail

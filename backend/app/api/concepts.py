@@ -77,11 +77,13 @@ async def get_concept(
 
 
 @router.post("/{concept_id}/define", response_model=ConceptEntry)
-async def define_concept(concept_id: str) -> ConceptEntry:
+async def define_concept(concept_id: str, owner_id: OwnerDep) -> ConceptEntry:
     """Generate + persist an LLM definition for a concept."""
     async with db.session() as session:
         row = await session.get(db.ConceptRow, concept_id)
-        if row is None:
+        if row is None or not await db.owner_owns_any_card(
+            session, owner_id, row.source_card_ids or []
+        ):
             raise HTTPException(status_code=404, detail="concept not found")
         definition = await llm_concept.define_async(row.name)
         if not definition:
@@ -94,12 +96,10 @@ async def define_concept(concept_id: str) -> ConceptEntry:
 
 
 @router.delete("/{concept_id}")
-async def delete_concept(concept_id: str) -> dict:
+async def delete_concept(concept_id: str, owner_id: OwnerDep) -> dict:
     async with db.session() as session:
-        row = await session.get(db.ConceptRow, concept_id)
-        if row is None:
+        ok = await db.remove_owner_from_concept(session, concept_id, owner_id)
+        if not ok:
             raise HTTPException(status_code=404, detail="concept not found")
-        await session.delete(row)
-        await session.commit()
     invalidate_graph_cache()
     return {"removed": concept_id}

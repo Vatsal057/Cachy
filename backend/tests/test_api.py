@@ -89,18 +89,20 @@ async def test_catalog_upsert_dedupes_and_lists(client, database):
             for cid in ("c1", "c2", "c3")
         ])
         await s.commit()
-        await database.upsert_artifact(
+        a1 = await database.upsert_artifact(
             s, card_id="c1", type_="book", title="Atomic Habits",
-            creator="James Clear", year=2018, thumbnail="http://x/a.jpg", saved=True,
+            creator="James Clear", year=2018, thumbnail="http://x/a.jpg",
         )
-        await database.upsert_artifact(
+        a2 = await database.upsert_artifact(
             s, card_id="c2", type_="book", title="atomic   habits",
-            creator=None, year=None, thumbnail=None, saved=True,
+            creator=None, year=None, thumbnail=None,
         )
-        await database.upsert_artifact(
+        a3 = await database.upsert_artifact(
             s, card_id="c3", type_="movie", title="Inception",
-            creator="Nolan", year=2010, thumbnail=None, saved=True,
+            creator="Nolan", year=2010, thumbnail=None,
         )
+        for aid in {a1.id, a2.id, a3.id}:
+            await database.set_artifact_saved(s, aid, True, "test-user")
 
     r = await client.get("/catalog")
     entries = r.json()
@@ -114,11 +116,12 @@ async def test_catalog_upsert_dedupes_and_lists(client, database):
     assert [e["title"] for e in r2.json()] == ["Inception"]
 
 
-async def _make_ready_card(database) -> str:
+async def _make_ready_card(database, owner_id: str = "test-user") -> str:
     async with database.session() as s:
         row = database.CardRow(
             source_url="https://instagram.com/reel/chat",
             state="ready",
+            owner_id=owner_id,
             content_type="recipe",
             one_liner="Easy pancakes",
             tldr="Mix, pour, flip.",
@@ -188,7 +191,7 @@ async def test_chat_returns_reply_when_backend_answers(client, database, monkeyp
 async def test_chat_persists_and_restores_per_owner(client, database, monkeypatch):
     """A chat turn is saved for the owner that made it, restorable via GET, and
     invisible to a different owner."""
-    card_id = await _make_ready_card(database)
+    card_id = await _make_ready_card(database, owner_id="alice")
     monkeypatch.setattr(
         "app.api.cards.llm_chat.answer", lambda card, history: "Use 1 cup."
     )
@@ -217,7 +220,7 @@ async def test_chat_persists_and_restores_per_owner(client, database, monkeypatc
 async def test_rabbithole_persists_trail_and_restores(client, database, monkeypatch):
     """Successive dives build a persisted trail keyed by the root topic, and a
     branch taken after jumping back replaces the abandoned deeper steps."""
-    card_id = await _make_ready_card(database)
+    card_id = await _make_ready_card(database, owner_id="alice")
 
     async def fake_explore(card, topic, trail):
         return {"explanation": f"About {topic}.", "threads": [f"{topic} deeper"]}
@@ -273,7 +276,7 @@ async def test_rabbithole_persists_trail_and_restores(client, database, monkeypa
 
 
 async def test_library_chat_persists_and_restores_per_owner(client, monkeypatch):
-    async def fake_answer(history):
+    async def fake_answer(history, owner_id):
         return ("You saved 2 recipes.", [])
 
     monkeypatch.setattr(
@@ -298,11 +301,16 @@ async def test_library_chat_persists_and_restores_per_owner(client, monkeypatch)
 
 async def test_catalog_detail_and_delete(client, database):
     async with database.session() as s:
+        s.add(database.CardRow(
+            id="c1", source_url="http://cat/c1", state="ready", owner_id="test-user",
+        ))
+        await s.commit()
         row = await database.upsert_artifact(
             s, card_id="c1", type_="podcast", title="Lex Fridman",
-            creator=None, year=None, thumbnail=None, saved=True,
+            creator=None, year=None, thumbnail=None,
         )
         artifact_id = row.id
+        await database.set_artifact_saved(s, artifact_id, True, "test-user")
 
     g = await client.get(f"/catalog/{artifact_id}")
     assert g.status_code == 200
@@ -374,7 +382,7 @@ async def test_library_chat_503_without_llm_backend(client):
 
 
 async def test_library_chat_returns_reply(client, monkeypatch):
-    async def fake_answer(history):
+    async def fake_answer(history, owner_id):
         return ("You saved 3 recipes.", [])
 
     monkeypatch.setattr("app.api.library_chat.llm_library_chat.answer", fake_answer)
@@ -417,8 +425,8 @@ async def test_search_mode_text_works(client):
 async def test_delete_card_cascades_cleanup(client, database):
     from sqlalchemy import select
     async with database.session() as s:
-        c1 = database.CardRow(id="del-1", source_url="http://x/1", state="ready")
-        c2 = database.CardRow(id="del-2", source_url="http://x/2", state="ready")
+        c1 = database.CardRow(id="del-1", source_url="http://x/1", state="ready", owner_id="test-user")
+        c2 = database.CardRow(id="del-2", source_url="http://x/2", state="ready", owner_id="test-user")
         s.add_all([c1, c2])
         await s.commit()
 
@@ -429,9 +437,9 @@ async def test_delete_card_cascades_cleanup(client, database):
         await database.upsert_concept(s, name="Idea Shared", card_id="del-1")
         await database.upsert_concept(s, name="Idea Shared", card_id="del-2")
 
-        await database.upsert_artifact(s, card_id="del-1", type_="book", title="Book Solo", creator=None, year=None, thumbnail=None, saved=True)
-        await database.upsert_artifact(s, card_id="del-1", type_="book", title="Book Shared", creator=None, year=None, thumbnail=None, saved=True)
-        await database.upsert_artifact(s, card_id="del-2", type_="book", title="Book Shared", creator=None, year=None, thumbnail=None, saved=True)
+        await database.upsert_artifact(s, card_id="del-1", type_="book", title="Book Solo", creator=None, year=None, thumbnail=None)
+        await database.upsert_artifact(s, card_id="del-1", type_="book", title="Book Shared", creator=None, year=None, thumbnail=None)
+        await database.upsert_artifact(s, card_id="del-2", type_="book", title="Book Shared", creator=None, year=None, thumbnail=None)
 
     res = await client.delete("/cards/del-1")
     assert res.status_code == 200

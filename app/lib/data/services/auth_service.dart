@@ -24,7 +24,16 @@ abstract class AuthService {
   Stream<AuthUser?> get userChanges;
   AuthUser? get currentUser;
   Future<AuthUser> signInAnonymously();
-  Future<AuthUser> signInWithGoogle();
+
+  /// Sign in with Google. When the current session is an anonymous guest, the
+  /// uid is linked (data stays put). If that Google account already has its own
+  /// Cachy identity, linking is impossible, so we switch to it and — if
+  /// [mergeGuestData] is provided — hand back the guest's ID token so the
+  /// caller can fold the guest's server-side data into the account.
+  Future<AuthUser> signInWithGoogle({
+    Future<void> Function(String guestIdToken)? mergeGuestData,
+  });
+
   Future<String?> idToken({bool forceRefresh = false});
   Future<void> signOut();
 }
@@ -60,7 +69,9 @@ class FirebaseAuthService implements AuthService {
   }
 
   @override
-  Future<AuthUser> signInWithGoogle() async {
+  Future<AuthUser> signInWithGoogle({
+    Future<void> Function(String guestIdToken)? mergeGuestData,
+  }) async {
     final account = await _google.signIn();
     if (account == null) throw fb.FirebaseAuthException(code: 'canceled');
     final gAuth = await account.authentication;
@@ -75,8 +86,17 @@ class FirebaseAuthService implements AuthService {
         cred = await current.linkWithCredential(credential); // uid preserved
       } on fb.FirebaseAuthException catch (e) {
         if (e.code != 'credential-already-in-use') rethrow;
-        // Google account already has a Cachy identity — switch to it.
+        // Google account already has a Cachy identity — linking is impossible.
+        // Grab the guest's token before switching so its data can be merged,
+        // then sign into the existing account.
+        final guestToken = await current.getIdToken();
         cred = await _auth.signInWithCredential(credential);
+        if (guestToken != null && guestToken.isNotEmpty && mergeGuestData != null) {
+          // Best-effort: a failed merge must not block sign-in.
+          try {
+            await mergeGuestData(guestToken);
+          } catch (_) {}
+        }
       }
     } else {
       cred = await _auth.signInWithCredential(credential);
