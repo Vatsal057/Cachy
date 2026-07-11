@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "65028456728",
+    "project_id": "cachy-057",
+    "storage_bucket": "cachy-057.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:65028456728:android:01daa0a9cb7a2b73ec9e6d",
+        "android_client_info": {
+          "package_name": "com.vatxzz.cachy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQsQvYezQpozLGZENB9gquVlYlNt5NBJo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

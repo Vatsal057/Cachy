@@ -1,4 +1,4 @@
-package com.cachy.cachy
+package com.vatxzz.cachy
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -15,11 +16,13 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/repositories/card_repository.dart';
+import 'data/services/auth_service.dart';
 import 'data/services/local_ai/gemma_local_ai_service.dart';
 import 'data/services/local_ai/local_ai_service.dart';
 import 'data/services/api_client.dart';
 import 'data/services/highlight_store.dart';
 import 'data/services/local_store.dart';
+import 'firebase_options.dart';
 import 'ui/core/app_controller.dart';
 import 'ui/core/root_gate.dart';
 import 'ui/core/theme.dart';
@@ -30,6 +33,11 @@ Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   await _setupDesktopWindow();
+  // Firebase identity (uid = backend owner_id). Only Android is configured in
+  // firebase_options.dart today; register a web/iOS app + re-run
+  // `flutterfire configure` to enable those platforms.
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  final authService = FirebaseAuthService();
   final store = await LocalStore.open();
   final highlightStore = await HighlightStore.open();
   final api = ApiClient(baseUrl: await ApiClient.resolveBaseUrl(store: store), store: store);
@@ -40,6 +48,7 @@ Future<void> main() async {
   runApp(CachyApp(
     repository: repository,
     appController: appController,
+    authService: authService,
     highlightStore: highlightStore,
     localAi: localAi,
   ));
@@ -76,11 +85,13 @@ class CachyApp extends StatefulWidget {
     super.key,
     required this.repository,
     required this.appController,
+    required this.authService,
     required this.highlightStore,
     required this.localAi,
   });
   final CardRepository repository;
   final AppController appController;
+  final AuthService authService;
   final HighlightStore highlightStore;
   final LocalAiService localAi;
 
@@ -152,6 +163,7 @@ class _CachyAppState extends State<CachyApp> {
       providers: [
         ChangeNotifierProvider<CardRepository>.value(value: widget.repository),
         ChangeNotifierProvider<AppController>.value(value: widget.appController),
+        Provider<AuthService>.value(value: widget.authService),
         ChangeNotifierProvider<HighlightStore>.value(value: widget.highlightStore),
         ChangeNotifierProvider<LocalAiService>.value(value: widget.localAi),
         ChangeNotifierProvider<UiBus>(create: (_) => UiBus()),
