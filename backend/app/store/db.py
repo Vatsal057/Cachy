@@ -465,7 +465,9 @@ async def init_db() -> None:
             conn,
             "jobs",
             {
-                "degraded": "BOOLEAN DEFAULT 0",  # quota-degraded card creation
+                # DEFAULT FALSE, not 0 — Postgres rejects an int default on a
+                # boolean column (SQLite accepts either). Matches artifacts.saved.
+                "degraded": "BOOLEAN DEFAULT FALSE",  # quota-degraded card creation
             },
         )
         await _add_missing_columns(
