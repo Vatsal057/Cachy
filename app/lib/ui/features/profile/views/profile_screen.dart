@@ -326,6 +326,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _accountRow(theme, user)
         else
           _backupBanner(theme),
+        if (signedIn &&
+            (context.read<AppController>().userName ?? '').isNotEmpty)
+          _Tile(
+            icon: PhosphorIconsRegular.clockCounterClockwise,
+            title: 'Restore old library',
+            subtitle: 'Bring in cards saved under your name before sign-in.',
+            onTap: () =>
+                _offerClaim(context.read<AppController>().userName!),
+          ),
         _Tile(
           icon: PhosphorIconsRegular.signOut,
           title: 'Sign out',

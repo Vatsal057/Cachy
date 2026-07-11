@@ -63,9 +63,12 @@ class AppController extends ChangeNotifier {
 
   /// Signs out of Firebase and clears the user's name + onboarding flag so
   /// [RootGate] redirects back to the name-entry screen on the next render.
+  /// Also wipes the offline card cache so the next account on this device
+  /// can't read the previous user's library.
   Future<void> logout() async {
     await _auth.signOut();
     await _store.clearUser();
+    await _store.clearCardCache();
     notifyListeners();
   }
 

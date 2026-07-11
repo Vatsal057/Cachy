@@ -40,7 +40,13 @@ Future<void> main() async {
   final authService = FirebaseAuthService();
   final store = await LocalStore.open();
   final highlightStore = await HighlightStore.open();
-  final api = ApiClient(baseUrl: await ApiClient.resolveBaseUrl(store: store), store: store);
+  final api = ApiClient(
+    baseUrl: await ApiClient.resolveBaseUrl(store: store),
+    store: store,
+    // Every request carries the Firebase ID token (uid = backend owner_id);
+    // without this the backend 401s all data routes.
+    tokenProvider: authService.idToken,
+  );
   final repository = CardRepository(api: api, store: store);
   final appController = AppController(store, authService);
   final localAi = GemmaLocalAiService(store: store);

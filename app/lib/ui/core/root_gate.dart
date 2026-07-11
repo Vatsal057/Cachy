@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/repositories/card_repository.dart';
+import '../../data/services/auth_service.dart';
 import '../features/onboarding/views/login_screen.dart';
 import '../features/onboarding/views/name_screen.dart';
 import '../features/onboarding/views/onboarding_screen.dart';
@@ -59,7 +61,20 @@ class _RootGateState extends State<RootGate> {
     setState(() => _phase = app.needsLogin ? _Phase.login : _Phase.shell);
   }
 
-  void _finishLogin() {
+  /// After the login gate: adopt the legacy name-keyed library under this
+  /// Google account before the shell loads, so pre-auth cards appear on first
+  /// render. Best-effort — offline or already-claimed never blocks entry.
+  Future<void> _finishLogin() async {
+    if (!mounted) return;
+    final name = context.read<AppController>().userName;
+    final user = context.read<AuthService>().currentUser;
+    if (name != null && name.isNotEmpty && user != null && !user.isAnonymous) {
+      try {
+        await context.read<CardRepository>().api.claimLegacyLibrary(name);
+      } catch (e) {
+        debugPrint('legacy claim skipped: $e');
+      }
+    }
     if (mounted) setState(() => _phase = _Phase.shell);
   }
 
