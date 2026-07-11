@@ -118,6 +118,9 @@ class CardRow(Base):
     thumbnail: Mapped[str | None] = mapped_column(String, nullable=True)
     keyframes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     extraction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # On-device AI (V2): JSON text {bundle, transcript, caption} kept only for
+    # quota-degraded cards so the phone can re-structure them; cleared on upload.
+    raw_bundle: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Collection this card belongs to (auto-assigned by pipeline, user-overridable).
     collection_id: Mapped[str | None] = mapped_column(
@@ -340,6 +343,20 @@ async def spend_usage(
     return True, row.count
 
 
+async def store_raw_bundle(
+    db_session: AsyncSession, *, card_id: str, bundle: str, transcript: str, caption: str
+) -> None:
+    """Persist the extraction bundle on a quota-degraded card (JSON text) so the
+    owner's device can structure it later."""
+    import json as _json
+
+    payload = _json.dumps({"bundle": bundle, "transcript": transcript, "caption": caption})
+    await db_session.execute(
+        update(CardRow).where(CardRow.id == card_id).values(raw_bundle=payload)
+    )
+    await db_session.commit()
+
+
 async def claim_owner(db_session: AsyncSession, *, name: str, uid: str) -> int | None:
     """Re-point every legacy row owned by `name` to `uid`. None = taken."""
     existing = await db_session.get(ClaimRow, name)
@@ -433,6 +450,7 @@ async def init_db() -> None:
                 "action_items": "JSON",  # docs/13 — added in schema 1.3
                 "insight": "JSON",  # docs/14 — added in schema 1.4
                 "collection_id": "TEXT",  # schema 1.5 — collections FK
+                "raw_bundle": "TEXT",  # V2 on-device AI — degraded-job bundle
             },
         )
         await _add_missing_columns(

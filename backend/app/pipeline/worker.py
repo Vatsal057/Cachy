@@ -353,6 +353,13 @@ async def _run_job(session, job: db.JobRow) -> None:
             "(%s) — falling back to a plain paragraph card",
             tag, structured.degraded_reason or "unknown reason",
         )
+        if job.degraded:
+            # Quota-degraded: keep the bundle so the owner's device can
+            # re-structure this card on-device (V2 on-device AI).
+            await db.store_raw_bundle(
+                session, card_id=card_id, bundle=extraction.aggregated_text,
+                transcript=extraction.transcript, caption=download.caption or "",
+            )
     else:
         log.info(
             "%s Step 3/6 structure OK | type=%s blocks=%d artifacts=%d",

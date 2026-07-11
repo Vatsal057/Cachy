@@ -418,6 +418,79 @@ async def get_rabbithole_history(
     )
 
 
+@router.get("/{card_id}/bundle")
+async def get_bundle(card_id: str, owner_id: OwnerDep) -> dict:
+    """Stored extraction bundle of a quota-degraded card (owner only) — fetched
+    by the app to structure the card on-device (V2 on-device AI)."""
+    async with db.session() as session:
+        row = await db.get_card_row(session, card_id)
+    if row is None or row.owner_id != owner_id or not row.raw_bundle:
+        raise HTTPException(status_code=404, detail="no stored bundle")
+    try:
+        stored = json.loads(row.raw_bundle)
+    except json.JSONDecodeError:
+        log.warning("card %s: raw_bundle is not valid JSON, treating as absent", card_id)
+        raise HTTPException(status_code=404, detail="no stored bundle")
+    return {
+        "bundle": str(stored.get("bundle", "")),
+        "transcript": str(stored.get("transcript", "")),
+        "caption": str(stored.get("caption", "")),
+    }
+
+
+@router.post("/{card_id}/structure", response_model=Card)
+async def upload_structure(card_id: str, payload: dict, owner_id: OwnerDep) -> Card:
+    """Accept a device-generated structured card for a quota-degraded card.
+
+    Validated server-side with the SAME coercion/validation the LLM path uses —
+    device output is never trusted. Invalid -> 422 and the paragraph card stays.
+    """
+    from app.pipeline import worker
+    from app.pipeline.structuring import _validate
+
+    async with db.session() as session:
+        row = await db.get_card_row(session, card_id)
+        if row is None or row.owner_id != owner_id or not row.raw_bundle:
+            raise HTTPException(status_code=404, detail="no stored bundle")
+        try:
+            stored = json.loads(row.raw_bundle)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=404, detail="no stored bundle")
+
+        structured = _validate(
+            json.dumps(payload),
+            str(stored.get("bundle", "")),
+            str(stored.get("transcript", "")),
+            str(stored.get("caption", "")),
+        )
+        if structured.degraded:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid structured card: {structured.degraded_reason}",
+            )
+
+        await worker._write_base(session, card_id, structured)
+        await worker._write_blocks(session, card_id, structured.blocks)
+        await worker._write_collection(
+            session, card_id, structured.base.content_type, owner_id
+        )
+        if structured.artifacts:
+            await worker._persist_artifacts(session, card_id, structured.artifacts)
+        if structured.concepts:
+            await worker._persist_concepts(session, card_id, structured.concepts)
+        try:
+            await worker._embed_card(session, card_id)
+        except Exception as e:  # noqa: BLE001 — semantic index is non-critical
+            await session.rollback()
+            log.warning("card %s: embed after device structure failed: %s", card_id, e)
+        await session.execute(
+            db.update(db.CardRow).where(db.CardRow.id == card_id).values(raw_bundle=None)
+        )
+        await session.commit()
+        row = await db.get_card_row(session, card_id)
+        return row.to_card()
+
+
 @router.delete("/{card_id}")
 async def delete_card(card_id: str) -> dict:
     async with db.session() as session:
