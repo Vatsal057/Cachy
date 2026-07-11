@@ -43,7 +43,9 @@ async def test_invalid_token_401(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_unconfigured_503(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FIREBASE_PROJECT_ID", raising=False)
+    # Empty env var, not delenv: an env var overrides the developer's .env,
+    # whereas delenv lets a populated .env leak a real project id back in.
+    monkeypatch.setenv("FIREBASE_PROJECT_ID", "")
     get_settings.cache_clear()
     with pytest.raises(HTTPException) as exc:
         await get_owner(authorization="Bearer sometoken")
