@@ -1,0 +1,17 @@
+Cachy — on-device model attribution and use restrictions
+=========================================================
+
+The optional on-device AI feature downloads and runs Gemma 3 1B (int4 .task
+build), redistributed by this project from a GitHub release for install
+convenience. Gemma is provided by Google under the Gemma Terms of Use.
+
+Your use of the Gemma model is subject to:
+  - Gemma Terms of Use:            https://ai.google.dev/gemma/terms
+  - Gemma Prohibited Use Policy:   https://ai.google.dev/gemma/prohibited_use_policy
+
+Gemma is a trademark of Google LLC. This project is not affiliated with or
+endorsed by Google. The model weights are unmodified; only the hosting location
+differs from the upstream litert-community/Gemma3-1B-IT repository.
+
+By downloading the model through Cachy you agree to the Gemma Terms of Use and
+Prohibited Use Policy above.

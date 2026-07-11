@@ -478,30 +478,14 @@ class _OfflineAiSection extends StatelessWidget {
   }
 
   Future<void> _confirmDownload(BuildContext context, LocalAiService ai) async {
-    final controller = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Download model?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-                '$kLocalAiModelSizeLabel download — Wi-Fi recommended. The model '
-                'is license-gated on HuggingFace: paste a free HF token that has '
-                'accepted the Gemma license.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'HuggingFace token (hf_…)',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-            ),
-          ],
-        ),
+        content: const Text(
+            '$kLocalAiModelSizeLabel download — Wi-Fi recommended. Runs entirely '
+            'on your phone once installed; no account or sign-in needed. Keep the '
+            'app open until it finishes.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -513,8 +497,6 @@ class _OfflineAiSection extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    final token = controller.text.trim();
-    if (token.isNotEmpty) await ai.saveHfToken(token);
     await ai.download();
   }
 

@@ -47,9 +47,6 @@ class FakeLocalAiService extends LocalAiService {
   }
 
   @override
-  Future<void> saveHfToken(String token) async {}
-
-  @override
   Future<void> download() async {
     _phase = LocalAiPhase.downloading;
     notifyListeners();

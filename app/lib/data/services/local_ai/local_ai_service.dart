@@ -44,9 +44,6 @@ abstract class LocalAiService extends ChangeNotifier {
   bool get canStructure =>
       enabled && status.phase == LocalAiPhase.ready;
 
-  /// Persist the HuggingFace token used for the license-gated model download.
-  Future<void> saveHfToken(String token);
-
   /// Download + install the model (~550 MB — caller shows the Wi-Fi warning).
   Future<void> download();
 

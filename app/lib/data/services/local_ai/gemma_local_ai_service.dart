@@ -12,10 +12,11 @@ import '../local_store.dart';
 import 'local_ai_service.dart';
 
 /// Gemma 3 1B IT, int4 .task build — the flutter_gemma-supported model with the
-/// best JSON-following per size. HF-gated: download needs a HuggingFace token
-/// with the Gemma license accepted.
+/// best JSON-following per size. Self-hosted on our GitHub release so end users
+/// need no HuggingFace account or license token (Gemma license permits
+/// redistribution with its use-restrictions notice, shipped in NOTICE).
 const kLocalAiModelUrl =
-    'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task';
+    'https://github.com/Vatsal057/Cachy/releases/download/model-v1/gemma3-1b-it-int4.task';
 const kLocalAiModelFile = 'gemma3-1b-it-int4.task';
 const kLocalAiModelSizeLabel = '~550 MB';
 
@@ -41,8 +42,10 @@ class GemmaLocalAiService extends LocalAiService {
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 
-  @override
-  Future<void> saveHfToken(String token) => _store.setHfToken(token);
+  /// flutter_gemma requires FlutterGemma.initialize() before any other call.
+  /// Lazy + memoized so app startup never pays for it when the feature is unused.
+  Future<void>? _gemmaInit;
+  Future<void> _ensureGemmaInit() => _gemmaInit ??= FlutterGemma.initialize();
 
   void _set(LocalAiStatus s) {
     _status = s;
@@ -53,6 +56,7 @@ class GemmaLocalAiService extends LocalAiService {
     if (!_supported) return;
     _set(const LocalAiStatus(LocalAiPhase.notInstalled));
     try {
+      await _ensureGemmaInit();
       final installed = await FlutterGemma.isModelInstalled(kLocalAiModelFile);
       if (installed) _set(const LocalAiStatus(LocalAiPhase.ready));
     } catch (e) {
@@ -65,16 +69,20 @@ class GemmaLocalAiService extends LocalAiService {
     if (!_supported || _status.phase == LocalAiPhase.downloading) return;
     _set(const LocalAiStatus(LocalAiPhase.downloading));
     try {
+      await _ensureGemmaInit();
       await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
-          .fromNetwork(kLocalAiModelUrl, token: _store.hfToken)
+          .fromNetwork(kLocalAiModelUrl)
           .withProgress((int percent) {
         _set(LocalAiStatus(LocalAiPhase.downloading, progress: percent / 100));
       }).install();
       _set(const LocalAiStatus(LocalAiPhase.ready));
     } catch (e) {
       debugPrint('local-ai: download failed: $e');
+      // Surface the real cause — a generic message made this undebuggable.
+      final detail = e.toString();
       _set(LocalAiStatus(LocalAiPhase.error,
-          message: 'Download failed — check connection and HF token'));
+          message:
+              'Download failed: ${detail.length > 220 ? detail.substring(0, 220) : detail}'));
     }
   }
 
@@ -82,6 +90,7 @@ class GemmaLocalAiService extends LocalAiService {
   Future<void> delete() async {
     if (!_supported) return;
     try {
+      await _ensureGemmaInit();
       await FlutterGemma.uninstallModel(kLocalAiModelFile);
     } catch (e) {
       debugPrint('local-ai: delete failed: $e');
@@ -98,6 +107,7 @@ class GemmaLocalAiService extends LocalAiService {
     if (!canStructure) return null;
     InferenceModel? model;
     try {
+      await _ensureGemmaInit();
       model = await FlutterGemma.getActiveModel(maxTokens: 2048);
       final session = await model.createSession(temperature: 0.3, topK: 40);
       try {
