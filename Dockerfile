@@ -22,6 +22,9 @@ RUN mkdir -p /data/downloads && chown -R 1000:1000 /data && chmod -R 777 /data
 
 ENV MEDIA_DIR=/data/downloads
 ENV DATABASE_URL=sqlite+aiosqlite:////data/cachy.db
+# Firebase project id (public, not a secret) — enables ID-token verification on
+# every data route. HF_API_KEY (media + embeddings) stays a Space secret.
+ENV FIREBASE_PROJECT_ID=cachy-057
 
 EXPOSE 7860
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
