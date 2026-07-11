@@ -42,7 +42,7 @@ Future<void> main() async {
   final highlightStore = await HighlightStore.open();
   final api = ApiClient(baseUrl: await ApiClient.resolveBaseUrl(store: store), store: store);
   final repository = CardRepository(api: api, store: store);
-  final appController = AppController(store);
+  final appController = AppController(store, authService);
   final localAi = GemmaLocalAiService(store: store);
   FlutterNativeSplash.remove();
   runApp(CachyApp(

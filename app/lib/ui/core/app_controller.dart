@@ -4,14 +4,39 @@
 /// the app presents itself.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/services/auth_service.dart';
 import '../../data/services/local_store.dart';
 
 class AppController extends ChangeNotifier {
-  AppController(this._store) : _themeMode = _decode(_store.themeMode);
+  AppController(this._store, this._auth)
+      : _themeMode = _decode(_store.themeMode),
+        _authUser = _auth.currentUser {
+    _authSub = _auth.userChanges.listen((u) {
+      _authUser = u;
+      notifyListeners();
+    });
+  }
 
   final LocalStore _store;
+  final AuthService _auth;
+  late final StreamSubscription<AuthUser?> _authSub;
+
+  AuthUser? _authUser;
+
+  /// The current Firebase identity (uid = backend owner_id), or null when
+  /// signed out. Drives the login gate and the profile account section.
+  AuthUser? get authUser => _authUser;
+
+  /// True once the user has cleared onboarding + name but has no Firebase
+  /// identity yet — the one moment [RootGate] shows the login screen.
+  bool get needsLogin => seenOnboarding && hasUserName && _authUser == null;
+
+  Future<void> signInWithGoogle() => _auth.signInWithGoogle();
+  Future<void> continueAnonymously() => _auth.signInAnonymously();
 
   ThemeMode _themeMode;
   ThemeMode get themeMode => _themeMode;
@@ -47,6 +72,12 @@ class AppController extends ChangeNotifier {
     final clamped = fraction.clamp(0.25, 0.5);
     await _store.setSplitPaneFraction(clamped);
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSub.cancel();
+    super.dispose();
   }
 
   static ThemeMode _decode(String v) => switch (v) {
