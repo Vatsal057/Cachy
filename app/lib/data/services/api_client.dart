@@ -88,10 +88,18 @@ class RabbitHoleStep {
 }
 
 class ApiClient {
-  ApiClient({String? baseUrl, http.Client? client, LocalStore? store})
-      : baseUrl = (baseUrl ?? _defaultBaseUrl).replaceAll(RegExp(r'/+$'), ''),
+  ApiClient({
+    String? baseUrl,
+    http.Client? client,
+    LocalStore? store,
+    this.tokenProvider,
+  })  : baseUrl = (baseUrl ?? _defaultBaseUrl).replaceAll(RegExp(r'/+$'), ''),
         _client = client ?? http.Client(),
         _store = store;
+
+  /// Supplies the Firebase ID token (uid = backend owner_id). `forceRefresh`
+  /// mints a fresh token after a 401. Null when signed out.
+  final Future<String?> Function({bool forceRefresh})? tokenProvider;
 
   /// Default backend for end users: the hosted Hugging Face Space, so a plain
   /// `flutter build apk` connects with zero config. Override at build time with
@@ -131,10 +139,22 @@ class ApiClient {
     return discovered;
   }
 
-  Map<String, String> get _ownerHeader {
-    final name = _store?.userName;
-    if (name == null || name.isEmpty) return const {};
-    return {'x-owner-id': name};
+  Future<Map<String, String>> _authHeader({bool forceRefresh = false}) async {
+    final token = await tokenProvider?.call(forceRefresh: forceRefresh);
+    if (token == null || token.isEmpty) return const {};
+    return {'authorization': 'Bearer $token'};
+  }
+
+  /// All verbs funnel through here: auth header + one refresh-retry on 401.
+  Future<http.Response> _send(
+    Future<http.Response> Function(Map<String, String> headers) go, {
+    Map<String, String> extra = const {},
+  }) async {
+    var resp = await go({...extra, ...await _authHeader()});
+    if (resp.statusCode == 401 && tokenProvider != null) {
+      resp = await go({...extra, ...await _authHeader(forceRefresh: true)});
+    }
+    return resp;
   }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('$baseUrl$path')
@@ -154,10 +174,9 @@ class ApiClient {
   // ------------------------------------------------------------------------- //
 
   Future<CreateCardResult> createCard(String url) async {
-    final resp = await _client.post(
-      _uri('/cards'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'url': url}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/cards'), headers: h, body: jsonEncode({'url': url})),
+      extra: const {'content-type': 'application/json'},
     );
     final json = _decodeMap(resp);
     return CreateCardResult(
@@ -171,8 +190,7 @@ class ApiClient {
   /// Stored extraction bundle of a quota-degraded card, or null when the
   /// server has none (not degraded / already upgraded / not the owner).
   Future<Map<String, String>?> getBundle(String cardId) async {
-    final resp =
-        await _client.get(_uri('/cards/$cardId/bundle'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(_uri('/cards/$cardId/bundle'), headers: h));
     if (resp.statusCode == 404) return null;
     final json = _decodeMap(resp);
     return {
@@ -185,16 +203,15 @@ class ApiClient {
   /// Upload a device-generated structured card. The server re-validates and
   /// throws [ApiException] (422) when the payload doesn't survive validation.
   Future<Card> uploadStructure(String cardId, Map<String, dynamic> payload) async {
-    final resp = await _client.post(
-      _uri('/cards/$cardId/structure'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode(payload),
+    final resp = await _send(
+      (h) => _client.post(_uri('/cards/$cardId/structure'), headers: h, body: jsonEncode(payload)),
+      extra: const {'content-type': 'application/json'},
     );
     return Card.fromJson(_decodeMap(resp));
   }
 
   Future<Card> getCard(String cardId) async {
-    final resp = await _client.get(_uri('/cards/$cardId'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(_uri('/cards/$cardId'), headers: h));
     return Card.fromJson(_decodeMap(resp));
   }
 
@@ -205,16 +222,16 @@ class ApiClient {
     int limit = 50,
     int offset = 0,
   }) async {
-    final resp = await _client.get(
-      _uri('/cards', {
-        'state': ?state?.wire,
-        'content_type': ?contentType,
-        'collection_id': ?collectionId,
-        'limit': limit,
-        'offset': offset,
-      }),
-      headers: _ownerHeader,
-    );
+    final resp = await _send((h) => _client.get(
+          _uri('/cards', {
+            'state': ?state?.wire,
+            'content_type': ?contentType,
+            'collection_id': ?collectionId,
+            'limit': limit,
+            'offset': offset,
+          }),
+          headers: h,
+        ));
     return _decodeList(resp).map(Card.fromJson).toList();
   }
 
@@ -223,10 +240,9 @@ class ApiClient {
     String cardId,
     List<Map<String, dynamic>> blocks,
   ) async {
-    final resp = await _client.patch(
-      _uri('/cards/$cardId'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'blocks': blocks}),
+    final resp = await _send(
+      (h) => _client.patch(_uri('/cards/$cardId'), headers: h, body: jsonEncode({'blocks': blocks})),
+      extra: const {'content-type': 'application/json'},
     );
     return Card.fromJson(_decodeMap(resp));
   }
@@ -236,16 +252,16 @@ class ApiClient {
     String cardId,
     Map<String, dynamic> actionItems,
   ) async {
-    final resp = await _client.patch(
-      _uri('/cards/$cardId'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'action_items': actionItems}),
+    final resp = await _send(
+      (h) => _client.patch(_uri('/cards/$cardId'),
+          headers: h, body: jsonEncode({'action_items': actionItems})),
+      extra: const {'content-type': 'application/json'},
     );
     return Card.fromJson(_decodeMap(resp));
   }
 
   Future<void> deleteCard(String cardId) async {
-    final resp = await _client.delete(_uri('/cards/$cardId'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.delete(_uri('/cards/$cardId'), headers: h));
     if (resp.statusCode >= 400) {
       throw ApiException(resp.statusCode, resp.body);
     }
@@ -253,19 +269,16 @@ class ApiClient {
 
   Future<void> importCards(List<Map<String, dynamic>> cards) async {
     if (cards.isEmpty) return;
-    final resp = await _client.post(
-      _uri('/cards/import'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'cards': cards}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/cards/import'), headers: h, body: jsonEncode({'cards': cards})),
+      extra: const {'content-type': 'application/json'},
     );
     if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
   }
 
   Future<List<Card>> search(String query, {int limit = 30}) async {
-    final resp = await _client.get(
-      _uri('/search', {'q': query, 'limit': limit}),
-      headers: _ownerHeader,
-    );
+    final resp = await _send(
+        (h) => _client.get(_uri('/search', {'q': query, 'limit': limit}), headers: h));
     return _decodeList(resp).map(Card.fromJson).toList();
   }
 
@@ -273,10 +286,10 @@ class ApiClient {
   /// [{'role','content'}]; returns the assistant's reply text. The conversation
   /// is persisted server-side per owner (docs/14).
   Future<String> chat(String cardId, List<Map<String, String>> messages) async {
-    final resp = await _client.post(
-      _uri('/cards/$cardId/chat'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'messages': messages}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/cards/$cardId/chat'),
+          headers: h, body: jsonEncode({'messages': messages})),
+      extra: const {'content-type': 'application/json'},
     );
     return (_decodeMap(resp)['reply'] as String?) ?? '';
   }
@@ -284,7 +297,7 @@ class ApiClient {
   /// Restore this owner's saved chat for a card (docs/14) as
   /// [{'role','content'}] maps, oldest → newest. Empty when none saved.
   Future<List<Map<String, String>>> chatHistory(String cardId) async {
-    final resp = await _client.get(_uri('/cards/$cardId/chat'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(_uri('/cards/$cardId/chat'), headers: h));
     return _decodeMessages(_decodeMap(resp)['messages']);
   }
 
@@ -299,10 +312,10 @@ class ApiClient {
     List<String> trail,
     String root,
   ) async {
-    final resp = await _client.post(
-      _uri('/cards/$cardId/rabbithole'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'topic': topic, 'trail': trail, 'root': root}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/cards/$cardId/rabbithole'),
+          headers: h, body: jsonEncode({'topic': topic, 'trail': trail, 'root': root})),
+      extra: const {'content-type': 'application/json'},
     );
     final json = _decodeMap(resp);
     return RabbitHoleStep(
@@ -317,10 +330,8 @@ class ApiClient {
   /// Restore this owner's saved rabbit-hole trail for a card + [root] topic
   /// (docs/14), oldest → deepest. Empty when none saved.
   Future<List<RabbitHoleStep>> rabbitHoleHistory(String cardId, String root) async {
-    final resp = await _client.get(
-      _uri('/cards/$cardId/rabbithole', {'root': root}),
-      headers: _ownerHeader,
-    );
+    final resp = await _send((h) =>
+        _client.get(_uri('/cards/$cardId/rabbithole', {'root': root}), headers: h));
     return ((_decodeMap(resp)['steps'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map((s) => RabbitHoleStep(
@@ -338,33 +349,31 @@ class ApiClient {
   // ------------------------------------------------------------------------- //
 
   Future<List<CollectionEntry>> listCollections() async {
-    final resp = await _client.get(_uri('/collections'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(_uri('/collections'), headers: h));
     return _decodeList(resp).map(CollectionEntry.fromJson).toList();
   }
 
   Future<CollectionEntry> renameCollection(String id, String name) async {
-    final resp = await _client.patch(
-      _uri('/collections/$id'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'name': name}),
+    final resp = await _send(
+      (h) => _client.patch(_uri('/collections/$id'), headers: h, body: jsonEncode({'name': name})),
+      extra: const {'content-type': 'application/json'},
     );
     return CollectionEntry.fromJson(_decodeMap(resp));
   }
 
   Future<CollectionEntry> createCollection(String name) async {
-    final resp = await _client.post(
-      _uri('/collections'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'name': name}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/collections'), headers: h, body: jsonEncode({'name': name})),
+      extra: const {'content-type': 'application/json'},
     );
     return CollectionEntry.fromJson(_decodeMap(resp));
   }
 
   Future<void> moveCardToCollection(String cardId, String? collectionId) async {
-    final resp = await _client.post(
-      _uri('/collections/cards/$cardId/move'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'collection_id': collectionId}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/collections/cards/$cardId/move'),
+          headers: h, body: jsonEncode({'collection_id': collectionId})),
+      extra: const {'content-type': 'application/json'},
     );
     if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
   }
@@ -378,16 +387,19 @@ class ApiClient {
     int limit = 200,
     int offset = 0,
   }) async {
-    final resp = await _client.get(_uri('/catalog', {
-      'type': ?type?.wire,
-      'limit': limit,
-      'offset': offset,
-    }), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(
+          _uri('/catalog', {
+            'type': ?type?.wire,
+            'limit': limit,
+            'offset': offset,
+          }),
+          headers: h,
+        ));
     return _decodeList(resp).map(CatalogEntry.fromJson).toList();
   }
 
   Future<void> deleteCatalogEntry(String artifactId) async {
-    final resp = await _client.delete(_uri('/catalog/$artifactId'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.delete(_uri('/catalog/$artifactId'), headers: h));
     if (resp.statusCode >= 400) {
       throw ApiException(resp.statusCode, resp.body);
     }
@@ -395,22 +407,21 @@ class ApiClient {
 
   /// Save a referenced artifact into the catalog tab (long-press to save).
   Future<CatalogEntry> saveCatalogEntry(String artifactId) async {
-    final resp = await _client.post(_uri('/catalog/$artifactId/save'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.post(_uri('/catalog/$artifactId/save'), headers: h));
     return CatalogEntry.fromJson(_decodeMap(resp));
   }
 
   /// Generate + persist the on-demand LLM detail for an artifact (Fetch info).
   Future<CatalogEntry> fetchCatalogInfo(String artifactId) async {
-    final resp = await _client.post(_uri('/catalog/$artifactId/fetch-info'), headers: _ownerHeader);
+    final resp =
+        await _send((h) => _client.post(_uri('/catalog/$artifactId/fetch-info'), headers: h));
     return CatalogEntry.fromJson(_decodeMap(resp));
   }
 
   /// Artifacts a single card references (docs/12) — the reader "References" strip.
   Future<List<CatalogEntry>> cardArtifacts(String cardId, {int limit = 50}) async {
-    final resp = await _client.get(
-      _uri('/catalog', {'card_id': cardId, 'limit': limit}),
-      headers: _ownerHeader,
-    );
+    final resp = await _send((h) =>
+        _client.get(_uri('/catalog', {'card_id': cardId, 'limit': limit}), headers: h));
     return _decodeList(resp).map(CatalogEntry.fromJson).toList();
   }
 
@@ -419,25 +430,28 @@ class ApiClient {
   // ------------------------------------------------------------------------- //
 
   Future<List<ConceptEntry>> listConcepts({String? cardId, int limit = 200}) async {
-    final resp = await _client.get(_uri('/concepts', {
-      'card_id': ?cardId,
-      'limit': limit,
-    }), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(
+          _uri('/concepts', {
+            'card_id': ?cardId,
+            'limit': limit,
+          }),
+          headers: h,
+        ));
     return _decodeList(resp).map(ConceptEntry.fromJson).toList();
   }
 
   Future<ConceptDetail> getConcept(String conceptId) async {
-    final resp = await _client.get(_uri('/concepts/$conceptId'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(_uri('/concepts/$conceptId'), headers: h));
     return ConceptDetail.fromJson(_decodeMap(resp));
   }
 
   Future<ConceptEntry> defineConcept(String conceptId) async {
-    final resp = await _client.post(_uri('/concepts/$conceptId/define'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.post(_uri('/concepts/$conceptId/define'), headers: h));
     return ConceptEntry.fromJson(_decodeMap(resp));
   }
 
   Future<void> deleteConcept(String conceptId) async {
-    final resp = await _client.delete(_uri('/concepts/$conceptId'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.delete(_uri('/concepts/$conceptId'), headers: h));
     if (resp.statusCode >= 400) throw ApiException(resp.statusCode, resp.body);
   }
 
@@ -446,10 +460,8 @@ class ApiClient {
   // ------------------------------------------------------------------------- //
 
   Future<GraphData> graph({double threshold = 0.55, int topK = 4}) async {
-    final resp = await _client.get(
-      _uri('/graph', {'threshold': threshold, 'top_k': topK}),
-      headers: _ownerHeader,
-    );
+    final resp = await _send((h) =>
+        _client.get(_uri('/graph', {'threshold': threshold, 'top_k': topK}), headers: h));
     return GraphData.fromJson(_decodeMap(resp));
   }
 
@@ -461,10 +473,10 @@ class ApiClient {
   /// Returns the reply plus the cards it was grounded on.
   Future<LibraryChatResult> libraryChat(
       List<Map<String, String>> messages) async {
-    final resp = await _client.post(
-      _uri('/library/chat'),
-      headers: {'content-type': 'application/json', ..._ownerHeader},
-      body: jsonEncode({'messages': messages}),
+    final resp = await _send(
+      (h) => _client.post(_uri('/library/chat'),
+          headers: h, body: jsonEncode({'messages': messages})),
+      extra: const {'content-type': 'application/json'},
     );
     final json = _decodeMap(resp);
     final sources = ((json['sources'] as List?) ?? const [])
@@ -483,7 +495,7 @@ class ApiClient {
   /// Restore this owner's saved library chat (docs/14) as [{'role','content'}]
   /// maps, oldest → newest. Empty when none saved.
   Future<List<Map<String, String>>> libraryChatHistory() async {
-    final resp = await _client.get(_uri('/library/chat'), headers: _ownerHeader);
+    final resp = await _send((h) => _client.get(_uri('/library/chat'), headers: h));
     return _decodeMessages(_decodeMap(resp)['messages']);
   }
 
@@ -494,10 +506,8 @@ class ApiClient {
   /// The reel-style knowledge feed: a shuffled stream of moments built from the
   /// owner's cards. Owner-scoped.
   Future<List<FeedItem>> feed({int limit = 40}) async {
-    final resp = await _client.get(
-      _uri('/feed', {'limit': limit}),
-      headers: _ownerHeader,
-    );
+    final resp =
+        await _send((h) => _client.get(_uri('/feed', {'limit': limit}), headers: h));
     return ((_decodeMap(resp)['items'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(FeedItem.fromJson)
@@ -507,10 +517,10 @@ class ApiClient {
   /// Surprising links between the owner's cards. [refresh] spends a little more
   /// LLM budget to surface fresh connections.
   Future<List<Connection>> connections({int limit = 12, bool refresh = false}) async {
-    final resp = await _client.get(
-      _uri('/connections', {'limit': limit, if (refresh) 'refresh': true}),
-      headers: _ownerHeader,
-    );
+    final resp = await _send((h) => _client.get(
+          _uri('/connections', {'limit': limit, if (refresh) 'refresh': true}),
+          headers: h,
+        ));
     return ((_decodeMap(resp)['connections'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(Connection.fromJson)
@@ -527,7 +537,8 @@ class ApiClient {
   /// subscription to disconnect early.
   Stream<PipelineEvent> streamCard(String cardId) async* {
     final request = http.Request('GET', _uri('/cards/$cardId/stream'))
-      ..headers['accept'] = 'text/event-stream';
+      ..headers['accept'] = 'text/event-stream'
+      ..headers.addAll(await _authHeader());
     final response = await _client.send(request);
     if (response.statusCode >= 400) {
       throw ApiException(response.statusCode, 'stream failed');
