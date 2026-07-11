@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
+import '../../../../data/services/auth_service.dart';
 import '../../../../data/services/local_ai/gemma_local_ai_service.dart';
 import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../../../../data/services/obsidian_export.dart';
@@ -35,7 +36,9 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<List<model.Card>> _cards;
   late Future<List<CatalogEntry>> _catalog;
+  late Future<QuotaStatus> _quota;
   bool _exporting = false;
+  bool _signingIn = false;
 
   // Hidden developer gate: tapping the version row seven times prompts for a
   // password before revealing the server-connection controls.
@@ -47,6 +50,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final repo = context.read<CardRepository>();
     _cards = repo.list();
     _catalog = repo.catalog().catchError((_) => <CatalogEntry>[]);
+    _quota = repo.api.quota();
   }
 
   @override
@@ -78,6 +82,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: 'Removes locally saved cards. They re-download when opened.',
             onTap: _confirmClear,
           ),
+          _quotaMeter(theme),
           const SizedBox(height: 24),
           _sectionLabel(theme, 'About'),
           _Tile(
@@ -95,13 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 24),
           _sectionLabel(theme, 'Account'),
-          _Tile(
-            icon: PhosphorIconsRegular.signOut,
-            title: 'Sign out',
-            subtitle: 'Clear your name and reset the app to the setup screen.',
-            onTap: _confirmSignOut,
-            destructive: true,
-          ),
+          _accountSection(theme),
         ],
       ),
       ),
@@ -290,6 +289,188 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (ok == true && mounted) {
       await context.read<AppController>().logout();
+    }
+  }
+
+  /// Quota meter — a nicety, never a blocker: hidden while loading or on any
+  /// error (unauthenticated, offline, backend down).
+  Widget _quotaMeter(ThemeData theme) {
+    return FutureBuilder<QuotaStatus>(
+      future: _quota,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done ||
+            snap.hasError ||
+            !snap.hasData) {
+          return const SizedBox.shrink();
+        }
+        final q = snap.data!;
+        return _Tile(
+          icon: PhosphorIconsRegular.gauge,
+          title: 'AI usage today',
+          subtitle:
+              '${q.cardsUsed}/${q.cardsLimit} cards · ${q.chatUsed}/${q.chatLimit} chats',
+          showChevron: false,
+        );
+      },
+    );
+  }
+
+  /// Signed-in-with-Google shows the account row; everyone else (anonymous or
+  /// not-yet-signed-in) gets the backup nudge. Sign out sits below either way.
+  Widget _accountSection(ThemeData theme) {
+    final user = context.watch<AppController>().authUser;
+    final signedIn = user != null && !user.isAnonymous;
+    return Column(
+      children: [
+        if (signedIn)
+          _accountRow(theme, user)
+        else
+          _backupBanner(theme),
+        _Tile(
+          icon: PhosphorIconsRegular.signOut,
+          title: 'Sign out',
+          subtitle: signedIn
+              ? 'Your cards stay safe in your account.'
+              : 'Clear your name and reset the app to the setup screen.',
+          onTap: _confirmSignOut,
+          destructive: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _accountRow(ThemeData theme, AuthUser user) {
+    final scheme = theme.colorScheme;
+    final source = (user.displayName?.trim().isNotEmpty ?? false)
+        ? user.displayName!.trim()
+        : (user.email?.trim() ?? '');
+    final initial = source.isNotEmpty ? source[0].toUpperCase() : '?';
+    final hasPhoto = user.photoUrl != null && user.photoUrl!.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          leading: CircleAvatar(
+            backgroundColor: scheme.primaryContainer,
+            foregroundColor: scheme.onPrimaryContainer,
+            backgroundImage: hasPhoto ? NetworkImage(user.photoUrl!) : null,
+            child: hasPhoto ? null : Text(initial),
+          ),
+          title: Text(user.displayName ?? 'Signed in',
+              style: theme.textTheme.titleMedium),
+          subtitle: user.email != null ? Text(user.email!) : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _backupBanner(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                PhosphorIcon(PhosphorIconsRegular.warningCircle,
+                    color: scheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text("Your library isn't backed up",
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Sign in with Google — if you uninstall or clear data, your cards are gone.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _signingIn ? null : _signInAndMaybeClaim,
+                icon: _signingIn
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const PhosphorIcon(PhosphorIconsRegular.googleLogo,
+                        size: 18),
+                label: const Text('Sign in'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Google sign-in from the backup banner; on success, offer to adopt the
+  /// legacy name-keyed library if the user still has a local name.
+  Future<void> _signInAndMaybeClaim() async {
+    setState(() => _signingIn = true);
+    final app = context.read<AppController>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await app.signInWithGoogle();
+    } catch (_) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text("Couldn't sign in. Try again.")));
+      return;
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+    if (!mounted) return;
+    final name = app.userName;
+    if (name != null && name.isNotEmpty) await _offerClaim(name);
+  }
+
+  Future<void> _offerClaim(String name) async {
+    final restore = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore your old library?'),
+        content: Text('Bring the cards you saved as "$name" into this account.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Not now')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (restore != true || !mounted) return;
+    final api = context.read<CardRepository>().api;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final n = await api.claimLegacyLibrary(name);
+      messenger.showSnackBar(SnackBar(
+          content: Text(n == 0 ? 'Nothing to restore' : 'Restored $n cards')));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(
+          content: Text(e.statusCode == 409
+              ? 'That name was already claimed.'
+              : 'Restore failed — try again')));
+    } catch (_) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Restore failed — try again')));
     }
   }
 }

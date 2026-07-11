@@ -87,6 +87,20 @@ class RabbitHoleStep {
   final List<String> threads;
 }
 
+/// Today's metered usage for the signed-in owner (profile quota meter).
+class QuotaStatus {
+  const QuotaStatus({
+    required this.cardsUsed,
+    required this.cardsLimit,
+    required this.chatUsed,
+    required this.chatLimit,
+  });
+  final int cardsUsed;
+  final int cardsLimit;
+  final int chatUsed;
+  final int chatLimit;
+}
+
 class ApiClient {
   ApiClient({
     String? baseUrl,
@@ -167,6 +181,34 @@ class ApiClient {
     if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
     final path = ref.startsWith('/') ? ref : '/$ref';
     return '$baseUrl$path';
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Account — quota meter + legacy library claim
+  // ------------------------------------------------------------------------- //
+
+  Future<QuotaStatus> quota() async {
+    final resp = await _send((h) => _client.get(_uri('/me/quota'), headers: h));
+    final json = _decodeMap(resp);
+    int pick(String kind, String field) =>
+        ((json[kind] as Map<String, dynamic>?)?[field] as num?)?.toInt() ?? 0;
+    return QuotaStatus(
+      cardsUsed: pick('cards', 'used'),
+      cardsLimit: pick('cards', 'limit'),
+      chatUsed: pick('chat', 'used'),
+      chatLimit: pick('chat', 'limit'),
+    );
+  }
+
+  /// Adopt the legacy name-keyed library under the current uid (first-claim-
+  /// wins). Returns the number of rows claimed; throws [ApiException] (409)
+  /// when that name was already taken by another uid.
+  Future<int> claimLegacyLibrary(String name) async {
+    final resp = await _send(
+      (h) => _client.post(_uri('/auth/claim'), headers: h, body: jsonEncode({'name': name})),
+      extra: const {'content-type': 'application/json'},
+    );
+    return (_decodeMap(resp)['claimed'] as num?)?.toInt() ?? 0;
   }
 
   // ------------------------------------------------------------------------- //

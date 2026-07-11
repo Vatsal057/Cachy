@@ -61,9 +61,10 @@ class AppController extends ChangeNotifier {
 
   Future<void> completeOnboarding() => _store.setSeenOnboarding(true);
 
-  /// Clears the user's name and onboarding flag so [RootGate] redirects back
-  /// to the name-entry screen on the next render cycle.
+  /// Signs out of Firebase and clears the user's name + onboarding flag so
+  /// [RootGate] redirects back to the name-entry screen on the next render.
   Future<void> logout() async {
+    await _auth.signOut();
     await _store.clearUser();
     notifyListeners();
   }
