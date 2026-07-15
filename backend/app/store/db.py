@@ -4,6 +4,7 @@ card row, not a table-per-block-type (docs/08). The jobs table is the queue."""
 from __future__ import annotations
 
 import difflib
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -486,8 +487,18 @@ def _ensure_engine():
     return _engine, _sessionmaker
 
 
+log = logging.getLogger("app.db")
+
+
 async def init_db() -> None:
     engine, _ = _ensure_engine()
+    # A silent SQLite fallback means a deploy quietly splits off its own local DB
+    # (data won't match Neon). Shout so a missing DATABASE_URL secret is obvious.
+    if str(engine.url).startswith("sqlite"):
+        log.warning(
+            "DATABASE_URL is SQLite (%s) — set it to the Neon postgres URL for a "
+            "shared/persistent database.", engine.url,
+        )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         if "postgresql" in str(conn.engine.url):

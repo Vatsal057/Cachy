@@ -15,7 +15,9 @@ RUN pip install --no-cache-dir .
 COPY app ./app
 
 ENV MEDIA_DIR=/data/downloads
-ENV DATABASE_URL=sqlite+aiosqlite:////data/cachy.db
+# DATABASE_URL is intentionally NOT set here — set it as an HF Space secret to the
+# Neon postgres URL (postgresql+asyncpg://...). Never hardcode it (holds a
+# password). Without the secret the app falls back to ephemeral local SQLite.
 RUN mkdir -p /data/downloads
 
 # HF Spaces expects the app on 7860.
