@@ -7,10 +7,12 @@ export const CACHY = {
   email: "hello@cachy.app",
   // Distribution: sideloaded APK + hosted web app (no app stores).
   download: {
-    apk: "https://github.com/cachy-app/cachy/releases/latest",
+    // Pinned to the release tag on purpose: the repo also hosts the model
+    // release, so `releases/latest` is unreliable. Bump on each app version.
+    apk: "https://github.com/Vatsal057/Cachy/releases/download/v1.0.0/cachy.apk",
     web: "https://cachy.app/app",
   },
-  repo: "https://github.com/cachy-app/cachy",
+  repo: "https://github.com/Vatsal057/Cachy",
 } as const;
 
 export const NAV_LINKS = [
