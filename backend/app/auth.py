@@ -1,45 +1,47 @@
 """Verified identity: Firebase ID token -> uid.
 
 The client sends `Authorization: Bearer <ID token>`; we verify the signature
-against Google's public certs (firebase-admin handles fetching/rotation).
-No service-account secret is needed for verification — only the project id.
+against Google's public certs via `google-auth`. No service-account secret is
+needed for verification — only the project id (the token's expected audience).
+firebase-admin is deliberately not used here: its client construction eagerly
+loads Application Default Credentials, which we don't have in a free deploy.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
 from app.config import get_settings
 
 log = logging.getLogger("app.auth")
 
-_initialized = False
-_init_lock = threading.Lock()
+# Shared HTTP transport; caches Google's public signing certs across requests.
+_request = google_requests.Request()
 
 
 def _verify(token: str) -> dict:
-    """Verify a Firebase ID token, initializing the SDK lazily (once).
+    """Verify a Firebase ID token against Google's public certs.
 
-    Blocking (cert fetch + crypto). Callers in async paths must run this via
-    [verify_async] / to_thread so it never stalls the event loop (M3)."""
-    global _initialized
-    import firebase_admin
-    from firebase_admin import auth as fb_auth
+    Checks signature, expiry, and that `aud` == the Firebase project id. Blocking
+    (cert fetch + crypto). Callers in async paths must run this via [verify_async]
+    / to_thread so it never stalls the event loop (M3). Raises ValueError on any
+    invalid/expired/wrong-audience token."""
+    return google_id_token.verify_firebase_token(
+        token, _request, audience=get_settings().firebase_project_id
+    )
 
-    if not _initialized:
-        # Two concurrent first requests must not both initialize_app (raises).
-        with _init_lock:
-            if not _initialized:
-                firebase_admin.initialize_app(
-                    options={"projectId": get_settings().firebase_project_id}
-                )
-                _initialized = True
-    return fb_auth.verify_id_token(token)
+
+def uid_of(decoded: dict) -> str | None:
+    """The Firebase uid from verified claims. google-auth exposes it as
+    `sub`/`user_id`; firebase-admin (and test mocks) as `uid`."""
+    uid = decoded.get("uid") or decoded.get("user_id") or decoded.get("sub")
+    return str(uid) if uid else None
 
 
 async def verify_async(token: str) -> dict:
@@ -59,7 +61,10 @@ async def get_owner(authorization: str | None = Header(None)) -> str:
     except Exception as exc:  # firebase raises several exc types; all mean 401
         log.info("token verification failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=401, detail="invalid or expired token")
-    return str(decoded["uid"])
+    uid = uid_of(decoded)
+    if not uid:
+        raise HTTPException(status_code=401, detail="token missing subject")
+    return uid
 
 
 OwnerDep = Annotated[str, Depends(get_owner)]

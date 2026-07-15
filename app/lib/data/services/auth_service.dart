@@ -3,6 +3,7 @@
 library;
 
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthUser {
@@ -72,6 +73,10 @@ class FirebaseAuthService implements AuthService {
   Future<AuthUser> signInWithGoogle({
     Future<void> Function(String guestIdToken)? mergeGuestData,
   }) async {
+    // The `google_sign_in` plugin's imperative `signIn()` is unsupported on web
+    // (throws UnimplementedError); Firebase's popup flow handles Google there.
+    if (kIsWeb) return _signInWithGoogleWeb(mergeGuestData: mergeGuestData);
+
     final account = await _google.signIn();
     if (account == null) throw fb.FirebaseAuthException(code: 'canceled');
     final gAuth = await account.authentication;
@@ -91,17 +96,52 @@ class FirebaseAuthService implements AuthService {
         // then sign into the existing account.
         final guestToken = await current.getIdToken();
         cred = await _auth.signInWithCredential(credential);
-        if (guestToken != null && guestToken.isNotEmpty && mergeGuestData != null) {
-          // Best-effort: a failed merge must not block sign-in.
-          try {
-            await mergeGuestData(guestToken);
-          } catch (_) {}
-        }
+        await _maybeMergeGuest(guestToken, mergeGuestData);
       }
     } else {
       cred = await _auth.signInWithCredential(credential);
     }
     return _map(cred.user)!;
+  }
+
+  /// Web variant: Firebase drives the OAuth popup directly, so no
+  /// `google_sign_in` account/token round-trip is needed. Mirrors the mobile
+  /// link-vs-switch semantics via `linkWithPopup` / `signInWithPopup`.
+  Future<AuthUser> _signInWithGoogleWeb({
+    Future<void> Function(String guestIdToken)? mergeGuestData,
+  }) async {
+    final provider = fb.GoogleAuthProvider();
+    final current = _auth.currentUser;
+    fb.UserCredential cred;
+    if (current != null && current.isAnonymous) {
+      try {
+        cred = await current.linkWithPopup(provider); // uid preserved
+      } on fb.FirebaseAuthException catch (e) {
+        if (e.code != 'credential-already-in-use') rethrow;
+        final resolved = e.credential;
+        if (resolved == null) rethrow;
+        final guestToken = await current.getIdToken();
+        cred = await _auth.signInWithCredential(resolved);
+        await _maybeMergeGuest(guestToken, mergeGuestData);
+      }
+    } else {
+      cred = await _auth.signInWithPopup(provider);
+    }
+    return _map(cred.user)!;
+  }
+
+  /// Best-effort fold of a guest's server-side data into the account it just
+  /// switched to. A failed merge must never block sign-in.
+  Future<void> _maybeMergeGuest(
+    String? guestToken,
+    Future<void> Function(String guestIdToken)? mergeGuestData,
+  ) async {
+    if (guestToken == null || guestToken.isEmpty || mergeGuestData == null) {
+      return;
+    }
+    try {
+      await mergeGuestData(guestToken);
+    } catch (_) {}
   }
 
   @override

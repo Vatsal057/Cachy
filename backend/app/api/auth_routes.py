@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.auth import OwnerDep, verify_async
+from app.auth import OwnerDep, uid_of, verify_async
 from app.config import get_settings
 from app.store import db
 
@@ -63,7 +63,9 @@ async def merge(req: MergeRequest, owner_id: OwnerDep) -> dict:
         raise HTTPException(status_code=401, detail="invalid guest token")
     if decoded.get("firebase", {}).get("sign_in_provider") != "anonymous":
         raise HTTPException(status_code=403, detail="source must be a guest account")
-    from_uid = str(decoded["uid"])
+    from_uid = uid_of(decoded)
+    if not from_uid:
+        raise HTTPException(status_code=401, detail="invalid guest token")
     async with db.session() as s:
         moved = await db.merge_owner(s, from_uid=from_uid, to_uid=owner_id)
     return {"merged": moved}

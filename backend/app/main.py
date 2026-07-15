@@ -83,12 +83,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "internal error"})
 
 
-# CORS: set CORS_ORIGINS (comma-separated) to the real web origins in deployment;
-# defaults to the local dev origin.
+# CORS: set CORS_ORIGINS (comma-separated) to the real web origins in deployment.
+# Empty (dev) falls back to a regex allowing any localhost/127.0.0.1 port, since
+# `flutter run -d chrome` serves the web app on a random ephemeral port.
+_cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
-    or ["http://localhost:8000"],
+    allow_origins=_cors_origins,
+    allow_origin_regex=None if _cors_origins else r"http://(localhost|127\.0\.0\.1):\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
