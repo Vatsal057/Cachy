@@ -22,7 +22,7 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
-const SITE_URL = "https://cachy.app";
+const SITE_URL = "https://cachy.vatxzz.workers.dev";
 const DESCRIPTION =
   "Cachy turns the reels, videos, articles, and PDFs you send into knowledge you can search, connect, and actually remember. Send it. Forget about it.";
 
