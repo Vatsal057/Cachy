@@ -42,10 +42,12 @@ abstract class AuthService {
 class FirebaseAuthService implements AuthService {
   FirebaseAuthService({fb.FirebaseAuth? auth, GoogleSignIn? google})
       : _auth = auth ?? fb.FirebaseAuth.instance,
-        _google = google ?? GoogleSignIn();
+        // On web, `google_sign_in` asserts a client-id at construction and web
+        // sign-in goes through Firebase's popup instead — so never build it there.
+        _google = google ?? (kIsWeb ? null : GoogleSignIn());
 
   final fb.FirebaseAuth _auth;
-  final GoogleSignIn _google;
+  final GoogleSignIn? _google;
 
   AuthUser? _map(fb.User? u) => u == null
       ? null
@@ -77,7 +79,7 @@ class FirebaseAuthService implements AuthService {
     // (throws UnimplementedError); Firebase's popup flow handles Google there.
     if (kIsWeb) return _signInWithGoogleWeb(mergeGuestData: mergeGuestData);
 
-    final account = await _google.signIn();
+    final account = await _google!.signIn(); // non-null: web returns above
     if (account == null) throw fb.FirebaseAuthException(code: 'canceled');
     final gAuth = await account.authentication;
     final credential = fb.GoogleAuthProvider.credential(
@@ -150,7 +152,7 @@ class FirebaseAuthService implements AuthService {
 
   @override
   Future<void> signOut() async {
-    await _google.signOut();
+    await _google?.signOut();
     await _auth.signOut();
   }
 }

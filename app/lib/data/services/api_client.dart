@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../../domain/models/artifact.dart';
@@ -202,7 +203,14 @@ class ApiClient {
   String resolveMedia(String ref) {
     if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
     final path = ref.startsWith('/') ? ref : '/$ref';
-    return '$baseUrl$path';
+    final url = '$baseUrl$path';
+    // Web <img> tags can't send an Authorization header, so the auth-gated
+    // /media proxy is reached with the token as a query param instead. (Mobile
+    // uses mediaHeaders.) The token is URL-safe (base64url JWT); no encoding.
+    if (kIsWeb && path.startsWith('/media/') && _lastToken != null) {
+      return '$url?token=$_lastToken';
+    }
+    return url;
   }
 
   // ------------------------------------------------------------------------- //

@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from app.auth import OwnerDep
+from app.auth import MediaOwnerDep
 from app.config import get_settings
 from app.store import db
 
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/media", tags=["media"])
 
 
 @router.get("/{card_id}/{filename}")
-async def get_media(card_id: str, filename: str, owner_id: OwnerDep) -> Any:
+async def get_media(card_id: str, filename: str, owner_id: MediaOwnerDep) -> Any:
     """Stream one media file for a card the caller owns.
 
     404 for unknown or non-owned cards (never reveal another owner's media);

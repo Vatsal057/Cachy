@@ -13,7 +13,7 @@ import asyncio
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Query
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
@@ -68,3 +68,34 @@ async def get_owner(authorization: str | None = Header(None)) -> str:
 
 
 OwnerDep = Annotated[str, Depends(get_owner)]
+
+
+async def get_owner_query_or_header(
+    authorization: str | None = Header(None),
+    token: str | None = Query(None),
+) -> str:
+    """Like [get_owner] but also accepts the token as a `?token=` query param.
+
+    Browser `<img>` tags can't send an Authorization header, so web thumbnails
+    fetch the auth-gated /media proxy with the token in the query string."""
+    if not get_settings().firebase_project_id:
+        raise HTTPException(status_code=503, detail="auth not configured")
+    raw: str | None = None
+    if authorization and authorization.startswith("Bearer "):
+        raw = authorization.removeprefix("Bearer ").strip()
+    elif token:
+        raw = token.strip()
+    if not raw:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    try:
+        decoded = await verify_async(raw)
+    except Exception as exc:
+        log.info("token verification failed: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=401, detail="invalid or expired token")
+    uid = uid_of(decoded)
+    if not uid:
+        raise HTTPException(status_code=401, detail="token missing subject")
+    return uid
+
+
+MediaOwnerDep = Annotated[str, Depends(get_owner_query_or_header)]
