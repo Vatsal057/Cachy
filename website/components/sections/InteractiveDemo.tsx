@@ -46,10 +46,16 @@ export function InteractiveDemo() {
     setActive(idx);
   });
 
-  if (reduced) return <StaticDemo />;
-
   return (
     <section id="demo" className="scroll-mt-20">
+      {/* Mobile + reduced-motion: static list — no 5-screen pinned-scroll tax. */}
+      <div className={reduced ? undefined : "lg:hidden"}>
+        <StaticDemo />
+      </div>
+
+      {/* Desktop only: pinned scrollytelling, where the long scroll reads well. */}
+      {!reduced && (
+      <div className="hidden lg:block">
       <Container>
         <div className="mx-auto max-w-2xl pt-24 text-center sm:pt-32">
           <h2 className="text-display text-[clamp(2rem,4.5vw,3.25rem)] font-semibold text-ink">
@@ -114,6 +120,8 @@ export function InteractiveDemo() {
           </Container>
         </div>
       </div>
+      </div>
+      )}
     </section>
   );
 }
@@ -150,10 +158,10 @@ function DemoStage({ active }: { active: number }) {
   );
 }
 
-/** Reduced-motion: all eight beats presented statically. */
+/** Static list of all eight beats — used on mobile and under reduced-motion. */
 function StaticDemo() {
   return (
-    <section id="demo" className="scroll-mt-20 py-24 sm:py-32">
+    <div className="py-24 sm:py-32">
       <Container>
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-display text-[clamp(2rem,4.5vw,3.25rem)] font-semibold text-ink">
@@ -183,6 +191,6 @@ function StaticDemo() {
           ))}
         </ol>
       </Container>
-    </section>
+    </div>
   );
 }

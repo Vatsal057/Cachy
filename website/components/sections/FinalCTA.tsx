@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Globe } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { Reveal } from "@/components/ui/Reveal";
@@ -18,14 +18,18 @@ export function FinalCTA() {
           <p className="mt-5 max-w-md text-lg leading-relaxed text-muted">
             {CACHY.tagline} Cachy keeps the good stuff so you don&apos;t have to.
           </p>
-          <div className="mt-9">
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <Button href={CACHY.download.apk} external size="lg">
               Get Cachy
               <ArrowRight size={18} />
             </Button>
+            <Button href={CACHY.download.web} external variant="secondary" size="lg">
+              <Globe size={16} />
+              Try on web
+            </Button>
           </div>
           <p className="mt-4 font-mono text-xs text-muted">
-            Free · Android APK · no app store needed
+            Free · Android APK + web · no app store needed
           </p>
         </Reveal>
       </Container>

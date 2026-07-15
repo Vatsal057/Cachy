@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, Play } from "lucide-react";
+import { ArrowRight, Globe, Play } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { PhoneMockup } from "@/components/ui/PhoneMockup";
@@ -79,7 +79,11 @@ export function Hero() {
                 Get Cachy
                 <ArrowRight size={18} />
               </Button>
-              <Button href="#demo" variant="secondary" size="lg">
+              <Button href={CACHY.download.web} external variant="secondary" size="lg">
+                <Globe size={16} />
+                Try on web
+              </Button>
+              <Button href="#demo" variant="ghost" size="lg">
                 <Play size={16} />
                 Watch demo
               </Button>
