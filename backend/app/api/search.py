@@ -47,7 +47,10 @@ async def search(
 async def _semantic(q: str, limit: int, owner_id: str | None) -> list[Card] | None:
     """Cosine rank over stored embeddings. None if semantic can't run (caller
     falls back to full-text)."""
-    query_vec = embeddings.embed(q)
+    import asyncio
+
+    # embed() is a network call; keep it off the event loop (B6).
+    query_vec = await asyncio.to_thread(embeddings.embed, q)
     if not query_vec:
         return None
     async with db.session() as session:
@@ -55,18 +58,23 @@ async def _semantic(q: str, limit: int, owner_id: str | None) -> list[Card] | No
         stmt = stmt.where(db.CardRow.owner_id == owner_id)
         rows = (await session.execute(stmt)).scalars().all()
 
-    scored: list[tuple[float, db.CardRow]] = []
-    for r in rows:
-        vec = r.embedding
-        if not vec:
-            continue
-        score = embeddings.cosine(query_vec, vec)
-        if score > 0.0:
-            scored.append((score, r))
-    if not scored:
+    def _rank() -> list[db.CardRow]:
+        # Pure-Python cosine over every card row — run in a thread (B6).
+        scored: list[tuple[float, db.CardRow]] = []
+        for r in rows:
+            vec = r.embedding
+            if not vec:
+                continue
+            score = embeddings.cosine(query_vec, vec)
+            if score > 0.0:
+                scored.append((score, r))
+        scored.sort(key=lambda s: s[0], reverse=True)
+        return [r for _, r in scored[:limit]]
+
+    top = await asyncio.to_thread(_rank)
+    if not top:
         return None
-    scored.sort(key=lambda s: s[0], reverse=True)
-    return [r.to_card() for _, r in scored[:limit]]
+    return [r.to_card() for r in top]
 
 
 async def _full_text(q: str, limit: int, owner_id: str | None) -> list[Card]:

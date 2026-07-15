@@ -1,11 +1,21 @@
-"""Temporary migration endpoint (delete ~1 month after auth ships)."""
+"""Temporary migration endpoint (delete ~1 month after auth ships).
+
+`/claim` (adopt pre-auth rows keyed by display name) is a trust-on-first-use land
+grab: any signed-in user — including a just-minted anonymous guest — can claim any
+legacy user's entire library by guessing their display name. There is no way to
+prove ownership of a pre-auth name. So it is now DISABLED BY DEFAULT (M11) and
+gated behind `LEGACY_CLAIM_ENABLED`; the owner flips it on only for a brief,
+deliberate migration window and back off afterwards. The guest→account `/merge`
+fold, which proves ownership via the source token, stays always-on.
+"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.auth import OwnerDep, _verify
+from app.auth import OwnerDep, verify_async
+from app.config import get_settings
 from app.store import db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -21,7 +31,11 @@ class MergeRequest(BaseModel):
 
 @router.post("/claim")
 async def claim(req: ClaimRequest, owner_id: OwnerDep) -> dict:
-    """Adopt legacy rows keyed by the pre-auth display name. First claim wins."""
+    """Adopt legacy rows keyed by the pre-auth display name. First claim wins.
+
+    Disabled unless `LEGACY_CLAIM_ENABLED` is set — see module docstring (M11)."""
+    if not get_settings().legacy_claim_enabled:
+        raise HTTPException(status_code=404, detail="not found")
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name required")
@@ -44,7 +58,7 @@ async def merge(req: MergeRequest, owner_id: OwnerDep) -> dict:
     if not token:
         raise HTTPException(status_code=422, detail="guest_token required")
     try:
-        decoded = _verify(token)
+        decoded = await verify_async(token)
     except Exception:
         raise HTTPException(status_code=401, detail="invalid guest token")
     if decoded.get("firebase", {}).get("sign_in_provider") != "anonymous":

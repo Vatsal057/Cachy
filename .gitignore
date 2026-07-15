@@ -3,13 +3,13 @@
 .AppleDouble
 .LSOverride
 Thumbs.db
-
+NOTICE
 # IDE / local tools
 .vscode/
 .idea/
 *.swp
 *.swo
-
+AUDIT.md
 # Python
 __pycache__/
 *.pyc

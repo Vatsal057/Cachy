@@ -40,15 +40,21 @@ async def get_media(card_id: str, filename: str, owner_id: OwnerDep) -> Any:
     if not settings.hf_media_enabled:
         raise HTTPException(status_code=404, detail="media not configured")
 
+    import asyncio
+
     from huggingface_hub import hf_hub_download
     from huggingface_hub.utils import EntryNotFoundError
 
     try:
-        local_path = hf_hub_download(
-            repo_id=settings.hf_media_repo,
-            repo_type="dataset",
-            filename=f"media/{card_id}/{filename}",
-            token=settings.hf_api_key,
+        # hf_hub_download is blocking (network + disk); keep it off the event loop
+        # so one media fetch doesn't stall every other request (M4).
+        local_path = await asyncio.to_thread(
+            lambda: hf_hub_download(
+                repo_id=settings.hf_media_repo,
+                repo_type="dataset",
+                filename=f"media/{card_id}/{filename}",
+                token=settings.hf_api_key,
+            )
         )
     except EntryNotFoundError:
         raise HTTPException(status_code=404, detail="not found")

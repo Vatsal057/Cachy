@@ -37,7 +37,10 @@ class _Bus:
     )
 
     def subscribe(self, card_id: str) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue()
+        # Bounded so a stalled SSE consumer can't accumulate events unbounded in
+        # memory (N19). A pipeline emits only a handful of events per card, so
+        # 64 is ample; overflow drops the OLDEST (see publish).
+        q: asyncio.Queue = asyncio.Queue(maxsize=64)
         self.subscribers[card_id].add(q)
         return q
 
@@ -50,7 +53,19 @@ class _Bus:
 
     def publish(self, event: StageEvent) -> None:
         for q in list(self.subscribers.get(event.card_id, ())):
-            q.put_nowait(event)
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                # Stalled consumer: drop the oldest event to make room so the
+                # newest (often the terminal done/failed) still lands (N19).
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    q.put_nowait(event)
+                except asyncio.QueueFull:
+                    pass
 
 
 _bus = _Bus()

@@ -132,7 +132,7 @@ def _call_groq(messages: list[dict]) -> str | None:
 
         client = Groq(api_key=settings.groq_api_key)
         resp = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",  # free tier, matches structuring
+            model=settings.groq_llm_model,  # free tier, matches structuring
             messages=messages,
             temperature=0.3,
             max_tokens=_MAX_TOKENS,

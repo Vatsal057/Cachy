@@ -53,7 +53,10 @@ async def retrieve(question: str, owner_id: str, limit: int = _TOP_K) -> list[Ca
 
 
 async def _retrieve_semantic(question: str, owner_id: str, limit: int) -> list[Card]:
-    query_vec = embeddings.embed(question)
+    import asyncio
+
+    # embed() is a network call; keep it off the event loop (B6).
+    query_vec = await asyncio.to_thread(embeddings.embed, question)
     if not query_vec:
         return []
     async with db.session() as session:
@@ -64,14 +67,20 @@ async def _retrieve_semantic(question: str, owner_id: str, limit: int) -> list[C
                 .where(db.CardRow.owner_id == owner_id)
             )
         ).scalars().all()
-    scored = [
-        (embeddings.cosine(query_vec, r.embedding), r)
-        for r in rows
-        if r.embedding
-    ]
-    scored = [s for s in scored if s[0] > 0.0]
-    scored.sort(key=lambda s: s[0], reverse=True)
-    return [r.to_card() for _, r in scored[:limit]]
+
+    def _rank() -> list[db.CardRow]:
+        # Pure-Python cosine over every card row — run in a thread (B6).
+        scored = [
+            (embeddings.cosine(query_vec, r.embedding), r)
+            for r in rows
+            if r.embedding
+        ]
+        scored = [s for s in scored if s[0] > 0.0]
+        scored.sort(key=lambda s: s[0], reverse=True)
+        return [r for _, r in scored[:limit]]
+
+    top = await asyncio.to_thread(_rank)
+    return [r.to_card() for r in top]
 
 
 async def _retrieve_text(question: str, owner_id: str, limit: int) -> list[Card]:
@@ -183,7 +192,7 @@ def _call_groq(messages: list[dict]) -> str | None:
 
         client = Groq(api_key=settings.groq_api_key)
         resp = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model=settings.groq_llm_model,
             messages=messages,
             temperature=0.3,
             max_tokens=_MAX_TOKENS,

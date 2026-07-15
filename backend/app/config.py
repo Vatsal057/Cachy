@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # CORS_ORIGINS is comma-separated (empty -> localhost dev default).
     admin_token: str = ""
     cors_origins: str = ""
+    # Legacy pre-auth library claim (/auth/claim). Off by default — it is a
+    # trust-on-first-use land grab (M11). Enable only for a brief migration window.
+    legacy_claim_enabled: bool = False
 
     # transcription
     whisper_backend: str = "groq"  # none | groq

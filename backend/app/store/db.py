@@ -345,17 +345,55 @@ def _today() -> str:
 async def spend_usage(
     db_session: AsyncSession, *, owner_id: str, kind: str, limit: int
 ) -> tuple[bool, int]:
-    """Increment today's counter unless at limit. Returns (allowed, used_after)."""
+    """Atomically increment today's counter unless at limit. Returns (allowed,
+    used_after).
+
+    Uses a single guarded `UPDATE ... WHERE count < limit RETURNING count` so
+    concurrent requests can't both read the same count and overspend (M2). Works
+    on SQLite (>=3.35) and Postgres alike.
+    """
+    from sqlalchemy.exc import IntegrityError
+
     day = _today()
-    row = await db_session.get(UsageRow, (owner_id, day, kind))
-    if row is None:
-        row = UsageRow(owner_id=owner_id, day=day, kind=kind, count=0)
-        db_session.add(row)
-    if row.count >= limit:
-        return False, row.count
-    row.count += 1
-    await db_session.commit()
-    return True, row.count
+    if limit <= 0:
+        return False, 0
+
+    guarded = (
+        update(UsageRow)
+        .where(
+            UsageRow.owner_id == owner_id,
+            UsageRow.day == day,
+            UsageRow.kind == kind,
+            UsageRow.count < limit,
+        )
+        .values(count=UsageRow.count + 1)
+        .returning(UsageRow.count)
+    )
+
+    new_count = (await db_session.execute(guarded)).scalar_one_or_none()
+    if new_count is not None:
+        await db_session.commit()
+        return True, new_count
+
+    # UPDATE matched nothing: the row is missing (first spend today) or at limit.
+    existing = await db_session.get(UsageRow, (owner_id, day, kind))
+    if existing is not None:
+        return False, existing.count
+
+    # First spend today — create at count=1. A concurrent creator may win the
+    # race (PK conflict); if so, retry the atomic guarded update once.
+    db_session.add(UsageRow(owner_id=owner_id, day=day, kind=kind, count=1))
+    try:
+        await db_session.commit()
+        return True, 1
+    except IntegrityError:
+        await db_session.rollback()
+        new_count = (await db_session.execute(guarded)).scalar_one_or_none()
+        if new_count is not None:
+            await db_session.commit()
+            return True, new_count
+        current = await db_session.get(UsageRow, (owner_id, day, kind))
+        return False, current.count if current is not None else limit
 
 
 async def store_raw_bundle(
@@ -427,10 +465,13 @@ def _normalize_url(url: str) -> tuple[str, dict]:
         try:
             import certifi
             ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+        except ImportError as exc:
+            # Never silently downgrade DB TLS to unverified (N2) — a MITM on the
+            # Postgres connection would leak every card. certifi is a hard dep.
+            raise RuntimeError(
+                "certifi is required for a TLS (sslmode=) database connection; "
+                "install certifi or drop sslmode from DATABASE_URL"
+            ) from exc
         connect_args["ssl"] = ctx
         url = re.sub(r"[?&]sslmode=[^&]*", "", url).rstrip("?").rstrip("&")
     return url, connect_args

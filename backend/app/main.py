@@ -64,8 +64,12 @@ app = FastAPI(title="Cachy", version="0.1.0", lifespan=lifespan)
 
 async def require_admin(x_admin_token: str | None = Header(None)) -> None:
     """Gate for owner-only endpoints; unset ADMIN_TOKEN disables them entirely."""
+    import hmac
+
     expected = get_settings().admin_token
-    if not expected or x_admin_token != expected:
+    if not expected or not x_admin_token or not hmac.compare_digest(
+        x_admin_token, expected
+    ):
         raise HTTPException(status_code=401, detail="admin token required")
 
 

@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from app.api import auth_routes
+from app import auth
 from app.auth import get_owner
 from app.main import app
 from app.store import db
@@ -20,8 +20,9 @@ async def test_merge_folds_guest_rows_into_account(client, monkeypatch) -> None:
     # Caller (Bearer) is the destination Google account.
     app.dependency_overrides[get_owner] = lambda: "google-uid"
     # guest_token verifies to an anonymous guest uid.
+    # verify_async wraps auth._verify via to_thread; patch the underlying fn.
     monkeypatch.setattr(
-        auth_routes,
+        auth,
         "_verify",
         lambda _t: {"uid": "guest-uid", "firebase": {"sign_in_provider": "anonymous"}},
     )
@@ -37,7 +38,7 @@ async def test_merge_folds_guest_rows_into_account(client, monkeypatch) -> None:
 async def test_merge_rejects_non_anonymous_source(client, monkeypatch) -> None:
     app.dependency_overrides[get_owner] = lambda: "google-uid"
     monkeypatch.setattr(
-        auth_routes,
+        auth,
         "_verify",
         lambda _t: {"uid": "other-real-uid", "firebase": {"sign_in_provider": "google.com"}},
     )

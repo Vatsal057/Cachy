@@ -27,7 +27,12 @@ from urllib.parse import urlparse, urlunparse
 
 import requests
 
+from app.pipeline.ingestion import net_guard
+
 log = logging.getLogger("ingestion.article")
+
+# Cap fetched HTML so a giant page can't exhaust memory (M5).
+_MAX_HTML_BYTES = 10 * 1024 * 1024  # 10 MB
 
 _MIN_CHARS = 200
 
@@ -326,6 +331,13 @@ def _fetch_substack(url: str, html: Optional[str] = None) -> ArticleResult | Non
 def fetch_article(url: str) -> ArticleResult | None:
     """Fetch + extract a readable article from `url`. Returns None on any failure
     or if the extracted body is too thin to be a real article."""
+    # Reject non-http(s) / private-host URLs before any fetch (N17 SSRF).
+    try:
+        net_guard.check_url(url)
+    except net_guard.UnsafeUrlError as e:
+        log.info("article fetch rejected unsafe url %s: %s", url, e)
+        return None
+
     u = url.lower()
     if "reddit.com" in u:
         return _fetch_reddit(url)
@@ -333,11 +345,18 @@ def fetch_article(url: str) -> ArticleResult | None:
         return _fetch_twitter(url)
 
     try:
-        resp = requests.get(url, headers=_HEADERS, timeout=20, allow_redirects=True)
-        downloaded = resp.text
+        resp = requests.get(
+            url, headers=_HEADERS, timeout=20, allow_redirects=True, stream=True
+        )
+        # Cap the body so a giant page can't exhaust memory (M5).
+        raw = net_guard.capped_content(resp, max_bytes=_MAX_HTML_BYTES)
+        downloaded = raw.decode(resp.encoding or "utf-8", errors="replace")
         if not downloaded:
             log.info("article fetch empty for %s (status=%s)", url, resp.status_code)
             return None
+    except net_guard.DownloadTooLargeError as e:
+        log.info("article fetch too large for %s: %s", url, e)
+        return None
     except Exception as e:  # noqa: BLE001
         log.info("article fetch failed for %s: %s", url, e)
         return None

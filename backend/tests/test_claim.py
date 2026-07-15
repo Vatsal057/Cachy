@@ -1,6 +1,11 @@
-"""First-claim-wins migration of legacy name-keyed rows."""
+"""First-claim-wins migration of legacy name-keyed rows.
+
+/auth/claim is off by default (M11 — it's a trust-on-first-use land grab); these
+tests exercise its mechanics with the migration window explicitly opened.
+"""
 
 from app.auth import get_owner
+from app.config import get_settings
 from app.main import app
 from app.store import db
 
@@ -11,7 +16,8 @@ async def _seed_legacy_card(name: str) -> None:
         await s.commit()
 
 
-async def test_claim_repoints_rows(client) -> None:
+async def test_claim_repoints_rows(client, monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "legacy_claim_enabled", True)
     await _seed_legacy_card("Vatsal")
     app.dependency_overrides[get_owner] = lambda: "uid-new"
     resp = await client.post("/auth/claim", json={"name": "Vatsal"})

@@ -106,3 +106,30 @@ def upload_file(local_path: str, card_id: str) -> str | None:
     except Exception as exc:
         log.warning("HF media upload failed for %s: %s", local_path, exc)
         return None
+
+
+def delete_remote_media(card_id: str) -> None:
+    """Delete a card's entire media folder from the HF Dataset repo (N15).
+
+    Called on card deletion so thumbnails/keyframes don't accumulate forever.
+    Best-effort: a missing folder or transient failure is logged, never raised —
+    the local delete has already succeeded and orphaned bytes are not fatal."""
+    s = get_settings()
+    if not s.hf_media_enabled:
+        return
+    from huggingface_hub import HfApi
+    from huggingface_hub.utils import HfHubHTTPError
+
+    try:
+        HfApi(token=s.hf_api_key).delete_folder(
+            path_in_repo=f"media/{card_id}",
+            repo_id=s.hf_media_repo,
+            repo_type="dataset",
+            commit_message=f"remove media for deleted card {card_id}",
+        )
+    except HfHubHTTPError as exc:
+        # 404 = folder already gone (nothing was ever uploaded) — not an error.
+        if getattr(exc.response, "status_code", None) != 404:
+            log.warning("HF media delete failed for %s: %s", card_id, exc)
+    except Exception as exc:  # noqa: BLE001 — orphaned remote bytes are non-fatal
+        log.warning("HF media delete failed for %s: %s", card_id, exc)

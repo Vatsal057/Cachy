@@ -2,10 +2,8 @@ import json
 import logging
 import re
 import shutil
-import ssl
 import time
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
@@ -13,7 +11,12 @@ import instaloader
 import requests
 import yt_dlp
 
-ssl._create_default_https_context = ssl._create_unverified_context
+from app.pipeline.ingestion import net_guard
+
+# NOTE: TLS verification is NOT disabled process-wide anymore (that was a
+# security hole — every stdlib HTTPS call in the process became MITM-able).
+# `requests`-based scrapers verify normally; yt-dlp's lenient TLS (some CDNs
+# serve mismatched certs) is scoped to its own opts via `nocheckcertificate`.
 log = logging.getLogger("ingestion.resolvers")
 
 
@@ -44,6 +47,9 @@ def download_content(
     Returns:
         Tuple of (media_type, data_path_or_list, caption).
     """
+    # Reject non-http(s) / private-host URLs before any fetch (N17 SSRF).
+    net_guard.check_url(url)
+
     # 1. Try keyless scrapers first (in cascade order)
     keyless_funcs = [
         ("vidssave", _download_vidssave),
@@ -123,10 +129,7 @@ def _download_vidssave(
                     )
                     if video_response.status_code == 200:
                         target_path.parent.mkdir(parents=True, exist_ok=True)
-                        with target_path.open("wb") as f:
-                            for chunk in video_response.iter_content(chunk_size=65536):
-                                if chunk:
-                                    f.write(chunk)
+                        net_guard.stream_to_file(video_response, target_path)
                         if target_path.exists() and target_path.stat().st_size > 0:
                             return "video", str(target_path), caption
                     else:
@@ -147,9 +150,9 @@ def _download_vidssave(
                                 img_url, headers={"user-agent": headers["user-agent"]},
                                 timeout=(10, 20),
                             )
-                            if img_resp.status_code == 200 and img_resp.content:
+                            if img_resp.status_code == 200:
                                 img_path.parent.mkdir(parents=True, exist_ok=True)
-                                img_path.write_bytes(img_resp.content)
+                                img_path.write_bytes(net_guard.capped_content(img_resp))
                                 if img_path.stat().st_size > 0:
                                     saved_paths.append(str(img_path))
                         except Exception as img_err:
@@ -200,10 +203,7 @@ def _download_savethevideo(
                 video_response = requests.get(video_url, stream=True, timeout=60)
                 if video_response.status_code == 200:
                     target_path.parent.mkdir(parents=True, exist_ok=True)
-                    with target_path.open("wb") as f:
-                        for chunk in video_response.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
+                    net_guard.stream_to_file(video_response, target_path)
                     if target_path.exists() and target_path.stat().st_size > 0:
                         return "video", str(target_path), caption
                 else:
@@ -223,10 +223,7 @@ def _download_savethevideo(
                 try:
                     img_resp = requests.get(img_url, stream=True, timeout=30)
                     if img_resp.status_code == 200:
-                        with img_path.open("wb") as f:
-                            for chunk in img_resp.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
+                        net_guard.stream_to_file(img_resp, img_path)
                         if img_path.exists() and img_path.stat().st_size > 0:
                             saved_paths.append(str(img_path))
                 except Exception as img_err:
@@ -323,10 +320,7 @@ def _download_saveig(
                 log.warning(f"[saveig] Proxy stream returned status code {video_resp.status_code}")
                 return None
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            with target_path.open("wb") as f:
-                for chunk in video_resp.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
+            net_guard.stream_to_file(video_resp, target_path)
             if target_path.exists() and target_path.stat().st_size > 0:
                 return "video", str(target_path), ""
         else:
@@ -335,10 +329,7 @@ def _download_saveig(
             img_path = target_path.parent / f"{target_path.stem}_1.jpg"
             img_resp = requests.get(dl_url, stream=True, headers={"user-agent": headers["user-agent"]}, timeout=60)
             if img_resp.status_code == 200:
-                with img_path.open("wb") as f:
-                    for chunk in img_resp.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
+                net_guard.stream_to_file(img_resp, img_path)
                 if img_path.exists() and img_path.stat().st_size > 0:
                     return "images", [str(img_path)], ""
     except Exception as e:
@@ -386,10 +377,7 @@ def _download_downloadgram(
                 log.warning(f"[downloadgram] Stream returned status code {video_resp.status_code}")
                 return None
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            with target_path.open("wb") as f:
-                for chunk in video_resp.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
+            net_guard.stream_to_file(video_resp, target_path)
             if target_path.exists() and target_path.stat().st_size > 0:
                 return "video", str(target_path), ""
         else:
@@ -398,10 +386,7 @@ def _download_downloadgram(
             img_path = target_path.parent / f"{target_path.stem}_1.jpg"
             img_resp = requests.get(dl_url, headers={"user-agent": headers["user-agent"]}, stream=True, timeout=60)
             if img_resp.status_code == 200:
-                with img_path.open("wb") as f:
-                    for chunk in img_resp.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
+                net_guard.stream_to_file(img_resp, img_path)
                 if img_path.exists() and img_path.stat().st_size > 0:
                     return "images", [str(img_path)], ""
     except Exception as e:
@@ -448,10 +433,7 @@ def _download_anyvidsave(
                     video_response = requests.get(cdn_url, stream=True, timeout=30)
                     if video_response.status_code == 200:
                         target_path.parent.mkdir(parents=True, exist_ok=True)
-                        with target_path.open("wb") as f:
-                            for chunk in video_response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
+                        net_guard.stream_to_file(video_response, target_path)
                         if target_path.exists() and target_path.stat().st_size > 0:
                             return "video", str(target_path), caption
                 else:
@@ -467,10 +449,7 @@ def _download_anyvidsave(
                         try:
                             img_resp = requests.get(img_url, stream=True, timeout=30)
                             if img_resp.status_code == 200:
-                                with img_path.open("wb") as f:
-                                    for chunk in img_resp.iter_content(chunk_size=8192):
-                                        if chunk:
-                                            f.write(chunk)
+                                net_guard.stream_to_file(img_resp, img_path)
                                 if img_path.exists() and img_path.stat().st_size > 0:
                                     saved_paths.append(str(img_path))
                         except Exception as img_err:
@@ -521,10 +500,7 @@ def _download_igreelsdl(
                     video_response = requests.get(download_url, headers=headers, stream=True, timeout=30)
                     if video_response.status_code == 200:
                         target_path.parent.mkdir(parents=True, exist_ok=True)
-                        with target_path.open("wb") as f:
-                            for chunk in video_response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
+                        net_guard.stream_to_file(video_response, target_path)
                         if target_path.exists() and target_path.stat().st_size > 0:
                             return "video", str(target_path), caption
                 else:
@@ -533,10 +509,7 @@ def _download_igreelsdl(
                     img_path = target_path.parent / f"{target_path.stem}_1.jpg"
                     img_resp = requests.get(download_url, headers=headers, stream=True, timeout=30)
                     if img_resp.status_code == 200:
-                        with img_path.open("wb") as f:
-                            for chunk in img_resp.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
+                        net_guard.stream_to_file(img_resp, img_path)
                         if img_path.exists() and img_path.stat().st_size > 0:
                             return "images", [str(img_path)], caption
     except Exception as e:
@@ -587,10 +560,7 @@ def _download_cobalt(
             log.warning(f"[cobalt] Stream returned status {video_resp.status_code}")
             return None
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        with target_path.open("wb") as f:
-            for chunk in video_resp.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+        net_guard.stream_to_file(video_resp, target_path)
         if target_path.exists() and target_path.stat().st_size > 0:
             return "video", str(target_path), ""
     except Exception as e:
@@ -629,10 +599,7 @@ def _download_rapidapi(
                 video_response = requests.get(cdn_url, stream=True, timeout=30)
                 if video_response.status_code == 200:
                     target_path.parent.mkdir(parents=True, exist_ok=True)
-                    with target_path.open("wb") as f:
-                        for chunk in video_response.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
+                    net_guard.stream_to_file(video_response, target_path)
                     if target_path.exists() and target_path.stat().st_size > 0:
                         return "video", str(target_path), caption
             elif cdn_url:
@@ -641,10 +608,7 @@ def _download_rapidapi(
                 img_path = target_path.parent / f"{target_path.stem}_1.jpg"
                 img_resp = requests.get(cdn_url, stream=True, timeout=30)
                 if img_resp.status_code == 200:
-                    with img_path.open("wb") as f:
-                        for chunk in img_resp.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
+                    net_guard.stream_to_file(img_resp, img_path)
                     if img_path.exists() and img_path.stat().st_size > 0:
                         return "images", [str(img_path)], caption
     except Exception as e:
@@ -672,6 +636,11 @@ def _download_yt_dlp(
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
+        # Some scraper CDNs serve mismatched certs; keep yt-dlp lenient here
+        # rather than disabling TLS verification for the whole process (B1).
+        "nocheckcertificate": True,
+        # Cap download size so a huge/hostile source can't fill the disk (M5).
+        "max_filesize": net_guard.MAX_DOWNLOAD_BYTES,
     }
 
     if cookies_path:

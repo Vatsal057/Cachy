@@ -27,4 +27,6 @@ ENV DATABASE_URL=sqlite+aiosqlite:////data/cachy.db
 ENV FIREBASE_PROJECT_ID=cachy-057
 
 EXPOSE 7860
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# --proxy-headers + trust the HF Spaces router so request.client.host is the real
+# client IP (not the proxy) — the per-IP card quota depends on it (M9).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--proxy-headers", "--forwarded-allow-ips", "*"]

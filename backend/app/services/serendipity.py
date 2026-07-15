@@ -145,7 +145,9 @@ async def get_connections(
         return out
 
     generated = 0
-    for i, j, _score in _candidate_pairs(cards):
+    # _candidate_pairs is O(n²) pure-Python cosine — keep it off the event loop (B6).
+    ranked_pairs = await asyncio.to_thread(_candidate_pairs, cards)
+    for i, j, _score in ranked_pairs:
         if generated >= max_new or len(out) >= want:
             break
         a, b = cards[i], cards[j]

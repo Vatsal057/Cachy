@@ -11,7 +11,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app import quota
@@ -25,6 +25,10 @@ from app.store import db, media
 
 log = logging.getLogger("api.cards")
 router = APIRouter(prefix="/cards", tags=["cards"])
+
+# Cap for user-supplied block JSON on PATCH (N14). Generous vs. a real card,
+# tight vs. an attacker filling a row. ~1 MB serialized.
+_MAX_BLOCKS_BYTES = 1_000_000
 
 
 # --------------------------------------------------------------------------- #
@@ -51,13 +55,19 @@ class PatchCardRequest(BaseModel):
     blocks: list | None = None
     # User-mutable to-do state (docs/13): {followed, items:[{id,text,done}]}.
     action_items: dict | None = None
-    # Move card to a different collection (None = remove from collection).
+    # Move card to a different collection. `collection_id` None means "not
+    # provided" (leave as-is); to REMOVE from its collection, send
+    # clear_collection=true (N13 — None couldn't express removal before).
     collection_id: str | None = None
+    clear_collection: bool = False
     state: None = None  # state is server-controlled; ignored if sent
 
 
 class BulkImportRequest(BaseModel):
-    cards: list[Card]
+    # Cap the batch so /import can't be used to fill the DB unbounded (M10).
+    # This is a device-cache restore; a real library is at most a few hundred.
+    # ponytail: fixed cap, raise if legit libraries ever exceed it.
+    cards: list[Card] = Field(max_length=1000)
 
 
 class ChatMessage(BaseModel):
@@ -160,11 +170,18 @@ async def stream_card(card_id: str, owner_id: OwnerDep) -> StreamingResponse:
         row = await db.get_card_row(session, card_id)
         if row is None or row.owner_id != owner_id:
             raise HTTPException(status_code=404, detail="card not found")
-        initial_state = row.state
 
     async def event_gen():
+        # Subscribe BEFORE reading the snapshot state (N16): if the worker
+        # finishes in the gap between the read and the subscribe, its terminal
+        # event would be published to nobody and the client would hang forever
+        # on keep-alives. Subscribing first means we either see the live event
+        # or read the already-terminal state below — never neither.
         queue = events.subscribe(card_id)
         try:
+            async with db.session() as session:
+                row = await db.get_card_row(session, card_id)
+                initial_state = row.state if row is not None else CardState.FAILED.value
             # Replay current state immediately so a late subscriber isn't blank.
             yield _sse({"card_id": card_id, "stage": "snapshot", "state": initial_state})
             if initial_state in (CardState.READY.value, CardState.FAILED.value):
@@ -273,10 +290,16 @@ async def patch_card(
         if row is None:
             raise HTTPException(status_code=404, detail="card not found")
         if req.blocks is not None:
+            # Bound the stored payload — blocks is arbitrary client JSON; without a
+            # cap a single PATCH can bloat the row unbounded (N14).
+            if len(json.dumps(req.blocks)) > _MAX_BLOCKS_BYTES:
+                raise HTTPException(status_code=413, detail="blocks payload too large")
             row.blocks = req.blocks  # e.g. updated checked flags (optimistic client)
         if req.action_items is not None:
             row.action_items = req.action_items  # follow toggle + per-item done state
-        if req.collection_id is not None:
+        if req.clear_collection:
+            row.collection_id = None
+        elif req.collection_id is not None:
             dest = await db.get_collection_row(session, req.collection_id)
             if dest is None or dest.owner_id != owner_id:
                 raise HTTPException(status_code=404, detail="collection not found")
@@ -516,6 +539,9 @@ async def delete_card(card_id: str, owner_id: OwnerDep) -> dict:
         await db.cleanup_after_card_deletion(session, card_id)
         await session.commit()
     media.remove_card_media(card_id, [thumb, *keyframes])
+    # Also delete the persisted copies from the HF Dataset repo (N15) — blocking
+    # network, so off the event loop; best-effort inside the helper.
+    await asyncio.to_thread(media.delete_remote_media, card_id)
     invalidate_graph_cache()
     return {"deleted": card_id}
 

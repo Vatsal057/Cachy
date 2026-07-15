@@ -20,4 +20,6 @@ RUN mkdir -p /data/downloads
 
 # HF Spaces expects the app on 7860.
 EXPOSE 7860
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# --proxy-headers + trust the HF Spaces router so request.client.host is the real
+# client IP (not the proxy) — the per-IP card quota depends on it (M9).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--proxy-headers", "--forwarded-allow-ips", "*"]

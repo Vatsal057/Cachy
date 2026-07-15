@@ -306,6 +306,7 @@ async def get_graph(
 ) -> GraphResponse:
     """Build the multi-entity card + catalog similarity graph. Cached until the
     underlying data changes (card/artifact create/update/delete)."""
+    import asyncio
 
     fingerprint = await _data_fingerprint(owner_id)
     cached = _cache.get(owner_id, fingerprint)
@@ -339,6 +340,24 @@ async def get_graph(
             and bool(set(c.source_card_ids or []) & user_card_ids)
         ]
 
+    # The build below is pure-Python and O(n²) over the owner's cards — run it off
+    # the event loop so a large graph doesn't freeze every other request (B6).
+    # Rows are detached (expire_on_commit=False) with columns already loaded, so
+    # attribute access in the worker thread is safe.
+    resp = await asyncio.to_thread(
+        _build_graph, card_rows, artifact_rows, concept_rows,
+        threshold=threshold, top_k=top_k,
+    )
+    _cache.set(owner_id, fingerprint, resp)
+    return resp
+
+
+def _build_graph(
+    card_rows: list, artifact_rows: list, concept_rows: list, *,
+    threshold: float, top_k: int,
+) -> GraphResponse:
+    """Pure-CPU graph assembly (nodes, O(n²) similarity edges, label-propagation
+    clustering). No I/O — safe to run in a thread (B6)."""
     # ---- Build nodes ------------------------------------------------------- #
 
     nodes: list[GraphNode] = []
@@ -387,9 +406,7 @@ async def get_graph(
         )
 
     if not nodes:
-        resp = GraphResponse(nodes=[], edges=[], clusters=[])
-        _cache.set(owner_id, fingerprint, resp)
-        return resp
+        return GraphResponse(nodes=[], edges=[], clusters=[])
 
     # ---- Build edges ------------------------------------------------------- #
 
@@ -480,6 +497,4 @@ async def get_graph(
 
     cluster_meta = _cluster_labels(nodes, cluster_map)
 
-    resp = GraphResponse(nodes=nodes, edges=edges, clusters=cluster_meta)
-    _cache.set(owner_id, fingerprint, resp)
-    return resp
+    return GraphResponse(nodes=nodes, edges=edges, clusters=cluster_meta)
