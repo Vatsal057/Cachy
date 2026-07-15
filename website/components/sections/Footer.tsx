@@ -13,9 +13,6 @@ export function Footer() {
           <a href="#privacy" className="text-muted transition-colors hover:text-ink">
             Privacy
           </a>
-          <a href={CACHY.repo} target="_blank" rel="noopener noreferrer" className="text-muted transition-colors hover:text-ink">
-            Terms
-          </a>
           <a href={`mailto:${CACHY.email}`} className="text-muted transition-colors hover:text-ink">
             Email
           </a>

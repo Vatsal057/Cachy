@@ -25,7 +25,7 @@ export function FinalCTA() {
             </Button>
           </div>
           <p className="mt-4 font-mono text-xs text-muted">
-            Free · Android APK + web · no app store needed
+            Free · Android APK · no app store needed
           </p>
         </Reveal>
       </Container>

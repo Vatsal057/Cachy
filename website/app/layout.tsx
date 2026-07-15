@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     images: [
       {
-        url: "/opengraph-image",
+        url: "/og.png",
         width: 1200,
         height: 630,
         alt: "Cachy — Send it. Forget about it.",
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Cachy — Don't save content. Catch knowledge.",
     description: DESCRIPTION,
-    images: ["/opengraph-image"],
+    images: ["/og.png"],
   },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
