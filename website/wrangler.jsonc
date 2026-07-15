@@ -1,0 +1,10 @@
+{
+  // Static-assets-only Worker: uploads the Next.js static export in ./out.
+  // Its presence stops Cloudflare's Next.js auto-detect from running the
+  // OpenNext SSR adapter (which fails on Next 14). No `main` = no server code.
+  "name": "cachy",
+  "compatibility_date": "2026-07-15",
+  "assets": {
+    "directory": "./out"
+  }
+}
