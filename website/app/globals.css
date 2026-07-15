@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ground: #181818;
+  --raised: #222120;
+  --ink: #ede8df;
+  --muted: #9a928a;
+  --sage: #96a885;
+  --hairline: rgba(237, 232, 223, 0.08);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-feature-settings: "ss01", "cv01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: rgba(150, 168, 133, 0.28);
+    color: var(--ink);
+  }
+
+  /* Visible, on-brand focus ring — meets 3:1 against charcoal. */
+  :focus-visible {
+    outline: 2px solid var(--sage);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer utilities {
+  .text-display {
+    font-family: var(--font-fraunces), Georgia, serif;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+  }
+
+  .hairline {
+    border-color: var(--hairline);
+  }
+
+  /* Faint editorial grain — sits under content, never over text. */
+  .grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(237, 232, 223, 0.03) 1px,
+      transparent 0
+    );
+    background-size: 4px 4px;
+    pointer-events: none;
+    z-index: 0;
+  }
+}
+
+/* Motion is a feature, but never a barrier. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
