@@ -9,7 +9,7 @@ export const CACHY = {
   download: {
     // Pinned to the release tag on purpose: the repo also hosts the model
     // release, so `releases/latest` is unreliable. Bump on each app version.
-    apk: "https://github.com/Vatsal057/Cachy/releases/download/v1.0.0/cachy.apk",
+    apk: "https://github.com/Vatsal057/Cachy/releases/download/v1.0.0/Cachy-v1.0.0-arm64-v8a.apk",
     web: "https://vatxzz-cachy.hf.space",
   },
   repo: "https://github.com/Vatsal057/Cachy",
