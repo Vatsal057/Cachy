@@ -4,7 +4,7 @@ export const CACHY = {
   name: "Cachy",
   handle: "@cachy.app",
   tagline: "Send it. Forget about it.",
-  email: "hello@cachy.app",
+  email: "kvaghasiya057@gmail.com",
   // Distribution: sideloaded APK + hosted web app (no app stores).
   download: {
     // Pinned to the release tag on purpose: the repo also hosts the model
