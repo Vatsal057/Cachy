@@ -177,8 +177,15 @@ async def kill_stuck() -> dict:
         )
         await s.commit()
 
+    # Await the cancellation before respawning: cancel() only schedules it, so
+    # returning immediately would leave the old loop alive alongside the new one
+    # — two workers racing the same jobs table.
     if _worker_task is not None:
         _worker_task.cancel()
+        try:
+            await _worker_task
+        except asyncio.CancelledError:
+            pass
     worker.reset_stop()
     _worker_task = asyncio.create_task(worker.run_worker_loop())
 

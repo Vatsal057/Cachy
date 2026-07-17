@@ -748,13 +748,20 @@ async def get_or_create_collection(
 ) -> CollectionRow:
     """Get the system collection for this owner+type, creating it if absent."""
     res = await db_session.execute(
-        select(CollectionRow).where(
+        select(CollectionRow)
+        .where(
             CollectionRow.owner_id == owner_id,
             CollectionRow.system_type == system_type,
             CollectionRow.is_custom.is_(False),
         )
+        # No unique constraint backs this lookup, and two workers sharing one
+        # database can both miss the SELECT and both INSERT. Resolve to the
+        # oldest row — it holds the cards — rather than raising
+        # MultipleResultsFound and killing every job for this owner+type.
+        .order_by(CollectionRow.created_at)
+        .limit(1)
     )
-    row = res.scalar_one_or_none()
+    row = res.scalars().first()
     if row is None:
         row = CollectionRow(
             name=_COLLECTION_NAMES.get(system_type, system_type.capitalize()),
