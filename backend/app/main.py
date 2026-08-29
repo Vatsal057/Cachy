@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import DBAPIError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -73,6 +74,25 @@ async def require_admin(x_admin_token: str | None = Header(None)) -> None:
         raise HTTPException(status_code=401, detail="admin token required")
 
 
+@app.exception_handler(DBAPIError)
+async def db_unavailable_handler(request: Request, exc: DBAPIError):
+    """A database we cannot reach is not a user with no cards.
+
+    Without this the generic 500 below swallows a connectivity failure and the
+    client has nothing to go on, so the shelf renders as if it were empty. That is
+    what the Neon compute allowance running out mid-month looked like from the
+    app. 503 plus a stable `code` gives the client something to branch on.
+    """
+    log.error(
+        "database unavailable on %s %s: %s",
+        request.method, request.url, exc.__class__.__name__,
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "database unavailable", "code": "db_unavailable"},
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     import traceback
@@ -113,7 +133,12 @@ app.include_router(auth_routes.router)
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "schema_version": SCHEMA_VERSION}
+    from app.store.db import describe_backend
+
+    # `db` is here so a deploy running on the blank SQLite fallback can be spotted
+    # from outside instead of by reading Space logs. An empty shelf and a lost
+    # DATABASE_URL look identical from the client otherwise.
+    return {"status": "ok", "schema_version": SCHEMA_VERSION, "db": describe_backend()}
 
 
 @app.get("/admin/stats", dependencies=[Depends(require_admin)])

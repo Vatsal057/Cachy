@@ -36,9 +36,48 @@ log = logging.getLogger("pipeline.worker")
 
 _stop = asyncio.Event()
 
+# Set when something enqueues work. The loop used to ask the database "any jobs?"
+# once a second forever, which on a managed Postgres that bills compute time and
+# suspends after 5 minutes idle means it never suspends: ~2.6 million empty
+# queries a month, and the free monthly allowance gone in about 17 days whether or
+# not anyone used the app. Now the loop sits on this event instead and the enqueue
+# path rings it, so the idle interval can be long enough for the database to
+# actually sleep without slowing any real work down.
+# See notify_new_job(), _idle_wait(), and the arithmetic on
+# Settings.worker_idle_max_seconds.
+_wake = asyncio.Event()
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def notify_new_job() -> None:
+    """Wake the worker now. Called right after a job row is committed, so that
+    letting the idle poll grow to minutes costs nothing in pickup latency."""
+    _wake.set()
+
+
+async def _idle_wait(seconds: float) -> None:
+    """Wait for new work, a stop signal, or `seconds` to elapse, whichever comes
+    first.
+
+    A plain asyncio.sleep would work for the backoff but would also mean a queued
+    job waits out the full interval, and that shutdown takes just as long. Waiting
+    on the two events instead lets the idle interval grow past the database's
+    scale-to-zero window while keeping both of those instant.
+    """
+    waiters = [
+        asyncio.create_task(_wake.wait()),
+        asyncio.create_task(_stop.wait()),
+    ]
+    try:
+        await asyncio.wait(waiters, timeout=seconds, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for w in waiters:
+            w.cancel()
+        await asyncio.gather(*waiters, return_exceptions=True)
+        _wake.clear()
 
 
 # --------------------------------------------------------------------------- #
@@ -490,43 +529,54 @@ async def _force_job_dead(job_id: str) -> None:
 async def run_worker_loop() -> None:
     settings = get_settings()
     log.info("worker loop started")
+    # Doubles every empty pass, resets as soon as there is work.
+    idle_for = settings.worker_poll_seconds
     while not _stop.is_set():
         try:
+            found_work = False
             async with db.session() as session:
                 job = await _claim_next_job(session)
-                if job is None:
-                    await asyncio.sleep(settings.worker_poll_seconds)
-                    continue
-                job_id = job.id
-                card_id = job.card_id
-                try:
-                    await asyncio.wait_for(
-                        _run_job(session, job),
-                        timeout=settings.job_timeout_seconds,
-                    )
-                except asyncio.TimeoutError as e:
-                    await session.rollback()
+                if job is not None:
+                    found_work = True
+                    job_id = job.id
+                    card_id = job.card_id
                     try:
-                        await _fail(
-                            session, card_id, job, FailureReason.TIMEOUT, f"job timed out: {e}"
+                        await asyncio.wait_for(
+                            _run_job(session, job),
+                            timeout=settings.job_timeout_seconds,
                         )
-                    except Exception:
-                        await _force_job_dead(job_id)
-                    events.publish(card_id, "failed", "failed", "Timed out",
-                                   FailureReason.TIMEOUT.value)
-                except Exception as e:  # noqa: BLE001 — pipeline must never crash the loop
-                    try:
+                    except asyncio.TimeoutError as e:
                         await session.rollback()
-                    except Exception:
-                        log.warning("job %s: session rollback failed after error", job_id)
-                    log.exception("job %s failed: %s", job_id, str(e))
-                    try:
-                        await _fail(session, card_id, job, FailureReason.UNAVAILABLE, str(e))
-                    except Exception:
-                        await _force_job_dead(job_id)
+                        try:
+                            await _fail(
+                                session, card_id, job, FailureReason.TIMEOUT, f"job timed out: {e}"
+                            )
+                        except Exception:
+                            await _force_job_dead(job_id)
+                        events.publish(card_id, "failed", "failed", "Timed out",
+                                       FailureReason.TIMEOUT.value)
+                    except Exception as e:  # noqa: BLE001 — pipeline must never crash the loop
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            log.warning("job %s: session rollback failed after error", job_id)
+                        log.exception("job %s failed: %s", job_id, str(e))
+                        try:
+                            await _fail(session, card_id, job, FailureReason.UNAVAILABLE, str(e))
+                        except Exception:
+                            await _force_job_dead(job_id)
+
+            # The wait sits outside the session block on purpose. Sleeping inside it
+            # holds a pooled connection open for the whole interval, which keeps the
+            # database awake and cancels out the saving.
+            if found_work:
+                idle_for = settings.worker_poll_seconds
+            else:
+                await _idle_wait(idle_for)
+                idle_for = min(idle_for * 2, settings.worker_idle_max_seconds)
         except Exception:  # noqa: BLE001
             log.exception("worker loop iteration error")
-            await asyncio.sleep(settings.worker_poll_seconds)
+            await _idle_wait(settings.worker_poll_seconds)
     log.info("worker loop stopped")
 
 

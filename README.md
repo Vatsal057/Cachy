@@ -36,6 +36,37 @@ Dual-client: a **Flutter** app (`/app`, web + Android) talking to an async **Fas
 
 See [CACHY_OVERVIEW.md](CACHY_OVERVIEW.md) for the full technical breakdown.
 
+## The database kept running out of quota
+
+The Space lost its database part-way through every month. No traffic spike, plenty
+of storage left. It reads like a quota problem and it was a polling problem.
+
+The in-process job worker asked the jobs table for work **every second**, whether
+or not anything was queued. Neon's free plan suspends compute after 5 minutes idle
+and allows 100 CU-hours a month, which is roughly 400 hours at the 0.25 CU floor
+against about 730 hours in a month. Polling once a second means it never gets five
+quiet minutes, so it never suspends. That is ~86,400 empty checks a day, ~2.6M a
+month, and the whole allowance gone in about **17 days** of an app nobody was using.
+
+The loop now waits on an `asyncio.Event` that `POST /cards` fires once the job row
+is committed, and doubles its wait up to 30 minutes while the queue is empty. Job
+pickup is as fast as it was, because the enqueue path wakes the worker directly.
+
+My first ceiling was 6 minutes and getting that wrong is the part worth keeping.
+It clears the 5-minute window, so it looked right, and it drops the query count by
+99.7%. But every query restarts the suspend timer, so at interval `P` the compute
+stays awake `min(P, S)/P` of the time. At 6 minutes that is **83% awake**, 608
+hours a month, which moves the failure from day 17 to day 20 and calls it fixed.
+Fewer queries and less compute turned out to be two different problems. At 30
+minutes it is 17% awake, about 122 hours, with room to spare.
+
+Moving to a provider that does not meter compute would have made the symptom go
+away and left the 2.6M queries running, so the provider stayed.
+`worker_idle_max_seconds` in `backend/app/config.py` carries the arithmetic, and
+`backend/tests/test_worker_idle.py` asserts the awake fraction against the budget
+rather than just checking the interval beats five minutes, so the 6-minute version
+cannot quietly come back.
+
 ## Run it yourself
 
 ### Full stack (backend + web frontend)

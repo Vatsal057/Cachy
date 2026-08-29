@@ -19,6 +19,7 @@ from app.auth import OwnerDep
 from app.api.graph import invalidate_graph_cache
 from app.models.card import Card, CardState
 from app.models.job import JobState
+from app.pipeline import worker
 from app.pipeline.ingestion.source import platform_for_url
 from app.services import cache, events, llm_chat, llm_rabbithole
 from app.store import db, media
@@ -158,6 +159,10 @@ async def create_card(
         job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value, degraded=degraded)
         session.add(job)
         await session.commit()
+        # Ring the worker rather than leaving it to notice on its next poll. The
+        # poll backs off to minutes while the queue is empty so the database can
+        # suspend, and this is what keeps pickup immediate anyway.
+        worker.notify_new_job()
         return CreateCardResponse(
             card_id=card.id, state=CardState.QUEUED, quota_degraded=degraded
         )

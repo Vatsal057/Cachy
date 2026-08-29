@@ -96,6 +96,18 @@ class Settings(BaseSettings):
     # worker / queue
     max_attempts: int = 3
     worker_poll_seconds: float = 1.0
+    # Ceiling for the idle backoff, and it has to be much larger than the
+    # scale-to-zero window rather than merely larger than it.
+    #
+    # A serverless Postgres suspends after S minutes of inactivity and every query
+    # restarts that timer, so with poll interval P the compute is awake
+    # min(P, S)/P of the time. Neon's free plan is S = 5 min and 100 CU-hours a
+    # month, which is ~400 h at the 0.25 CU floor against ~730 h in a month:
+    #   P = 1s     -> awake 100%  -> 730 h -> allowance gone in 17 days
+    #   P = 6 min  -> awake  83%  -> 608 h -> gone in 20 days (barely helps)
+    #   P = 30 min -> awake  17%  -> 122 h -> comfortable
+    # A queued job never waits for this; the enqueue path wakes the worker.
+    worker_idle_max_seconds: float = 1800.0
     job_timeout_seconds: int = 300
 
     # misc (source video always discarded after extraction — nothing stored locally)

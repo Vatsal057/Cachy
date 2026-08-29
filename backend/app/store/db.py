@@ -487,6 +487,20 @@ def _ensure_engine():
     return _engine, _sessionmaker
 
 
+def describe_backend() -> dict:
+    """What this process is actually talking to, safe to expose (no host, no
+    credentials).
+
+    A deploy that loses its `DATABASE_URL` falls back to a fresh local SQLite
+    file. That answers every query perfectly well and returns zero cards, which
+    looks exactly like a brand new account. Naming the backend out loud is what
+    makes "the shelf is empty" distinguishable from "the shelf is somewhere else".
+    """
+    engine, _ = _ensure_engine()
+    dialect = engine.url.get_backend_name()
+    return {"dialect": dialect, "persistent": dialect != "sqlite"}
+
+
 log = logging.getLogger("app.db")
 
 
