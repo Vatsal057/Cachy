@@ -18,6 +18,7 @@ import re
 
 from app.config import get_settings
 from app.models.artifact import Artifact, ArtifactType
+from app.pipeline import text_hygiene
 from app.services import llm_gemini
 from app.models.card import (
     ActionItem,
@@ -493,16 +494,47 @@ def _coerce_action_items(raw_items) -> ActionItems:
     return ActionItems(followed=False, items=out)
 
 
+#: Shown instead of a synthesized title when there is nothing safe or sensible
+#: to promote. Says the card is unfinished rather than implying a summary.
+UNSTRUCTURED_TITLE = "Unstructured clip \u00b7 tap to see the transcript"
+
+
 def _synthesize_base(bundle: str, transcript: str, caption: str) -> Base:
-    """When the model omits one_liner/tldr, build something usable from raw text."""
+    """Build a usable title and TL;DR when the model gave us neither.
+
+    Caption first, transcript second: a caption is written by a person and is
+    usually already headline length, while a transcript is unpunctuated speech.
+
+    This never pastes raw speech in whole. It takes one clause, collapses
+    repeated phrases, and cuts on a word boundary. When nothing usable or
+    promotable survives, the card says it is unstructured instead of dressing a
+    transcript up as a summary.
+    """
     source = (transcript or caption or "").strip()
     if not source:
         # last resort: pull from the bundle text
         source = re.sub(r"^(CAPTION|TRANSCRIPT|ON-SCREEN TEXT|SOURCE):", "",
                         bundle, flags=re.MULTILINE).strip()
-    first = (source.split(".")[0] or source)[:120].strip() or "Saved video"
-    tldr = source[:400].strip() or first
-    return Base(one_liner=first, tldr=tldr, content_type=ContentType.OTHER)
+
+    title = text_hygiene.headline(caption, transcript, source, limit=70)
+    if not text_hygiene.promotable(title):
+        # Storing the transcript is fine; making a slur the headline is not.
+        log.warning(
+            "structuring: synthesized title was not promotable -> neutral title"
+        )
+        title = ""
+    one_liner = title or UNSTRUCTURED_TITLE
+
+    # An excerpt, not a summary, so keep it short and drop it entirely when it
+    # would just restate the title.
+    excerpt = text_hygiene.truncate_words(
+        text_hygiene.collapse_repeats(source), 220
+    )
+    if not text_hygiene.promotable(excerpt):
+        excerpt = ""
+    tldr = excerpt if excerpt and excerpt != one_liner else one_liner
+
+    return Base(one_liner=one_liner, tldr=tldr, content_type=ContentType.OTHER)
 
 
 def _paragraph_fallback(

@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     cerebras_api_key: str = ""
     cerebras_llm_model: str = "gpt-oss-120b"
     hf_api_key: str = ""  # used for embeddings + HF media storage only
-    groq_llm_model: str = "llama-3.3-70b-versatile"  # structuring fallback
+    # structuring fallback. Groq retires model ids without notice and a stale one
+    # 404s, which silently drops the card to the paragraph fallback — check
+    # GET https://api.groq.com/openai/v1/models before trusting this default.
+    groq_llm_model: str = "openai/gpt-oss-120b"
 
     # Gemini — 7 Google accounts, named keys (not generic GEMINI_API_KEY*).
     # Slot 1: preprocess (bundle cleanup) + vision (OCR/frame reads).
@@ -59,7 +62,10 @@ class Settings(BaseSettings):
     gemini_preprocess_model: str = "gemini-flash-lite-latest"
 
     # vision reader for stylized carousel slides (free Groq tier; reuses groq_api_key)
-    groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    # Empty by default: Groq currently serves no vision model, and the old
+    # llama-4-scout id 404s. Gemini vision keys handle stylized slides instead.
+    # Set this only if Groq ships a vision model again.
+    groq_vision_model: str = ""
 
     # Gemini vision (generous free tier: 1M TPM / 1500 req/day)
     gemini_vision_model: str = "gemini-2.5-flash-lite"
@@ -136,8 +142,10 @@ class Settings(BaseSettings):
 
     @property
     def groq_vision_enabled(self) -> bool:
-        # vision only needs a Groq key, independent of the structuring backend
-        return bool(self.groq_api_key.strip())
+        # Needs a key AND a model id. Checking only the key meant that when Groq
+        # retired its vision model, every carousel still attempted a call and
+        # failed with a 404 instead of skipping straight to Gemini vision.
+        return bool(self.groq_api_key.strip() and self.groq_vision_model.strip())
 
     @property
     def gemini_vision_enabled(self) -> bool:

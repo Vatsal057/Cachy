@@ -240,11 +240,21 @@ async def _embed_card(session: Any, card_id: str) -> None:
     await session.commit()
 
 
-async def _finish_ready(session, card_id: str, job: db.JobRow) -> None:
+async def _finish_ready(
+    session, card_id: str, job: db.JobRow, degraded_reason: str | None = None
+) -> None:
+    """Mark the card readable.
+
+    `degraded_reason` records that the card reached READY through the paragraph
+    fallback rather than real structuring. It is still READY, because the
+    transcript is there and worth reading, but writing failure_reason=None on a
+    degraded card made a broken pipeline indistinguishable from a working one,
+    both in the UI and in the database.
+    """
     await session.execute(
         update(db.CardRow)
         .where(db.CardRow.id == card_id)
-        .values(state=CardState.READY.value, failure_reason=None)
+        .values(state=CardState.READY.value, failure_reason=degraded_reason)
     )
     job.state = JobState.DONE.value
     job.finished_at = _utcnow()
@@ -444,7 +454,13 @@ async def _run_job(session, job: db.JobRow) -> None:
         log.warning("%s Step 6/6 index: embedding failed (search degrades to "
                     "full-text): %s", tag, str(e), exc_info=True)
 
-    await _finish_ready(session, card_id, job)
+    await _finish_ready(
+        session, card_id, job,
+        degraded_reason=(
+            f"structuring degraded: {structured.degraded_reason or 'unknown reason'}"
+            if structured.degraded else None
+        ),
+    )
     events.publish(card_id, "done", "ready", "Card ready")
     notify.notify_card_ready(card_id)
     log.info("%s pipeline DONE | card READY%s", tag,
