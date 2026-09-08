@@ -5,7 +5,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../../domain/models/artifact.dart';
@@ -38,12 +38,26 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
+/// True when [e] means the request never reached a server — a dead socket, DNS
+/// failure, or a browser `fetch` rejection. Distinguished from errors that came
+/// back *from* the server, and from bugs on our side, because "check your
+/// connection" is actively misleading advice for the latter two.
+bool isOffline(Object e) => e is http.ClientException || e is TimeoutException;
+
 /// UI-safe message for any thrown object. The only thing view-models should
 /// ever store in a user-visible error field.
-String friendlyError(Object e) => switch (e) {
-      ApiException api => api.friendlyMessage,
-      _ => "Can't reach Cachy. Check your connection.",
-    };
+///
+/// The fallback deliberately does NOT claim a connection problem: decode and
+/// type errors used to land here and be reported as "Can't reach Cachy", which
+/// sent debugging in the wrong direction while the server was answering fine.
+String friendlyError(Object e) {
+  if (e is ApiException) return e.friendlyMessage;
+  if (isOffline(e)) return "Can't reach Cachy. Check your connection.";
+  // Reaching here means we got a response we couldn't understand — a bug, not a
+  // network fault. Surface the real object to the console for diagnosis.
+  debugPrint('Cachy: unexpected ${e.runtimeType}: $e');
+  return "Something went wrong loading that. Try again.";
+}
 
 class CreateCardResult {
   const CreateCardResult({

@@ -74,7 +74,7 @@ async def _semantic(q: str, limit: int, owner_id: str | None) -> list[Card] | No
     top = await asyncio.to_thread(_rank)
     if not top:
         return None
-    return [r.to_card() for r in top]
+    return [c for r in top if (c := r.to_card_or_none()) is not None]
 
 
 async def _full_text(q: str, limit: int, owner_id: str | None) -> list[Card]:
@@ -105,7 +105,8 @@ async def _full_text(q: str, limit: int, owner_id: str | None) -> list[Card]:
             or ql in (r.caption or "").lower()
             or ql in json.dumps(r.blocks or []).lower()
         ):
-            results.append(r.to_card())
+            if (card := r.to_card_or_none()) is not None:
+                results.append(card)
         if len(results) >= limit:
             break
     return results

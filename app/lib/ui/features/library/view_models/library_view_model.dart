@@ -34,10 +34,14 @@ class LibraryViewModel extends ChangeNotifier with SafeNotifier {
   int get wakeAttempt => _wakeAttempt;
 
   /// A connection-shaped failure worth retrying: no HTTP response at all
-  /// (socket/timeout, thrown as non-[ApiException]) or a gateway 502/503 from
-  /// a Space that is still booting.
-  bool _isWaking(Object e) =>
-      e is! ApiException || e.statusCode == 502 || e.statusCode == 503;
+  /// (socket/timeout) or a gateway 502/503 from a Space that is still booting.
+  ///
+  /// Deliberately narrower than "anything that isn't an [ApiException]". That
+  /// older test also matched decode and type errors, so a real bug spent 60
+  /// seconds pretending the server was asleep before reporting the wrong cause.
+  bool _isWaking(Object e) => e is ApiException
+      ? e.statusCode == 502 || e.statusCode == 503
+      : isOffline(e);
 
   /// Fetch the library, retrying through cold start. Rethrows once retries are
   /// exhausted or the failure isn't cold-start-shaped.

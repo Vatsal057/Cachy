@@ -28,8 +28,11 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.orm.attributes import flag_modified
+
+log = logging.getLogger("app.db")
 
 from app.config import get_settings
 from app.store import media as media_store
@@ -40,6 +43,7 @@ from app.models.card import (
     Base as CardBase,
     Card,
     CardState,
+    ContentType,
     ExtractionFlags,
     FailureReason,
     Insight,
@@ -48,6 +52,7 @@ from app.models.card import (
     PrimaryAction,
     SCHEMA_VERSION,
     Source,
+    sanitize_blocks,
 )
 from app.models.job import JobState
 
@@ -137,13 +142,26 @@ class CardRow(Base):
     owner_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     def to_card(self) -> Card:
+        """Build the API card from this row, degrading past unreadable values.
+
+        Everything JSON-shaped here was written by an LLM or by an older schema
+        version, so a row can hold values the current models reject. Each such
+        value is dropped to its default and logged with the card id instead of
+        raising: a single stale row must never turn a whole listing into a 500.
+        """
+        blocks, dropped_blocks = sanitize_blocks(self.blocks)
+        if dropped_blocks:
+            log.warning(
+                "card %s: dropped %d unreadable block(s): %s",
+                self.id,
+                len(dropped_blocks),
+                "; ".join(dropped_blocks),
+            )
         return Card(
             schema_version=self.schema_version or SCHEMA_VERSION,
             card_id=self.id,
-            state=CardState(self.state),
-            failure_reason=FailureReason(self.failure_reason)
-            if self.failure_reason
-            else None,
+            state=self._state_or_default(),
+            failure_reason=_enum_or_none(FailureReason, self.failure_reason, self.id),
             source=Source(
                 url=self.source_url,
                 platform=self.platform,
@@ -155,14 +173,20 @@ class CardRow(Base):
             base=CardBase(
                 one_liner=self.one_liner or "",
                 tldr=self.tldr or "",
-                content_type=self.content_type or "other",
+                content_type=_enum_or(
+                    ContentType, self.content_type, ContentType.OTHER, self.id
+                ),
                 type_confidence=self.type_confidence or 0.0,
-                tags=list(self.tags or []),
+                tags=[t for t in (self.tags or []) if isinstance(t, str)],
             ),
-            primary_action=PrimaryAction(**(self.primary_action or {})),
-            action_items=ActionItems(**(self.action_items or {})),
-            blocks=self.blocks or [],
-            insight=Insight(**self.insight) if self.insight else None,
+            primary_action=_model_or_default(
+                PrimaryAction, self.primary_action, self.id, "primary_action"
+            ),
+            action_items=_model_or_default(
+                ActionItems, self.action_items, self.id, "action_items"
+            ),
+            blocks=blocks,
+            insight=_model_or_none(Insight, self.insight, self.id, "insight"),
             media=Media(
                 thumbnail=media_store.to_media_url(self.thumbnail),
                 keyframes=[
@@ -173,10 +197,103 @@ class CardRow(Base):
             ),
             meta=Meta(
                 created_at=(self.created_at or _utcnow()).isoformat(),
-                extraction=ExtractionFlags(**(self.extraction or {})),
+                extraction=_model_or_default(
+                    ExtractionFlags, self.extraction, self.id, "extraction"
+                ),
             ),
             collection_id=self.collection_id,
         )
+
+    def _state_or_default(self) -> CardState:
+        """The stored state, or a guess when it isn't a state this build knows.
+
+        An unrecognised state is almost always a renamed or removed value from
+        another build. Rows carrying content are surfaced as READY so the user
+        can still read them; empty rows fall back to QUEUED.
+        """
+        try:
+            return CardState(self.state)
+        except (ValueError, TypeError):
+            log.warning("card %s: unknown state %r", self.id, self.state)
+            has_content = bool(self.blocks) or bool(self.one_liner)
+            return CardState.READY if has_content else CardState.QUEUED
+
+    def to_card_or_none(self) -> Card | None:
+        """[to_card] that swallows anything still fatal, for listing endpoints.
+
+        [to_card] already degrades every value it knows to be risky. This is the
+        outer net: if a future field regresses, the owner loses one card from the
+        list rather than the entire library.
+        """
+        try:
+            return self.to_card()
+        except Exception:
+            log.exception("card %s: unserializable, omitted from listing", self.id)
+            return None
+
+
+def _enum_or(enum_cls, value, default, card_id: str):
+    """Coerce a stored string to [enum_cls], falling back to [default]."""
+    if value is None:
+        return default
+    try:
+        return enum_cls(value)
+    except (ValueError, TypeError):
+        log.warning(
+            "card %s: unknown %s %r, using %r",
+            card_id,
+            enum_cls.__name__,
+            value,
+            default.value,
+        )
+        return default
+
+
+def _enum_or_none(enum_cls, value, card_id: str):
+    """Coerce a stored string to [enum_cls], or None when it isn't a member."""
+    if not value:
+        return None
+    try:
+        return enum_cls(value)
+    except (ValueError, TypeError):
+        log.warning("card %s: unknown %s %r, dropped", card_id, enum_cls.__name__, value)
+        return None
+
+
+def _model_or_default(model_cls, data, card_id: str, field: str):
+    """Build [model_cls] from a stored blob, falling back to its defaults."""
+    if not data:
+        return model_cls()
+    if not isinstance(data, dict):
+        log.warning(
+            "card %s: %s was %s, expected an object", card_id, field, type(data).__name__
+        )
+        return model_cls()
+    try:
+        return model_cls(**data)
+    except (PydanticValidationError, TypeError) as exc:
+        log.warning("card %s: unreadable %s, using defaults: %s", card_id, field, exc)
+        return model_cls()
+
+
+def _model_or_none(model_cls, data, card_id: str, field: str):
+    """Build an optional [model_cls] from a stored blob, or None if unreadable.
+
+    Used for `insight`, where the layer is genuinely optional — a card that
+    can't deserialize its deep-analysis blob still reads fine without it.
+    """
+    if not data:
+        return None
+    if not isinstance(data, dict):
+        log.warning(
+            "card %s: %s was %s, expected an object", card_id, field, type(data).__name__
+        )
+        return None
+    try:
+        return model_cls(**data)
+    except (PydanticValidationError, TypeError) as exc:
+        log.warning("card %s: unreadable %s, dropped: %s", card_id, field, exc)
+        return None
 
 
 class ArtifactRow(Base):
@@ -499,9 +616,6 @@ def describe_backend() -> dict:
     engine, _ = _ensure_engine()
     dialect = engine.url.get_backend_name()
     return {"dialect": dialect, "persistent": dialect != "sqlite"}
-
-
-log = logging.getLogger("app.db")
 
 
 async def init_db() -> None:

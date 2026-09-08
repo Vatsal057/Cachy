@@ -283,7 +283,9 @@ async def list_cards(
             stmt = stmt.where(db.CardRow.collection_id == collection_id)
         stmt = stmt.limit(limit).offset(offset)
         rows = (await session.execute(stmt)).scalars().all()
-        return [r.to_card() for r in rows]
+        # Per-row serialization: one unreadable row costs its own card, not the
+        # whole library (it used to raise straight out of the comprehension).
+        return [c for r in rows if (c := r.to_card_or_none()) is not None]
 
 
 @router.patch("/{card_id}", response_model=Card)

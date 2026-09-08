@@ -133,6 +133,10 @@
       tryRemoveSplash();
     }, 1300);
 
+    // This script runs in <head>, so document.body does not exist yet — observing
+    // it directly threw "parameter 1 is not of type 'Node'" and killed the rest of
+    // this script, leaving splash removal to the slower load-event fallback.
+    // documentElement is always present and subtree:true still sees body's children.
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
@@ -145,7 +149,7 @@
         }
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
 
     window.addEventListener('load', function() {
       setTimeout(() => {

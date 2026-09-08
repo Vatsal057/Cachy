@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 
 SCHEMA_VERSION = "1.6"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections; 1.6: insight quiz (topic_map dropped)
 
@@ -160,6 +160,42 @@ Block = Annotated[
     ],
     Field(discriminator="type"),
 ]
+
+_BLOCK_ADAPTER: TypeAdapter = TypeAdapter(Block)
+
+
+def sanitize_blocks(raw: object) -> tuple[list[dict], list[str]]:
+    """Split stored block JSON into blocks the current schema accepts, plus a
+    reason for each one it rejects.
+
+    Blocks are LLM-authored and rows written by earlier schema versions live in
+    the database forever, so any given row can legitimately hold a block this
+    build no longer understands. `Card.blocks` is a discriminated union, so
+    feeding it such a block raises ValidationError. Dropping only the offending
+    block keeps the rest of the card readable; letting the error escape takes
+    down every card sharing the response.
+    """
+    if raw is None:
+        return [], []
+    if not isinstance(raw, list):
+        return [], [f"blocks was {type(raw).__name__}, expected a list"]
+    kept: list[dict] = []
+    dropped: list[str] = []
+    for index, block in enumerate(raw):
+        if not isinstance(block, dict):
+            dropped.append(f"[{index}] {type(block).__name__}, expected an object")
+            continue
+        try:
+            _BLOCK_ADAPTER.validate_python(block)
+        except ValidationError as exc:
+            dropped.append(
+                f"[{index}] type={block.get('type', '<missing>')!r}: "
+                f"{exc.error_count()} validation error(s)"
+            )
+            continue
+        kept.append(block)
+    return kept, dropped
+
 
 # The renderable vocabulary, used by validation to drop unknown block types.
 VOCAB: set[str] = {

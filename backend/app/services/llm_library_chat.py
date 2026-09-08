@@ -80,7 +80,7 @@ async def _retrieve_semantic(question: str, owner_id: str, limit: int) -> list[C
         return [r for _, r in scored[:limit]]
 
     top = await asyncio.to_thread(_rank)
-    return [r.to_card() for r in top]
+    return [c for r in top if (c := r.to_card_or_none()) is not None]
 
 
 async def _retrieve_text(question: str, owner_id: str, limit: int) -> list[Card]:
@@ -103,7 +103,7 @@ async def _retrieve_text(question: str, owner_id: str, limit: int) -> list[Card]
             )
         ).scalars().all()
     if rows:
-        return [r.to_card() for r in rows]
+        return [c for r in rows if (c := r.to_card_or_none()) is not None]
     # No keyword hit — fall back to the most recent cards so the model still has
     # something grounded to reason over rather than answering from nothing.
     async with db.session() as session:
@@ -116,7 +116,7 @@ async def _retrieve_text(question: str, owner_id: str, limit: int) -> list[Card]
                 .limit(limit)
             )
         ).scalars().all()
-    return [r.to_card() for r in recent]
+    return [c for r in recent if (c := r.to_card_or_none()) is not None]
 
 
 def _context(cards: list[Card]) -> str:
