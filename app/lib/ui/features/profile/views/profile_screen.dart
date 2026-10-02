@@ -96,7 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _Tile(
             icon: PhosphorIconsRegular.hash,
             title: 'Version',
-            subtitle: '1.0.0',
+            subtitle: '1.0.1',
             showChevron: false, // hidden developer gate — looks inert
             onTap: _onVersionTap,
           ),
