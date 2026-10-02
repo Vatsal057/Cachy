@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
 
+    # Instagram bot DM poller (instagrapi)
+    ig_bot_username: str = ""
+    ig_bot_password: str = ""
+    ig_session_path: str = "ig_session.json"
+    ig_poll_interval_seconds: float = 20.0
+
     # quotas (per UTC day)
     quota_cards_per_day: int = 10
     quota_chat_per_day: int = 30
@@ -170,6 +176,10 @@ class Settings(BaseSettings):
     @property
     def local_whisper_enabled(self) -> bool:
         return self.whisper_backend == "local"
+
+    @property
+    def ig_bot_enabled(self) -> bool:
+        return bool(self.ig_bot_username.strip() and self.ig_bot_password.strip())
 
 
 @lru_cache

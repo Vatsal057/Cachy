@@ -455,6 +455,20 @@ class UsageRow(Base):
     count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class InstagramLinkRow(Base):
+    """Maps a user's Instagram username to their Cachy owner_id.
+
+    When the Instagram bot receives a DM from @username, it resolves the
+    owner_id from this table to associate the newly queued card with their account.
+    """
+
+    __tablename__ = "instagram_links"
+
+    ig_username: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 def _today() -> str:
     """Current UTC day key."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -535,7 +549,7 @@ async def claim_owner(db_session: AsyncSession, *, name: str, uid: str) -> int |
         return 0 if existing.uid == uid else None
     db_session.add(ClaimRow(name=name, uid=uid))
     total = 0
-    for model in (CardRow, CollectionRow, ConversationRow, ConnectionRow):
+    for model in (CardRow, CollectionRow, ConversationRow, ConnectionRow, InstagramLinkRow):
         res = await db_session.execute(
             update(model).where(model.owner_id == name).values(owner_id=uid)
         )
@@ -552,13 +566,64 @@ async def merge_owner(db_session: AsyncSession, *, from_uid: str, to_uid: str) -
     if from_uid == to_uid:
         return 0
     total = 0
-    for model in (CardRow, CollectionRow, ConversationRow, ConnectionRow):
+    for model in (CardRow, CollectionRow, ConversationRow, ConnectionRow, InstagramLinkRow):
         res = await db_session.execute(
             update(model).where(model.owner_id == from_uid).values(owner_id=to_uid)
         )
         total += res.rowcount or 0
     await db_session.commit()
     return total
+
+
+async def link_instagram_account(
+    db_session: AsyncSession, *, owner_id: str, ig_username: str
+) -> InstagramLinkRow:
+    """Link an Instagram handle (normalized, lowercase) to an owner."""
+    norm = ig_username.strip().lower().lstrip("@")
+    if not norm:
+        raise ValueError("Instagram username cannot be empty")
+    # Clean up existing link for this owner if any
+    await db_session.execute(
+        delete(InstagramLinkRow).where(InstagramLinkRow.owner_id == owner_id)
+    )
+    # Check if this handle was previously linked to another owner
+    existing = await db_session.get(InstagramLinkRow, norm)
+    if existing is not None:
+        existing.owner_id = owner_id
+        await db_session.commit()
+        return existing
+    link = InstagramLinkRow(ig_username=norm, owner_id=owner_id)
+    db_session.add(link)
+    await db_session.commit()
+    return link
+
+
+async def unlink_instagram_account(db_session: AsyncSession, *, owner_id: str) -> bool:
+    """Unlink any Instagram handle associated with this owner."""
+    res = await db_session.execute(
+        delete(InstagramLinkRow).where(InstagramLinkRow.owner_id == owner_id)
+    )
+    await db_session.commit()
+    return bool(res.rowcount and res.rowcount > 0)
+
+
+async def get_instagram_link_by_owner(
+    db_session: AsyncSession, *, owner_id: str
+) -> InstagramLinkRow | None:
+    """Find the linked Instagram account for an owner."""
+    res = await db_session.execute(
+        select(InstagramLinkRow).where(InstagramLinkRow.owner_id == owner_id)
+    )
+    return res.scalars().first()
+
+
+async def get_owner_by_instagram_username(
+    db_session: AsyncSession, *, ig_username: str
+) -> str | None:
+    """Find the owner_id associated with an Instagram handle."""
+    norm = ig_username.strip().lower().lstrip("@")
+    row = await db_session.get(InstagramLinkRow, norm)
+    return row.owner_id if row else None
 
 
 # --------------------------------------------------------------------------- #

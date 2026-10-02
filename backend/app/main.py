@@ -28,11 +28,13 @@ configure_logging()
 log = logging.getLogger("app.main")
 
 _worker_task: asyncio.Task | None = None
+_ig_poller_task: asyncio.Task | None = None
+_ig_stop_event: asyncio.Event = asyncio.Event()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_task
+    global _worker_task, _ig_poller_task, _ig_stop_event
     # Re-apply after uvicorn has configured its own handlers so our format wins.
     configure_logging()
     await db.init_db()
@@ -42,6 +44,20 @@ async def lifespan(app: FastAPI):
             log.info("reset %d orphaned job(s) from processing to queued", reset_count)
     worker.reset_stop()
     _worker_task = asyncio.create_task(worker.run_worker_loop())
+
+    settings = get_settings()
+    if settings.ig_bot_enabled:
+        from app.services.ig_dm_poller import InstagramDMPoller, run_ig_poller_loop
+        poller = InstagramDMPoller(
+            username=settings.ig_bot_username,
+            password=settings.ig_bot_password,
+            session_file=settings.ig_session_path,
+            poll_interval_seconds=settings.ig_poll_interval_seconds,
+        )
+        _ig_stop_event.clear()
+        _ig_poller_task = asyncio.create_task(run_ig_poller_loop(poller, _ig_stop_event))
+        log.info("Instagram DM poller enabled for @%s", settings.ig_bot_username)
+
     discovery_transport = await discovery.start_discovery()
     log.info("startup complete; worker running")
     try:
@@ -54,6 +70,13 @@ async def lifespan(app: FastAPI):
             _worker_task.cancel()
             try:
                 await _worker_task
+            except asyncio.CancelledError:
+                pass
+        if _ig_poller_task is not None:
+            _ig_stop_event.set()
+            _ig_poller_task.cancel()
+            try:
+                await _ig_poller_task
             except asyncio.CancelledError:
                 pass
         await db.dispose_db()

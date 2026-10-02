@@ -37,6 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late Future<List<model.Card>> _cards;
   late Future<List<CatalogEntry>> _catalog;
   late Future<QuotaStatus> _quota;
+  Future<String?>? _instagramLink;
   bool _exporting = false;
   bool _signingIn = false;
 
@@ -51,6 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _cards = repo.list();
     _catalog = repo.catalog().catchError((_) => <CatalogEntry>[]);
     _quota = repo.api.quota();
+    _instagramLink = repo.api.getInstagramLink().catchError((_) => null);
   }
 
   @override
@@ -322,17 +324,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final signedIn = user != null && !user.isAnonymous;
     return Column(
       children: [
-        if (signedIn)
-          _accountRow(theme, user)
-        else
-          _backupBanner(theme),
-        if (signedIn)
+        if (signedIn) ...[
+          _accountRow(theme, user),
+          _instagramTile(theme),
           _Tile(
             icon: PhosphorIconsRegular.clockCounterClockwise,
             title: 'Restore old library',
             subtitle: 'Used Cachy before with a name? Bring those cards in.',
             onTap: _promptRestoreByName,
           ),
+        ] else
+          _backupBanner(theme),
         _Tile(
           icon: PhosphorIconsRegular.signOut,
           title: 'Sign out',
@@ -528,6 +530,110 @@ class _ProfileScreenState extends State<ProfileScreen> {
       messenger.showSnackBar(
           const SnackBar(content: Text('Restore failed — try again')));
     }
+  }
+
+  Widget _instagramTile(ThemeData theme) {
+    return FutureBuilder<String?>(
+      future: _instagramLink,
+      builder: (context, snap) {
+        final handle = snap.data;
+        final hasHandle = handle != null && handle.isNotEmpty;
+        return _Tile(
+          icon: PhosphorIconsRegular.instagramLogo,
+          title: hasHandle ? 'Instagram: @$handle' : 'Auto-save from Instagram',
+          subtitle: hasHandle
+              ? 'Send reels to @cachy.app on Instagram to auto-save them.'
+              : 'Link your Instagram handle to auto-save reels sent to @cachy.app.',
+          onTap: () => _promptInstagramLink(handle),
+        );
+      },
+    );
+  }
+
+  Future<void> _promptInstagramLink(String? current) async {
+    final controller = TextEditingController(text: current != null ? '@$current' : '');
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Instagram Auto-Save'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Link your Instagram username. Once linked, any reel you DM or share to @cachy.app will automatically appear on your Cachy shelf.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: current == null,
+              decoration: const InputDecoration(
+                labelText: 'Instagram username',
+                hintText: '@username',
+                prefixIcon: Icon(Icons.alternate_email),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          if (current != null)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'unlink'),
+              style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(ctx).colorScheme.error),
+              child: const Text('Unlink'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'save'),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || action == null) {
+      controller.dispose();
+      return;
+    }
+
+    final api = context.read<CardRepository>().api;
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (action == 'unlink') {
+      try {
+        await api.unlinkInstagram();
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Unlinked Instagram account')));
+        setState(() {
+          _instagramLink = Future.value(null);
+        });
+      } catch (_) {
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Failed to unlink. Try again.')));
+      }
+    } else if (action == 'save') {
+      final input = controller.text.trim();
+      if (input.isEmpty) {
+        controller.dispose();
+        return;
+      }
+      try {
+        final saved = await api.linkInstagram(input);
+        messenger.showSnackBar(
+            SnackBar(content: Text('Linked @$saved! Send reels to @cachy.app')));
+        setState(() {
+          _instagramLink = Future.value(saved);
+        });
+      } catch (_) {
+        messenger.showSnackBar(const SnackBar(
+            content: Text('Failed to link Instagram. Try again.')));
+      }
+    }
+    controller.dispose();
   }
 }
 

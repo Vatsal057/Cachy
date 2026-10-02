@@ -255,6 +255,32 @@ class ApiClient {
     return (_decodeMap(resp)['claimed'] as num?)?.toInt() ?? 0;
   }
 
+  /// Get the linked Instagram username for this account, or null if unlinked.
+  Future<String?> getInstagramLink() async {
+    final resp = await _send((h) => _client.get(_uri('/me/instagram'), headers: h));
+    final json = _decodeMap(resp);
+    return json['ig_username'] as String?;
+  }
+
+  /// Link an Instagram handle to this account. Returns normalized username.
+  Future<String> linkInstagram(String igUsername) async {
+    final resp = await _send(
+      (h) => _client.post(
+        _uri('/me/instagram'),
+        headers: h,
+        body: jsonEncode({'ig_username': igUsername}),
+      ),
+      extra: const {'content-type': 'application/json'},
+    );
+    final json = _decodeMap(resp);
+    return json['ig_username'] as String;
+  }
+
+  /// Unlink the Instagram handle from this account.
+  Future<void> unlinkInstagram() async {
+    await _send((h) => _client.delete(_uri('/me/instagram'), headers: h));
+  }
+
   /// Fold a guest (anonymous) account's data into the caller's account. The
   /// request is authenticated as the destination (Google) uid; [guestToken] is
   /// the guest's own ID token, captured before switching identities, and proves

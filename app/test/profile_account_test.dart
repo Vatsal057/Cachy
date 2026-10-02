@@ -26,4 +26,39 @@ void main() {
     final api = ApiClient(baseUrl: 'http://x', client: mock);
     expect(await api.claimLegacyLibrary('Vatsal'), 7);
   });
+
+  test('getInstagramLink returns parsed handle', () async {
+    final mock = MockClient((req) async {
+      expect(req.url.path, '/me/instagram');
+      expect(req.method, 'GET');
+      return http.Response(jsonEncode({'ig_username': 'vatsal_dev'}), 200);
+    });
+    final api = ApiClient(baseUrl: 'http://x', client: mock);
+    expect(await api.getInstagramLink(), 'vatsal_dev');
+  });
+
+  test('linkInstagram posts handle and returns normalized username', () async {
+    final mock = MockClient((req) async {
+      expect(req.url.path, '/me/instagram');
+      expect(req.method, 'POST');
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      expect(body['ig_username'], '@Vatsal_Dev');
+      return http.Response(jsonEncode({'ig_username': 'vatsal_dev'}), 200);
+    });
+    final api = ApiClient(baseUrl: 'http://x', client: mock);
+    expect(await api.linkInstagram('@Vatsal_Dev'), 'vatsal_dev');
+  });
+
+  test('unlinkInstagram issues DELETE /me/instagram', () async {
+    var deleted = false;
+    final mock = MockClient((req) async {
+      expect(req.url.path, '/me/instagram');
+      expect(req.method, 'DELETE');
+      deleted = true;
+      return http.Response(jsonEncode({'unlinked': true}), 200);
+    });
+    final api = ApiClient(baseUrl: 'http://x', client: mock);
+    await api.unlinkInstagram();
+    expect(deleted, isTrue);
+  });
 }
