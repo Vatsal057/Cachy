@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     ig_bot_username: str = ""
     ig_bot_password: str = ""
     ig_session_path: str = "ig_session.json"
+    ig_session_data: str = ""  # Raw JSON session string from HF Space Secret
     ig_poll_interval_seconds: float = 20.0
 
     # quotas (per UTC day)
@@ -181,7 +182,7 @@ class Settings(BaseSettings):
     def ig_bot_enabled(self) -> bool:
         from pathlib import Path
 
-        has_session = Path(self.ig_session_path).exists()
+        has_session = Path(self.ig_session_path).exists() or bool(self.ig_session_data.strip())
         has_creds = bool(self.ig_bot_username.strip() and self.ig_bot_password.strip())
         return has_session or has_creds
 

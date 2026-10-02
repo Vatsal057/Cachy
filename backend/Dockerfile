@@ -3,6 +3,8 @@ FROM python:3.11-slim
 
 # System deps: ffmpeg (audio+frames), tesseract (OCR). Both free, local.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
         ffmpeg \
         tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
