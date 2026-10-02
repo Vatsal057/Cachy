@@ -80,6 +80,14 @@ def test_extract_reel_url() -> None:
     msg_text.xma_share = None
     assert poller.extract_reel_url(msg_text) == "https://www.instagram.com/reel/DDDfgh456/"
 
+    # XMA share with video_url
+    msg_xma = MagicMock()
+    msg_xma.clip = None
+    msg_xma.media_share = None
+    msg_xma.text = None
+    msg_xma.xma_share.video_url = "https://www.instagram.com/reel/Ddyb-0ToWoE/?id=123"
+    assert poller.extract_reel_url(msg_xma) == "https://www.instagram.com/reel/Ddyb-0ToWoE/"
+
     # Irrelevant text
     msg_plain = MagicMock()
     msg_plain.clip = None
@@ -136,6 +144,67 @@ async def test_process_thread_enqueues_card_for_linked_owner(database) -> None:
     # Verify reply and mark seen called
     poller.cl.direct_send.assert_called_once()
     poller.cl.direct_thread_mark_as_seen.assert_called_once_with("12345")
+
+
+async def test_process_thread_multi_reel_batch(database) -> None:
+    owner_id = "test-uid-batch-owner"
+    ig_user = "batch_sender"
+    async with db.session() as s:
+        await db.link_instagram_account(s, owner_id=owner_id, ig_username=ig_user)
+
+    poller = InstagramDMPoller(username="bot_account", password="pwd")
+    poller.cl = MagicMock()
+    poller.cl.user_id = 99999999
+
+    thread = MagicMock()
+    thread.id = 99999
+    user_sender = MagicMock()
+    user_sender.pk = 33333333
+    user_sender.username = "batch_sender"
+    thread.users = [user_sender]
+
+    # Two consecutive user messages with different reels
+    msg1 = MagicMock()
+    msg1.user_id = 33333333
+    msg1.clip.code = "ReelBatch1"
+    msg1.media_share = None
+    msg1.text = None
+    msg1.xma_share = None
+
+    msg2 = MagicMock()
+    msg2.user_id = 33333333
+    msg2.clip = None
+    msg2.media_share = None
+    msg2.text = "Check this https://www.instagram.com/reel/ReelBatch2/"
+    msg2.xma_share = None
+
+    # Older message from bot
+    bot_msg = MagicMock()
+    bot_msg.user_id = 99999999
+    bot_msg.text = "Older reply"
+
+    thread.messages = [msg1, msg2, bot_msg]
+
+    enqueued = await poller._process_thread(thread)
+    assert enqueued is True
+
+    # Both cards should exist in DB
+    async with db.session() as s:
+        for code in ["ReelBatch1", "ReelBatch2"]:
+            card = (
+                await s.execute(
+                    select(db.CardRow).where(
+                        db.CardRow.source_url == f"https://www.instagram.com/reel/{code}/"
+                    )
+                )
+            ).scalar_one_or_none()
+            assert card is not None
+            assert card.owner_id == owner_id
+
+    # Verify customized reply mentioning 2 cards
+    poller.cl.direct_send.assert_called_once()
+    reply = poller.cl.direct_send.call_args[0][0]
+    assert "2 Cachy cards" in reply
 
 
 async def test_process_thread_replies_link_warning_for_unlinked_user(database) -> None:

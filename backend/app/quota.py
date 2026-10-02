@@ -41,20 +41,21 @@ def spend(kind: str, limit_attr: str):
     return _dep
 
 
-async def card_budget(owner_id: str, request: Request) -> bool:
+async def card_budget(owner_id: str, request: Request | None = None) -> bool:
     """Card-creation budget. Enforces the per-IP cap (429) and returns whether
     the owner still has AI budget today (False -> degrade, never fail)."""
     settings = get_settings()
-    ip = request.client.host if request.client else "unknown"
+    ip = request.client.host if (request and request.client) else None
     async with db.session() as s:
-        ip_ok, _ = await db.spend_usage(
-            s, owner_id=f"ip:{ip}", kind="cards", limit=settings.quota_ip_cards_per_day
-        )
-        if not ip_ok:
-            raise HTTPException(status_code=429, detail={
-                "error": "quota", "kind": "ip", "limit": settings.quota_ip_cards_per_day,
-                "used": settings.quota_ip_cards_per_day, "resets_at": _resets_at(),
-            })
+        if ip:
+            ip_ok, _ = await db.spend_usage(
+                s, owner_id=f"ip:{ip}", kind="cards", limit=settings.quota_ip_cards_per_day
+            )
+            if not ip_ok:
+                raise HTTPException(status_code=429, detail={
+                    "error": "quota", "kind": "ip", "limit": settings.quota_ip_cards_per_day,
+                    "used": settings.quota_ip_cards_per_day, "resets_at": _resets_at(),
+                })
         allowed, _ = await db.spend_usage(
             s, owner_id=owner_id, kind="cards", limit=settings.quota_cards_per_day
         )

@@ -611,9 +611,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _instagramLink = Future.value(null);
         });
-      } catch (_) {
+      } catch (e) {
         messenger.showSnackBar(
-            const SnackBar(content: Text('Failed to unlink. Try again.')));
+            SnackBar(content: Text('Failed to unlink: $e')));
       }
     } else if (action == 'save') {
       final input = controller.text.trim();
@@ -628,9 +628,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _instagramLink = Future.value(saved);
         });
-      } catch (_) {
-        messenger.showSnackBar(const SnackBar(
-            content: Text('Failed to link Instagram. Try again.')));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(
+            content: Text('Failed to link Instagram: $e')));
       }
     }
     controller.dispose();

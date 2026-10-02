@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from instagrapi.exceptions import (
     LoginRequired,
 )
 
+from app import quota
 from app.models.card import CardState
 from app.models.job import JobState
 from app.pipeline import worker
@@ -30,7 +32,7 @@ from app.store import db
 log = logging.getLogger("services.ig_dm_poller")
 
 _REEL_URL_REGEX = re.compile(
-    r"https?://(?:www\.)?instagram\.com/(?:reel|reels|p)/([a-zA-Z0-9_\-]+)"
+    r"https?://(?:www\.)?instagram\.com/(?:share/)?(?:reel|reels|p)/([a-zA-Z0-9_\-]+)"
 )
 
 
@@ -130,16 +132,27 @@ class InstagramDMPoller:
         # 4. Check xma_share or fallback links
         xma_share = getattr(msg, "xma_share", None)
         if xma_share is not None:
-            raw_url = getattr(xma_share, "target_url", None) or getattr(xma_share, "preview_url", None)
+            if isinstance(xma_share, dict):
+                raw_url = (
+                    xma_share.get("video_url")
+                    or xma_share.get("target_url")
+                    or xma_share.get("preview_url")
+                )
+            else:
+                raw_url = (
+                    getattr(xma_share, "video_url", None)
+                    or getattr(xma_share, "target_url", None)
+                    or getattr(xma_share, "preview_url", None)
+                )
             if raw_url:
-                match = _REEL_URL_REGEX.search(raw_url)
+                match = _REEL_URL_REGEX.search(str(raw_url))
                 if match:
                     return f"https://www.instagram.com/reel/{match.group(1)}/"
 
         return None
 
     async def poll_once(self) -> int:
-        """Poll unread direct message threads and process new reel shares.
+        """Poll direct message threads and pending requests for new reel shares.
 
         Returns the number of reels successfully enqueued.
         """
@@ -147,12 +160,30 @@ class InstagramDMPoller:
             if not await asyncio.to_thread(self.login):
                 return 0
 
+        threads: list[Any] = []
+
+        # 1. Fetch pending message requests (from new/unapproved senders)
         try:
-            threads = await asyncio.to_thread(
+            pending = await asyncio.to_thread(self.cl.direct_pending_inbox, amount=20)
+            for pt in pending:
+                tid = getattr(pt, "id", None)
+                if tid:
+                    try:
+                        await asyncio.to_thread(self.cl.direct_pending_approve, int(tid))
+                        log.info("Approved pending message request thread %s", tid)
+                    except Exception as e:
+                        log.debug("Failed to approve pending thread %s: %s", tid, e)
+                threads.append(pt)
+        except Exception as e:
+            log.debug("Error checking pending direct inbox: %s", e)
+
+        # 2. Fetch main direct threads
+        try:
+            inbox_threads = await asyncio.to_thread(
                 self.cl.direct_threads,
                 amount=20,
-                selected_filter="unread",
             )
+            threads.extend(inbox_threads)
         except LoginRequired:
             log.warning("Instagram session became invalid during polling; re-authenticating")
             self._is_logged_in = False
@@ -164,8 +195,17 @@ class InstagramDMPoller:
             log.warning("Unexpected error fetching direct threads: %s", e)
             return 0
 
+        # Deduplicate threads
+        seen_tids: set[Any] = set()
+        unique_threads: list[Any] = []
+        for t in threads:
+            tid = getattr(t, "id", None)
+            if tid and tid not in seen_tids:
+                seen_tids.add(tid)
+                unique_threads.append(t)
+
         enqueued_count = 0
-        for thread in threads:
+        for thread in unique_threads:
             try:
                 enqueued = await self._process_thread(thread)
                 if enqueued:
@@ -176,24 +216,36 @@ class InstagramDMPoller:
         return enqueued_count
 
     async def _process_thread(self, thread: Any) -> bool:
-        """Process a single direct message thread."""
+        """Process a single direct message thread.
+        
+        Handles individual reels and batches of reels sent in consecutive messages
+        prior to the bot's reply. Respects user card quotas.
+        """
         messages = getattr(thread, "messages", [])
         if not messages:
             return False
 
-        last_msg = messages[0]
-        sender_id = str(getattr(last_msg, "user_id", ""))
         bot_user_id = str(getattr(self.cl, "user_id", ""))
 
-        # Don't process messages sent by the bot itself
-        if sender_id and bot_user_id and sender_id == bot_user_id:
+        # Collect all consecutive un-replied user messages (newest first)
+        user_messages: list[Any] = []
+        for msg in messages:
+            msg_user_id = str(getattr(msg, "user_id", ""))
+            if msg_user_id and bot_user_id and msg_user_id == bot_user_id:
+                break
+            user_messages.append(msg)
+            if len(user_messages) >= 10:
+                break
+
+        if not user_messages:
             return False
 
         thread_id = getattr(thread, "id", None)
         if not thread_id:
             return False
 
-        # Identify sender username
+        # Identify sender username from newest user message
+        sender_id = str(getattr(user_messages[0], "user_id", ""))
         users = getattr(thread, "users", [])
         sender_username: str | None = None
         for u in users:
@@ -224,33 +276,60 @@ class InstagramDMPoller:
             await asyncio.to_thread(self._mark_seen, thread_id)
             return False
 
-        # 2. Extract reel URL
-        url = self.extract_reel_url(last_msg)
-        if not url:
-            log.debug("No reel URL found in message from @%s", sender_username)
+        # 2. Extract reel URLs from all un-replied messages
+        urls: list[str] = []
+        for msg in user_messages:
+            url = self.extract_reel_url(msg)
+            if url and url not in urls:
+                urls.append(url)
+
+        if not urls:
+            log.debug("No reel URLs found in messages from @%s", sender_username)
             await asyncio.to_thread(self._mark_seen, thread_id)
             return False
 
-        # 3. Enqueue card in pipeline for this owner
-        is_new = await self._enqueue_card(url, owner_id)
+        # 3. Enqueue cards in pipeline for this owner
+        new_count = 0
+        degraded_count = 0
+        for url in urls:
+            is_new, is_degraded = await self._enqueue_card(url, owner_id)
+            if is_new:
+                new_count += 1
+                if is_degraded:
+                    degraded_count += 1
 
-        # 4. Reply with confirmation
-        if is_new:
-            reply = "Got it! Building your Cachy card... ⚡"
+        # 4. Reply with tailored confirmation
+        if new_count == 1:
+            if degraded_count > 0:
+                reply = "Got it! Building your Cachy card (daily AI quota reached — saving basic summary)... ⚡"
+            else:
+                reply = "Got it! Building your Cachy card... ⚡"
+        elif new_count > 1:
+            if degraded_count > 0:
+                reply = f"Got it! Building {new_count} Cachy cards ({degraded_count} basic due to daily AI quota)... ⚡"
+            else:
+                reply = f"Got it! Building {new_count} Cachy cards... ⚡"
         else:
-            reply = "This reel is already saved on your Cachy shelf! 📚"
+            if len(urls) == 1:
+                reply = "This reel is already saved on your Cachy shelf! 📚"
+            else:
+                reply = "All these reels are already saved on your Cachy shelf! 📚"
 
         await asyncio.to_thread(self._send_reply, thread_id, reply)
         await asyncio.to_thread(self._mark_seen, thread_id)
-        return is_new
+        return new_count > 0
 
-    async def _enqueue_card(self, url: str, owner_id: str) -> bool:
-        """Enqueue the reel URL as a card for owner_id. Returns True if created, False if deduped."""
+    async def _enqueue_card(self, url: str, owner_id: str) -> tuple[bool, bool]:
+        """Enqueue the reel URL as a card for owner_id. Returns (is_new, is_degraded)."""
         async with db.session() as s:
             existing = await cache.existing_card_for_url(s, url, owner_id=owner_id)
             if existing is not None:
                 log.info("Reel %s already exists for owner %s (deduped)", url, owner_id)
-                return False
+                return False, False
+
+            # Check daily card budget
+            within_budget = await quota.card_budget(owner_id, None)
+            degraded = not within_budget
 
             card = db.CardRow(
                 source_url=url,
@@ -261,12 +340,12 @@ class InstagramDMPoller:
             )
             s.add(card)
             await s.flush()
-            job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value)
+            job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value, degraded=degraded)
             s.add(job)
             await s.commit()
             worker.notify_new_job()
-            log.info("Queued reel %s for owner %s via Instagram DM", url, owner_id)
-            return True
+            log.info("Queued reel %s for owner %s (degraded=%s) via Instagram DM", url, owner_id, degraded)
+            return True, degraded
 
     def _send_reply(self, thread_id: str | int, text: str) -> None:
         """Send a direct message reply in thread."""
@@ -284,20 +363,29 @@ class InstagramDMPoller:
 
 
 async def run_ig_poller_loop(poller: InstagramDMPoller, stop_event: asyncio.Event) -> None:
-    """Run the Instagram DM poller loop continuously until stop_event is set."""
+    """Run the Instagram DM poller loop continuously with anti-ban jitter and backoff."""
     log.info("Starting Instagram DM poller loop (interval: %ss)", poller.poll_interval_seconds)
+    consecutive_errors = 0
     while not stop_event.is_set():
         try:
             await poller.poll_once()
+            consecutive_errors = 0
         except asyncio.CancelledError:
             break
         except Exception as e:
+            consecutive_errors = min(consecutive_errors + 1, 5)
             log.error("Unhandled error in Instagram DM poller loop: %s", e)
 
+        # Base interval with jitter ±3s to avoid mechanical periodic request patterns
+        delay = max(10.0, poller.poll_interval_seconds + random.uniform(-3.0, 3.0))
+        if consecutive_errors > 0:
+            delay = min(180.0, delay * (1.5 ** consecutive_errors))
+
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poller.poll_interval_seconds)
+            await asyncio.wait_for(stop_event.wait(), timeout=delay)
         except asyncio.TimeoutError:
             pass
         except asyncio.CancelledError:
             break
     log.info("Instagram DM poller loop stopped")
+
