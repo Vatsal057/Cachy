@@ -15,6 +15,7 @@ import '../../../../domain/models/pipeline_event.dart';
 enum ShareStatus {
   idle,
   submitting,
+  waking,
   processing,
 
   /// Past quota + local model installed: structuring on the user's phone
@@ -26,12 +27,22 @@ enum ShareStatus {
 }
 
 class ShareViewModel extends ChangeNotifier {
-  ShareViewModel({required CardRepository repository, LocalAiService? localAi})
-      : _repository = repository,
+  ShareViewModel({
+    required CardRepository repository,
+    LocalAiService? localAi,
+    this.wakeRetryDelay = const Duration(seconds: 4),
+  })  : _repository = repository,
         _localAi = localAi;
 
   final CardRepository _repository;
   final LocalAiService? _localAi;
+  final Duration wakeRetryDelay;
+
+  /// Free HF Spaces nap when idle and take ~15-30s to wake. We retry a few
+  /// times while showing the waking status before conceding to an error.
+  static const _maxWakeAttempts = 4;
+  int _wakeAttempt = 0;
+  int get wakeAttempt => _wakeAttempt;
   bool _quotaDegraded = false;
 
   ShareStatus _status = ShareStatus.idle;
@@ -55,6 +66,10 @@ class ShareViewModel extends ChangeNotifier {
   StreamSubscription<PipelineEvent>? _sub;
   bool _disposed = false;
 
+  bool _isWaking(Object e) => e is ApiException
+      ? e.statusCode == 502 || e.statusCode == 503 || e.statusCode == 504
+      : isOffline(e);
+
   /// Submit a URL. Returns the resulting card id (existing card if deduped).
   Future<String?> submit(String url) async {
     final cleaned = url.trim();
@@ -62,38 +77,47 @@ class ShareViewModel extends ChangeNotifier {
     _status = ShareStatus.submitting;
     _error = null;
     _failureReason = null;
-    notifyListeners();
+    _safeNotify();
 
-    try {
-      // Dev toggle: route through the on-device model, but only when it can
-      // actually structure — otherwise fall back to the server LLM so we never
-      // strand a card as a paragraph with no upgrade path.
-      final preferLocal =
-          _repository.preferLocalModel && (_localAi?.canStructure ?? false);
-      final result = await _repository.share(cleaned, preferLocal: preferLocal);
-      _cardId = result.cardId;
-      _quotaDegraded = result.quotaDegraded;
-      if (result.cached) {
-        // Deduped — card already exists; jump straight to it.
-        _status = ShareStatus.ready;
-        notifyListeners();
+    for (_wakeAttempt = 0;; _wakeAttempt++) {
+      try {
+        // Dev toggle: route through the on-device model, but only when it can
+        // actually structure — otherwise fall back to the server LLM so we never
+        // strand a card as a paragraph with no upgrade path.
+        final preferLocal =
+            _repository.preferLocalModel && (_localAi?.canStructure ?? false);
+        final result = await _repository.share(cleaned, preferLocal: preferLocal);
+        _cardId = result.cardId;
+        _quotaDegraded = result.quotaDegraded;
+        if (result.cached) {
+          // Deduped — card already exists; jump straight to it.
+          _status = ShareStatus.ready;
+          _safeNotify();
+          return _cardId;
+        }
+        _status = ShareStatus.processing;
+        _safeNotify();
+        _watch(result.cardId);
         return _cardId;
+      } catch (e) {
+        if (_isWaking(e) && _wakeAttempt < _maxWakeAttempts) {
+          _status = ShareStatus.waking;
+          _safeNotify();
+          await Future<void>.delayed(wakeRetryDelay);
+          if (_disposed) return null;
+          continue;
+        }
+        if (e is ApiException) {
+          _status = ShareStatus.failed;
+          _failureReason = e.friendlyMessage;
+        } else {
+          // Network down: repository has queued the share for later.
+          _status = ShareStatus.queuedOffline;
+          _error = friendlyError(e);
+        }
+        _safeNotify();
+        return null;
       }
-      _status = ShareStatus.processing;
-      notifyListeners();
-      _watch(result.cardId);
-      return _cardId;
-    } catch (e) {
-      if (e is ApiException) {
-        _status = ShareStatus.failed;
-        _failureReason = e.friendlyMessage;
-      } else {
-        // Network down: repository has queued the share for later.
-        _status = ShareStatus.queuedOffline;
-        _error = friendlyError(e);
-      }
-      notifyListeners();
-      return null;
     }
   }
 

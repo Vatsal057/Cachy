@@ -599,7 +599,13 @@ def _ensure_engine():
     global _engine, _sessionmaker
     if _engine is None:
         url, connect_args = _normalize_url(get_settings().database_url)
-        _engine = create_async_engine(url, future=True, connect_args=connect_args)
+        _engine = create_async_engine(
+            url,
+            future=True,
+            connect_args=connect_args,
+            pool_pre_ping=True,
+            pool_recycle=300,
+        )
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine, _sessionmaker
 

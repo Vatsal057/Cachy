@@ -121,17 +121,24 @@ class _ShareViewState extends State<_ShareView> {
     final theme = Theme.of(context);
     switch (vm.status) {
       case ShareStatus.submitting:
+      case ShareStatus.waking:
         final source = SourcePlatform.detect(widget.sharedUrl);
+        final isWaking = vm.status == ShareStatus.waking;
         return _Centered(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ProcessingGlyph(size: 132, icon: source.icon, badgeColor: source.color),
               const SizedBox(height: 20),
-              Text('Sending to Cachy…', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              Text(
+                isWaking ? 'Waking Cachy server…' : 'Sending to Cachy…',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 6),
               Text(
-                '${source.label.toUpperCase()} · ${source.ingestingLabel}',
+                isWaking
+                    ? 'Free server spins down when idle · usually ~15-20s'
+                    : '${source.label.toUpperCase()} · ${source.ingestingLabel}',
                 style: Brand.label(size: 11, color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
@@ -427,10 +434,49 @@ class _FailedView extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onCancel;
 
+  static (String title, String description) _resolveErrorDetails(String? reason) {
+    if (reason == null || reason.isEmpty) {
+      return (
+        'Unsupported content',
+        "The video may be private, unavailable in your region, or the link format isn't supported.",
+      );
+    }
+    final lower = reason.toLowerCase();
+    if (lower.contains('on our side') || lower.contains('server') || lower.contains('50')) {
+      return (
+        'Server temporarily unavailable',
+        "Cachy couldn't be reached or is restarting. Please try again in a moment.",
+      );
+    }
+    if (lower.contains('session') || lower.contains('sign in')) {
+      return (
+        'Session expired',
+        'Please sign in again to continue capturing reels.',
+      );
+    }
+    if (lower.contains('limit')) {
+      return (
+        'Daily limit reached',
+        "You've reached your daily capture limit. It resets at midnight UTC.",
+      );
+    }
+    if (lower.contains('time') && lower.contains('out')) {
+      return (
+        'Request timed out',
+        'The server took too long to respond. Tap try again to retry.',
+      );
+    }
+    return (
+      'Unsupported content',
+      "The video may be private, unavailable in your region, or the link format isn't supported.",
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final (errorTitle, errorDescription) = _resolveErrorDetails(reason);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -465,7 +511,7 @@ class _FailedView extends StatelessWidget {
                   PhosphorIcon(PhosphorIconsRegular.warning, size: 18, color: scheme.error),
                   const SizedBox(width: 8),
                   Text(
-                    'Unsupported content',
+                    errorTitle,
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: scheme.error,
@@ -475,8 +521,7 @@ class _FailedView extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'The video may be private, unavailable in your region, or '
-                "the link format isn't supported.",
+                errorDescription,
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: scheme.onSurfaceVariant, height: 1.5),
               ),

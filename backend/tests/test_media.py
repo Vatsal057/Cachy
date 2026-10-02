@@ -38,33 +38,33 @@ def test_to_media_url_normalisation() -> None:
 
 async def test_media_anonymous_401(client) -> None:
     """No verified identity -> rejected (401 bad token / 503 auth unconfigured)."""
-    from app.auth import get_owner
+    from app.auth import get_owner_query_or_header
     from app.main import app
 
     card_id = await _make_card("uid-a")
-    del app.dependency_overrides[get_owner]
+    app.dependency_overrides.pop(get_owner_query_or_header, None)
     resp = await client.get(f"/media/{card_id}/thumb.jpg")
     assert resp.status_code in (401, 503)
 
 
 async def test_media_non_owner_404(client) -> None:
     """A card owned by someone else is invisible — 404, never another's media."""
-    from app.auth import get_owner
+    from app.auth import get_owner_query_or_header
     from app.main import app
 
     card_id = await _make_card("uid-a")
-    app.dependency_overrides[get_owner] = lambda: "uid-b"
+    app.dependency_overrides[get_owner_query_or_header] = lambda: "uid-b"
     resp = await client.get(f"/media/{card_id}/thumb.jpg")
     assert resp.status_code == 404
 
 
 async def test_media_owner_200(client, monkeypatch, tmp_path) -> None:
     """The owner gets the bytes, correct content-type, and a private cache header."""
-    from app.auth import get_owner
+    from app.auth import get_owner_query_or_header
     from app.main import app
 
     card_id = await _make_card("uid-a")
-    app.dependency_overrides[get_owner] = lambda: "uid-a"
+    app.dependency_overrides[get_owner_query_or_header] = lambda: "uid-a"
 
     # Turn HF media on and stub the download to a local fixture file.
     monkeypatch.setenv("HF_API_KEY", "hf_test")
