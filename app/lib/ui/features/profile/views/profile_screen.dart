@@ -542,8 +542,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           icon: PhosphorIconsRegular.instagramLogo,
           title: hasHandle ? 'Instagram: @$handle' : 'Auto-save from Instagram',
           subtitle: hasHandle
-              ? 'Send reels to @cachy.app on Instagram to auto-save them.'
-              : 'Link your Instagram handle to auto-save reels sent to @cachy.app.',
+              ? 'Send reels to @cachyapp on Instagram to auto-save them.'
+              : 'Link your Instagram handle to auto-save reels sent to @cachyapp.',
           onTap: () => _promptInstagramLink(handle),
         );
       },
@@ -561,7 +561,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Link your Instagram username. Once linked, any reel you DM or share to @cachy.app will automatically appear on your Cachy shelf.',
+              'Link your Instagram username. Once linked, any reel you DM or share to @cachyapp will automatically appear on your Cachy shelf.',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -624,7 +624,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       try {
         final saved = await api.linkInstagram(input);
         messenger.showSnackBar(
-            SnackBar(content: Text('Linked @$saved! Send reels to @cachy.app')));
+            SnackBar(content: Text('Linked @$saved! Send reels to @cachyapp')));
         setState(() {
           _instagramLink = Future.value(saved);
         });

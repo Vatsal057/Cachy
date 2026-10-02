@@ -60,17 +60,13 @@ class InstagramDMPoller:
         Dumps session settings to disk upon successful authentication to reuse
         cookies and avoid triggering repeated 2FA or checkpoint challenges.
         """
-        if not self.username or not self.password:
-            log.warning("Instagram bot credentials missing; skipping DM poller login")
-            return False
-
         if self.session_file.exists():
             try:
                 log.info("Loading Instagram session from %s", self.session_file)
                 self.cl.load_settings(self.session_file)
-                self.cl.login(self.username, self.password)
+                self.cl.account_info()
                 self._is_logged_in = True
-                log.info("Logged into Instagram as @%s using saved session", self.username)
+                log.info("Logged into Instagram using saved session (%s)", self.cl.user_id)
                 return True
             except LoginRequired:
                 log.warning("Instagram session file expired; logging in with password")
@@ -79,6 +75,10 @@ class InstagramDMPoller:
                 return False
             except Exception as e:
                 log.warning("Could not restore Instagram session (%s); falling back to password login", e)
+
+        if not self.username or not self.password:
+            log.warning("Instagram bot credentials missing; skipping DM poller login")
+            return False
 
         try:
             log.info("Logging into Instagram as @%s with password...", self.username)

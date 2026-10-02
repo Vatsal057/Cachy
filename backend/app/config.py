@@ -179,7 +179,11 @@ class Settings(BaseSettings):
 
     @property
     def ig_bot_enabled(self) -> bool:
-        return bool(self.ig_bot_username.strip() and self.ig_bot_password.strip())
+        from pathlib import Path
+
+        has_session = Path(self.ig_session_path).exists()
+        has_creds = bool(self.ig_bot_username.strip() and self.ig_bot_password.strip())
+        return has_session or has_creds
 
 
 @lru_cache

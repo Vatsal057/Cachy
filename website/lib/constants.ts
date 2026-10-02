@@ -2,7 +2,7 @@
 
 export const CACHY = {
   name: "Cachy",
-  handle: "@cachy.app",
+  handle: "@cachyapp",
   tagline: "Send it. Forget about it.",
   email: "kvaghasiya057@gmail.com",
   // Distribution: sideloaded APK + hosted web app (no app stores).
@@ -37,7 +37,7 @@ export const HOW_IT_WORKS = [
   {
     key: "catch",
     title: "Catch",
-    body: "Send anything to Cachy from wherever it lives. The easiest way: DM @cachy.app on Instagram.",
+    body: "Send anything to Cachy from wherever it lives. The easiest way: DM @cachyapp on Instagram.",
   },
   {
     key: "understand",
@@ -81,7 +81,7 @@ export const FAQS = [
   },
   {
     q: "Does it support Instagram?",
-    a: "Yes. The easiest way to use Cachy is to DM a reel or post to @cachy.app. It's the quickest on-ramp, not the only one.",
+    a: "Yes. The easiest way to use Cachy is to DM a reel or post to @cachyapp. It's the quickest on-ramp, not the only one.",
   },
   {
     q: "Can I save YouTube?",
