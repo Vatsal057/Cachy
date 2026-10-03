@@ -43,7 +43,7 @@ class IdAuthScreen extends StatefulWidget {
 class _IdAuthScreenState extends State<IdAuthScreen> {
   static final _usernameRule = RegExp(r'^[a-z0-9_]{3,20}$');
 
-  late IdAuthMode _mode = widget.mode;
+  late final IdAuthMode _mode = widget.mode;
   bool _resetting = false;
   bool _busy = false;
   bool _obscure = true;
@@ -329,8 +329,11 @@ class _IdAuthScreenState extends State<IdAuthScreen> {
             style: theme.textTheme.displaySmall),
         const SizedBox(height: 16),
         Text(
-          'There is no email on your account, so this code is the ONLY way '
-          'to reset your password. Write it down somewhere safe.',
+          _linking
+              ? 'Cachy does not send reset emails. If you ever forget your Cachy ID password, '
+                'you can use this code to reset it, or simply sign in with your Google account.'
+              : 'There is no email on your Cachy ID, so Cachy cannot send password reset emails. '
+                'This code is the ONLY way to reset your password. Write it down somewhere safe.',
           style: theme.textTheme.bodyLarge?.copyWith(
               color: scheme.onSurfaceVariant, height: 1.5),
         ),
