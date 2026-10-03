@@ -168,7 +168,7 @@ def _public_payload(
         "creator": row.creator,
         "source_url": row.source_url,
         "thumbnail_url": _public_thumbnail(row, token, base),
-        "shared_at": link.created_at.isoformat(),
+        "shared_at": link.created_at.isoformat() if getattr(link, "created_at", None) else None,
     }
 
 
