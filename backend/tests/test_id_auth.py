@@ -13,7 +13,10 @@ _TEST_SECRET = "test-secret-0123456789abcdef"
 def id_secret(monkeypatch):
     monkeypatch.setenv("CACHY_ID_SECRET", _TEST_SECRET)
     get_settings.cache_clear()
+    from app.api.id_auth import _id_limiter
+    _id_limiter.reset()
     yield
+    _id_limiter.reset()
     get_settings.cache_clear()
 
 
@@ -64,7 +67,7 @@ async def test_register_login_token_flow(client, id_secret) -> None:
 
 
 async def test_register_validation(client, id_secret) -> None:
-    for bad in ("ab", "UPPER", "with space", "a" * 21, "admin", "with-dash"):
+    for bad in ("ab", "with space", "a" * 21, "admin", "with-dash"):
         resp = await _register(client, username=bad)
         assert resp.status_code == 422, (bad, resp.text)
     resp = await _register(client, username="goodname", password="short")

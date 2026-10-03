@@ -160,3 +160,121 @@ async def test_assetlinks_empty_by_default(client) -> None:
     resp = await client.get("/.well-known/assetlinks.json")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+async def test_share_page_and_save_with_rich_sections(client, database) -> None:
+    _as("uid-a")
+    async with database.session() as s:
+        card = db.CardRow(
+            owner_id="uid-a",
+            source_url="https://example.com/reel-rich",
+            state=CardState.READY.value,
+            one_liner="Rich card with all sections",
+            tldr="Core takeaway summary",
+            blocks=[
+                {"type": "heading", "text": "Faking Personality", "level": 2},
+                {"type": "paragraph", "text": "Adapt gracefully in conversations."},
+                {
+                    "type": "step_list",
+                    "steps": [
+                        {"text": "Step one"},
+                        {"text": "Step two"},
+                        {"text": "Step three"},
+                    ],
+                },
+            ],
+            action_items={
+                "followed": False,
+                "items": [
+                    {"id": "a1", "text": "Do small talk", "done": False},
+                ],
+            },
+            insight={
+                "rabbit_hole": {
+                    "questions": ["How does social dynamics work?"],
+                    "adjacent_topics": ["Sociology"],
+                },
+                "quiz": {
+                    "questions": [
+                        {
+                            "question": "What to do?",
+                            "options": ["A", "B"],
+                            "answer_index": 0,
+                        }
+                    ]
+                },
+            },
+            tags=["psychology", "career"],
+            platform="instagram",
+            creator="vatxzz",
+        )
+        s.add(card)
+        await s.commit()
+        await s.refresh(card)
+        card_id = card.id
+
+        art = db.ArtifactRow(
+            type="movie",
+            title="Pelé",
+            title_norm="pele",
+            source_card_ids=[card_id],
+        )
+        conc = db.ConceptRow(
+            name="Impression Management",
+            name_norm="impression management",
+            source_card_ids=[card_id],
+        )
+        s.add_all([art, conc])
+        await s.commit()
+
+    token = (await client.post(f"/cards/{card_id}/share")).json()["token"]
+
+    # Verify JSON payload has all rich structures
+    resp = await client.get(f"/share/{token}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["artifacts"]) == 1
+    assert data["artifacts"][0]["title"] == "Pelé"
+    assert len(data["concepts"]) == 1
+    assert data["concepts"][0]["name"] == "Impression Management"
+    assert len(data["action_items"]["items"]) == 1
+    assert data["read_minutes"] >= 1
+
+    # Verify HTML page renders the sections
+    page = await client.get(f"/s/{token}")
+    assert page.status_code == 200
+    html_text = page.text
+    assert "section-card" in html_text
+    assert "ACTIONS" in html_text
+    assert "Do small talk" in html_text
+    assert "Track in Actions" in html_text
+    assert "GOING DEEPER" in html_text
+    assert "step-strip" in html_text
+    assert "REFERENCES" in html_text
+    assert "Pelé" in html_text
+    assert "CONCEPTS" in html_text
+    assert "Impression Management" in html_text
+    assert "Fraunces" in html_text
+    assert "data-theme" in html_text
+
+    # Verify Save clones the card and links artifacts & concepts
+    _as("uid-b")
+    save_resp = await client.post(f"/share/{token}/save")
+    assert save_resp.status_code == 200
+    new_id = save_resp.json()["card_id"]
+    assert new_id != card_id
+
+    async with database.session() as s:
+        cloned_card = await db.get_card_row(s, new_id, owner_id="uid-b")
+        assert cloned_card is not None
+        assert cloned_card.action_items["items"][0]["text"] == "Do small talk"
+        assert cloned_card.action_items["items"][0]["done"] is False
+
+        art_row = (await s.execute(db.select(db.ArtifactRow).where(db.ArtifactRow.title == "Pelé"))).scalar_one()
+        assert new_id in art_row.source_card_ids
+        assert card_id in art_row.source_card_ids
+
+        conc_row = (await s.execute(db.select(db.ConceptRow).where(db.ConceptRow.name == "Impression Management"))).scalar_one()
+        assert new_id in conc_row.source_card_ids
+        assert card_id in conc_row.source_card_ids
+

@@ -13,15 +13,18 @@ cd app
 flutter build web --release --no-tree-shake-icons --dart-define=CACHY_API_BASE= 2>&1
 cd ..
 
-# 2. Sync build output into web_dist/
-rm -rf web_dist
-cp -r app/build/web web_dist
-
-# 3. Create detached deployment commit so main stays clean
+# 2. Create detached deployment commit based on hf/main so main stays clean
+# and avoids pushing GitHub release assets (>10MB APK binaries) rejected by HF.
 BRANCH=$(git branch --show-current)
 trap 'git checkout --quiet "$BRANCH" 2>/dev/null || true' EXIT
 
-git checkout --detach --quiet
+git fetch hf main --quiet
+git checkout --detach hf/main --quiet
+git checkout "$BRANCH" -- backend/ Dockerfile README.md
+
+# 3. Sync build output into web_dist/
+rm -rf web_dist
+cp -r app/build/web web_dist
 
 git add backend/ Dockerfile README.md
 git rm -r --cached web_dist/ 2>/dev/null || true

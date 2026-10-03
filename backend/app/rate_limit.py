@@ -40,3 +40,8 @@ class RateLimiter:
                 k for k, dq in self._hits.items() if not dq or dq[-1] <= cutoff
             ]:
                 del self._hits[key]
+
+    def reset(self) -> None:
+        """Clear all recorded hits (used by test fixtures)."""
+        self._hits.clear()
+

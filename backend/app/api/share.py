@@ -28,6 +28,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import select
 
 from app.api.media import stream_card_media
 from app.auth import OwnerDep
@@ -48,9 +49,11 @@ _save_limiter = RateLimiter(limit=20, window_seconds=60.0)
 # Helpers
 # --------------------------------------------------------------------------- #
 
-async def _resolve_share(token: str) -> tuple[db.ShareLinkRow, db.CardRow]:
-    """The link + its card, or 404. A link whose card is gone or not READY
-    reads as invalid (never leak why)."""
+async def _resolve_share(
+    token: str,
+) -> tuple[db.ShareLinkRow, db.CardRow, list[dict], list[dict]]:
+    """The link + its card, artifacts, and concepts, or 404. A link whose card
+    is gone or not READY reads as invalid (never leak why)."""
     async with db.session() as s:
         link = await db.get_share_link_by_token(s, token=token)
         if link is None:
@@ -58,7 +61,38 @@ async def _resolve_share(token: str) -> tuple[db.ShareLinkRow, db.CardRow]:
         row = await db.get_card_row(s, link.card_id)
         if row is None or row.state != CardState.READY.value:
             raise HTTPException(status_code=404, detail="link not found")
-    return link, row
+
+        # Load linked catalog references for this card
+        art_stmt = select(db.ArtifactRow).order_by(db.ArtifactRow.created_at.desc())
+        all_arts = (await s.execute(art_stmt)).scalars().all()
+        artifacts = [
+            {
+                "id": a.id,
+                "type": a.type,
+                "title": a.title,
+                "creator": a.creator,
+                "year": a.year,
+                "thumbnail": a.thumbnail,
+                "description": a.description,
+            }
+            for a in all_arts
+            if link.card_id in (a.source_card_ids or [])
+        ]
+
+        # Load linked concepts for this card
+        conc_stmt = select(db.ConceptRow).order_by(db.ConceptRow.created_at.desc())
+        all_concs = (await s.execute(conc_stmt)).scalars().all()
+        concepts = [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": getattr(c, "description", None),
+                "source_count": len(c.source_card_ids or []),
+            }
+            for c in all_concs
+            if link.card_id in (c.source_card_ids or [])
+        ]
+    return link, row, artifacts, concepts
 
 
 def _base_url(request: Request) -> str:
@@ -95,8 +129,25 @@ def _public_thumbnail(row: db.CardRow, token: str, base: str) -> str | None:
     return None
 
 
+def _estimate_read_minutes(row: db.CardRow) -> int:
+    words = len((row.tldr or "").split())
+    for b in (row.blocks or []):
+        if isinstance(b, dict):
+            words += len(str(b.get("text") or "").split())
+            for it in (b.get("items") or []):
+                words += len(str(it.get("text") if isinstance(it, dict) else it).split())
+            for st in (b.get("steps") or []):
+                words += len(str(st.get("text") if isinstance(st, dict) else st).split())
+    return max(1, (words + 199) // 200)
+
+
 def _public_payload(
-    link: db.ShareLinkRow, row: db.CardRow, token: str, base: str
+    link: db.ShareLinkRow,
+    row: db.CardRow,
+    artifacts: list[dict],
+    concepts: list[dict],
+    token: str,
+    base: str,
 ) -> dict:
     """The safe public subset of a card — never owner_id, raw_bundle, or
     job internals."""
@@ -108,6 +159,11 @@ def _public_payload(
         "content_type": row.content_type,
         "tags": row.tags or [],
         "blocks": row.blocks or [],
+        "action_items": row.action_items or {},
+        "insight": row.insight or {},
+        "artifacts": artifacts,
+        "concepts": concepts,
+        "read_minutes": _estimate_read_minutes(row),
         "platform": row.platform,
         "creator": row.creator,
         "source_url": row.source_url,
@@ -238,8 +294,10 @@ async def revoke_share_link(card_id: str, owner_id: OwnerDep) -> dict:
 @router.get("/share/{token}")
 async def share_json(token: str, request: Request) -> dict:
     """Public JSON payload for a share link (used by the app's save sheet)."""
-    link, row = await _resolve_share(token)
-    return _public_payload(link, row, token, _base_url(request))
+    link, row, artifacts, concepts = await _resolve_share(token)
+    return _public_payload(
+        link, row, artifacts, concepts, token, _base_url(request)
+    )
 
 
 @router.post("/share/{token}/save")
@@ -251,7 +309,7 @@ async def save_shared_card(
     No quota charge — the card is already structured. Idempotent per source
     URL: saving the same shared card twice returns the first copy."""
     _save_limiter.check(request)
-    link, row = await _resolve_share(token)
+    link, row, _, _ = await _resolve_share(token)
     if link.owner_id == owner_id:
         raise HTTPException(status_code=409, detail="you already own this card")
     async with db.session() as s:
@@ -274,10 +332,22 @@ async def save_shared_card(
             r for k in (row.keyframes or [])
             if (r := _rewrite(k)) is not None
         ]
+
+        coll_id = None
+        if row.content_type:
+            try:
+                coll = await db.get_or_create_collection(
+                    s, owner_id=owner_id, system_type=row.content_type
+                )
+                coll_id = coll.id
+            except Exception as e:
+                log.warning("could not assign system collection on save: %s", e)
+
         new_row = db.CardRow(
             id=new_id,
             state=CardState.READY.value,
             owner_id=owner_id,
+            collection_id=coll_id,
             source_url=row.source_url,
             platform=row.platform,
             creator=row.creator,
@@ -297,6 +367,26 @@ async def save_shared_card(
             extraction=_deepcopy_json(row.extraction),
         )
         s.add(new_row)
+
+        # Link catalog artifacts to the saver's card copy
+        from sqlalchemy.orm.attributes import flag_modified
+        art_stmt = select(db.ArtifactRow)
+        all_arts = (await s.execute(art_stmt)).scalars().all()
+        for art in all_arts:
+            if row.id in (art.source_card_ids or []):
+                if new_id not in (art.source_card_ids or []):
+                    art.source_card_ids = [*(art.source_card_ids or []), new_id]
+                    flag_modified(art, "source_card_ids")
+
+        # Link concepts to the saver's card copy
+        conc_stmt = select(db.ConceptRow)
+        all_concs = (await s.execute(conc_stmt)).scalars().all()
+        for conc in all_concs:
+            if row.id in (conc.source_card_ids or []):
+                if new_id not in (conc.source_card_ids or []):
+                    conc.source_card_ids = [*(conc.source_card_ids or []), new_id]
+                    flag_modified(conc, "source_card_ids")
+
         await s.commit()
     log.info("shared card saved: %s -> %s (owner %s)", row.id, new_id, owner_id)
     return {"card_id": new_id, "already_saved": False}
@@ -306,7 +396,7 @@ async def save_shared_card(
 async def share_media(token: str, filename: str):
     """Token-gated media for a share link — only the card's own thumbnail /
     keyframes, never arbitrary dataset paths."""
-    _, row = await _resolve_share(token)
+    _, row, _, _ = await _resolve_share(token)
     if filename not in _media_filenames(row):
         raise HTTPException(status_code=404, detail="not found")
     return await stream_card_media(row.id, filename)
@@ -315,9 +405,11 @@ async def share_media(token: str, filename: str):
 @router.get("/s/{token}", response_class=HTMLResponse)
 async def share_page(token: str, request: Request) -> str:
     """Server-rendered share page (OG tags need server HTML)."""
-    link, row = await _resolve_share(token)
+    link, row, artifacts, concepts = await _resolve_share(token)
     base = _base_url(request)
-    return _render_share_page(_public_payload(link, row, token, base))
+    return _render_share_page(
+        _public_payload(link, row, artifacts, concepts, token, base)
+    )
 
 
 @router.get("/.well-known/assetlinks.json")
@@ -334,74 +426,328 @@ async def assetlinks() -> JSONResponse:
 
 
 # --------------------------------------------------------------------------- #
-# Server-rendered share page
+# Server-rendered share page with full Cachy app design & styling
 # --------------------------------------------------------------------------- #
 
-def _block_html(block: dict) -> str:
-    """One card block -> HTML. Unknown types are skipped; everything is
-    escaped (blocks are LLM/user-authored)."""
-    if not isinstance(block, dict):
+def _is_self_carded(block: dict) -> bool:
+    t = block.get("type") if isinstance(block, dict) else None
+    return t in {"callout", "link", "table", "map", "key_value"}
+
+
+def _render_step_list(block: dict) -> str:
+    steps = block.get("steps") or []
+    if not steps:
         return ""
-    t = block.get("type")
+    e = html.escape
+    out: list[str] = []
+
+    # Visual step strip for sequences of 3+ steps (matching app _StepStrip)
+    if len(steps) >= 3:
+        strip_items: list[str] = []
+        for i in range(len(steps)):
+            if i > 0:
+                strip_items.append("<div class='step-connector'></div>")
+            strip_items.append(f"<div class='step-node'>{i + 1}</div>")
+        out.append(f"<div class='step-strip'>{''.join(strip_items)}</div>")
+
+    rows: list[str] = []
+    for i, s in enumerate(steps):
+        stext = s.get("text") if isinstance(s, dict) else s
+        rows.append(
+            f"<div class='step-row'>"
+            f"  <div class='step-badge'>{i + 1}</div>"
+            f"  <div class='step-body'>{e(str(stext or ''))}</div>"
+            f"</div>"
+        )
+    out.append(f"<div class='step-items'>{''.join(rows)}</div>")
+    return "".join(out)
+
+
+def _render_block_content(b: dict) -> str:
+    if not isinstance(b, dict):
+        return ""
+    t = b.get("type")
     e = html.escape
 
     def txt(v) -> str:
         return e(str(v or ""))
 
     if t == "heading":
-        level = 3 if block.get("level", 2) >= 3 else 2
-        return f"<h{level}>{txt(block.get('text'))}</h{level}>"
+        lvl = 3 if b.get("level", 2) >= 3 else 2
+        return f"<h{lvl} class='block-heading'>{txt(b.get('text'))}</h{lvl}>"
     if t == "paragraph":
-        return f"<p>{txt(block.get('text'))}</p>"
+        return f"<p class='block-para'>{txt(b.get('text'))}</p>"
     if t == "bullet_list":
-        items = "".join(f"<li>{txt(i)}</li>" for i in block.get("items") or [])
-        return f"<ul>{items}</ul>" if items else ""
-    if t == "step_list":
         items = "".join(
-            f"<li>{txt(s.get('text') if isinstance(s, dict) else s)}</li>"
-            for s in block.get("steps") or []
+            f"<li class='bullet-item'><span class='bullet-dot'></span><span>{txt(i)}</span></li>"
+            for i in b.get("items") or []
         )
-        return f"<ol>{items}</ol>" if items else ""
-    if t == "key_value":
-        rows = "".join(
-            f"<div class='kv'><dt>{txt(p.get('key') if isinstance(p, dict) else '')}</dt>"
-            f"<dd>{txt(p.get('value') if isinstance(p, dict) else '')}</dd></div>"
-            for p in block.get("pairs") or []
-        )
-        return f"<dl class='kvlist'>{rows}</dl>" if rows else ""
+        return f"<ul class='bullet-list'>{items}</ul>" if items else ""
+    if t == "step_list":
+        return _render_step_list(b)
     if t == "checklist":
         items = "".join(
-            f"<li><span class='box'>&#9744;</span> {txt(i.get('text') if isinstance(i, dict) else i)}</li>"
-            for i in block.get("items") or []
+            f"<div class='check-row'><span class='check-box'>&#9744;</span><span class='check-text'>{txt(i.get('text') if isinstance(i, dict) else i)}</span></div>"
+            for i in b.get("items") or []
         )
-        return f"<ul class='checklist'>{items}</ul>" if items else ""
+        return f"<div class='checklist'>{items}</div>" if items else ""
+    if t == "key_value":
+        rows = "".join(
+            f"<div class='kv-row'><dt class='kv-dt'>{txt(p.get('key') if isinstance(p, dict) else '')}</dt>"
+            f"<dd class='kv-dd'>{txt(p.get('value') if isinstance(p, dict) else '')}</dd></div>"
+            for p in b.get("pairs") or []
+        )
+        return f"<dl class='kv-list'>{rows}</dl>" if rows else ""
     if t == "callout":
-        return f"<div class='callout'>{txt(block.get('text'))}</div>"
-    if t == "link":
-        url = str(block.get("url") or "")
-        if not url.startswith(("http://", "https://")):
-            return ""
-        label = txt(block.get("label") or url)
-        return f"<p class='extlink'><a href='{e(url, quote=True)}'>{label}</a></p>"
+        return (
+            f"<div class='callout-card'>"
+            f"  <div class='callout-bar'></div>"
+            f"  <div class='callout-text'>{txt(b.get('text'))}</div>"
+            f"</div>"
+        )
     if t == "table":
-        headers = "".join(f"<th>{txt(h)}</th>" for h in block.get("headers") or [])
+        headers = "".join(f"<th>{txt(h)}</th>" for h in b.get("headers") or [])
         rows = "".join(
             "<tr>" + "".join(f"<td>{txt(c)}</td>" for c in r) + "</tr>"
-            for r in block.get("rows") or []
+            for r in b.get("rows") or []
         )
-        return f"<table><thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table>" if rows else ""
+        return (
+            f"<div class='table-wrap'><table>"
+            f"<thead><tr>{headers}</tr></thead><tbody>{rows}</tbody>"
+            f"</table></div>" if rows else ""
+        )
     if t == "map":
         items = "".join(
-            f"<li>{txt(p.get('name') if isinstance(p, dict) else p)}</li>"
-            for p in block.get("places") or []
+            f"<div class='place-row'><span class='pin-icon'>📍</span><span>{txt(p.get('name') if isinstance(p, dict) else p)}</span></div>"
+            for p in b.get("places") or []
         )
-        return f"<ul class='places'>{items}</ul>" if items else ""
+        return f"<div class='places-card'>{items}</div>" if items else ""
+    if t == "link":
+        url = str(b.get("url") or "")
+        if not url.startswith(("http://", "https://")):
+            return ""
+        label = txt(b.get("label") or url)
+        return f"<div class='extlink-card'><a href='{e(url, quote=True)}' target='_blank' rel='noopener'>{label} ↗</a></div>"
     return ""
 
 
+def _render_segmented_blocks(raw_blocks: list) -> str:
+    """Group blocks into section cards matching the Flutter BlockList design."""
+    segments: list[list[dict]] = []
+    section: list[dict] | None = None
+    for b in raw_blocks:
+        if not isinstance(b, dict):
+            continue
+        if _is_self_carded(b):
+            if section is not None and len(section) == 1 and section[0].get("type") == "heading":
+                section.append(b)
+            else:
+                segments.append([b])
+            section = None
+        elif b.get("type") == "heading":
+            section = [b]
+            segments.append(section)
+        elif section is not None:
+            section.append(b)
+        else:
+            section = [b]
+            segments.append(section)
+
+    html_parts: list[str] = []
+    for seg in segments:
+        if len(seg) == 1 and _is_self_carded(seg[0]):
+            html_parts.append(_render_block_content(seg[0]))
+        else:
+            content = "".join(_render_block_content(item) for item in seg)
+            if content.strip():
+                html_parts.append(f"<div class='section-card'>{content}</div>")
+    return "".join(html_parts)
+
+
+def _render_action_items_html(ai: dict | None) -> str:
+    if not ai or not isinstance(ai, dict):
+        return ""
+    items = ai.get("items") or []
+    if not items:
+        return ""
+    e = html.escape
+    count = len(items)
+    item_rows = "".join(
+        f"<div class='action-item'><span class='action-bullet'></span><span class='action-text'>{e(str(i.get('text') if isinstance(i, dict) else i))}</span></div>"
+        for i in items
+    )
+    return f"""
+    <div class='section-group'>
+      <div class='section-eyebrow'>
+        <span class='eyebrow-bar'></span>
+        <span class='eyebrow-text'>ACTIONS</span>
+        <span class='eyebrow-count'>{count}</span>
+      </div>
+      <div class='section-card actions-card'>
+        <div class='action-items-list'>{item_rows}</div>
+        <button class='track-actions-btn' onclick='saveToCachy()'>
+          <svg width='18' height='18' viewBox='0 0 256 256' fill='currentColor'>
+            <path d='M224,48H32A16,16,0,0,0,16,64V192a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V64A16,16,0,0,0,224,48Zm0,144H32V64H224V192ZM80,96a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,96Zm0,32a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,128Zm0,32a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,160Z'/>
+          </svg>
+          <span>Track in Actions</span>
+        </button>
+      </div>
+    </div>
+    """
+
+
+def _render_insight_html(insight: dict | None, read_minutes: int) -> str:
+    if not insight or not isinstance(insight, dict):
+        return ""
+    rh = insight.get("rabbit_hole") or {}
+    questions = rh.get("questions") or []
+    topics = rh.get("adjacent_topics") or []
+    concepts_list = rh.get("advanced_concepts") or []
+    threads_count = min(5, len(questions) + len(topics) + len(concepts_list))
+    quiz = insight.get("quiz") or {}
+    quiz_q = quiz.get("questions") or []
+    quiz_count = len(quiz_q)
+    deep_prompt = insight.get("deep_research_prompt")
+
+    if not threads_count and not quiz_count and not deep_prompt:
+        return ""
+
+    e = html.escape
+    stat_cells = [
+        f"<div class='stat-cell'><span class='stat-val'>{read_minutes}m</span><span class='stat-lbl'>READ</span></div>"
+    ]
+    if threads_count > 0:
+        stat_cells.append(
+            f"<div class='stat-cell stat-highlight'><span class='stat-val'>{threads_count}</span><span class='stat-lbl'>THREADS</span></div>"
+        )
+    if quiz_count > 0:
+        stat_cells.append(
+            f"<div class='stat-cell'><span class='stat-val'>{quiz_count}</span><span class='stat-lbl'>QUIZ</span></div>"
+        )
+
+    # Detailed expandable sections
+    expanded_blocks: list[str] = []
+    if questions or topics or concepts_list:
+        thread_items = "".join(f"<li>{e(str(q))}</li>" for q in questions[:5])
+        expanded_blocks.append(
+            f"<div class='dive-subcard'>"
+            f"  <div class='dive-subhead'>Starter Threads & Inquiries</div>"
+            f"  <ul class='dive-list'>{thread_items}</ul>"
+            f"</div>"
+        )
+    if quiz_q:
+        first_q = quiz_q[0]
+        q_text = e(str(first_q.get("question") or ""))
+        opts = first_q.get("options") or []
+        opt_html = "".join(
+            f"<div class='quiz-opt'><span>{e(str(o))}</span></div>" for o in opts
+        )
+        expanded_blocks.append(
+            f"<div class='dive-subcard'>"
+            f"  <div class='dive-subhead'>Active Recall Quiz (Sample)</div>"
+            f"  <p class='quiz-q'>{q_text}</p>"
+            f"  <div class='quiz-opts'>{opt_html}</div>"
+            f"</div>"
+        )
+    if deep_prompt:
+        expanded_blocks.append(
+            f"<div class='dive-subcard'>"
+            f"  <div class='dive-subhead'>Deep Research Prompt</div>"
+            f"  <p class='deep-prompt'>{e(str(deep_prompt))}</p>"
+            f"</div>"
+        )
+
+    return f"""
+    <div class='section-group'>
+      <div class='section-eyebrow'>
+        <span class='eyebrow-bar'></span>
+        <span class='eyebrow-text'>GOING DEEPER</span>
+      </div>
+      <div class='stat-strip'>{''.join(stat_cells)}</div>
+      <div class='dive-deeper-wrap'>
+        <button class='dive-toggle' onclick='toggleDiveDeeper()' id='diveToggleBtn'>
+          <svg class='compass-icon' width='18' height='18' viewBox='0 0 256 256' fill='currentColor'>
+            <path d='M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm45.66-122.34-56,24a8,8,0,0,0-4.32,4.32l-24,56a8,8,0,0,0,10.34,10.34l56-24a8,8,0,0,0,4.32-4.32l24-56A8,8,0,0,0,173.66,93.66ZM128,136a8,8,0,1,1,8-8A8,8,0,0,1,128,136Z'/>
+          </svg>
+          <span class='dive-title'>Dive deeper</span>
+          <svg class='caret-icon' id='diveCaret' width='16' height='16' viewBox='0 0 256 256' fill='currentColor'>
+            <path d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'/>
+          </svg>
+        </button>
+        <div class='dive-content' id='diveContent' style='display:none;'>
+          {''.join(expanded_blocks)}
+        </div>
+      </div>
+    </div>
+    """
+
+
+def _render_references_html(artifacts: list[dict]) -> str:
+    if not artifacts:
+        return ""
+    e = html.escape
+    tiles: list[str] = []
+    for a in artifacts:
+        title = e(str(a.get("title") or "Reference"))
+        thumb = a.get("thumbnail")
+        if thumb and thumb.startswith(("http://", "https://")):
+            media_box = f"<img class='ref-img' src='{e(thumb, quote=True)}' alt='{title}' loading='lazy'>"
+        else:
+            media_box = (
+                f"<div class='ref-placeholder'>"
+                f"  <svg width='28' height='28' viewBox='0 0 256 256' fill='currentColor'>"
+                f"    <path d='M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM184,96a8,8,0,0,1-8,8H80a8,8,0,0,1,0-16h96A8,8,0,0,1,184,96Zm0,32a8,8,0,0,1-8,8H80a8,8,0,0,1,0-16h96A8,8,0,0,1,184,128Zm0,32a8,8,0,0,1-8,8H80a8,8,0,0,1,0-16h96A8,8,0,0,1,184,160Z'/>"
+                f"  </svg>"
+                f"</div>"
+            )
+        tiles.append(
+            f"<div class='ref-tile'>"
+            f"  <div class='ref-aspect'>{media_box}</div>"
+            f"  <div class='ref-title' title='{title}'>{title}</div>"
+            f"</div>"
+        )
+    return f"""
+    <div class='section-group'>
+      <div class='section-eyebrow'>
+        <span class='eyebrow-bar'></span>
+        <span class='eyebrow-text'>REFERENCES</span>
+      </div>
+      <div class='ref-scroll-strip'>{''.join(tiles)}</div>
+    </div>
+    """
+
+
+def _render_concepts_html(concepts: list[dict]) -> str:
+    if not concepts:
+        return ""
+    e = html.escape
+    pills: list[str] = []
+    for c in concepts:
+        name = e(str(c.get("name") or ""))
+        cnt = c.get("source_count") or 1
+        cnt_badge = f"<span class='concept-count'>{cnt}</span>" if cnt > 1 else ""
+        pills.append(
+            f"<div class='concept-pill'>"
+            f"  <svg class='bulb-icon' width='13' height='13' viewBox='0 0 256 256' fill='currentColor'>"
+            f"    <path d='M128,24A80,80,0,0,0,48,104a79.44,79.44,0,0,0,24.78,57.73l.22.21A39.81,39.81,0,0,1,85,189.79V200a16,16,0,0,0,16,16h54a16,16,0,0,0,16-16V189.79a39.81,39.81,0,0,1,12-27.85l.22-.21A79.44,79.44,0,0,0,208,104,80.09,80.09,0,0,0,128,24Zm16,176H112V192h32Zm13.23-38.48A55.77,55.77,0,0,0,141,180.51H115a55.77,55.77,0,0,0-16.23-18.99A64,64,0,1,1,192,104,63.63,63.63,0,0,1,157.23,161.52ZM104,224a8,8,0,0,1,8-8h32a8,8,0,0,1,0,16H112A8,8,0,0,1,104,224Z'/>"
+            f"  </svg>"
+            f"  <span class='concept-name'>{name}</span>"
+            f"  {cnt_badge}"
+            f"</div>"
+        )
+    return f"""
+    <div class='section-group'>
+      <div class='section-eyebrow'>
+        <span class='eyebrow-bar'></span>
+        <span class='eyebrow-text'>CONCEPTS</span>
+      </div>
+      <div class='concepts-wrap'>{''.join(pills)}</div>
+    </div>
+    """
+
+
 def _render_share_page(p: dict) -> str:
-    """Full HTML share page. `p` is the public payload (already safe), but
-    everything interpolated is escaped anyway."""
+    """Full HTML share page rendered with Cachy editorial aesthetics."""
     e = html.escape
     title = e(str(p.get("one_liner") or "A card shared from Cachy"))
     tldr = e(str(p.get("tldr") or ""))
@@ -415,14 +761,25 @@ def _render_share_page(p: dict) -> str:
         f"<meta name='twitter:image' content='{e(thumb, quote=True)}'>"
         if thumb else ""
     )
-    thumb_img = (
-        f"<img class='thumb' src='{e(thumb, quote=True)}' alt=''>" if thumb else ""
+    thumb_html = (
+        f"<div class='hero-media'>"
+        f"  <img class='hero-img' src='{e(thumb, quote=True)}' alt='{title}'>"
+        f"  <div class='hero-fade'></div>"
+        f"</div>"
+        if thumb else ""
     )
-    ctype = e(str(p.get("content_type") or "card").replace("_", " ").title())
+    ctype = e(str(p.get("content_type") or "card").replace("_", " ").upper())
     tags = "".join(
-        f"<span class='tag'>{e(str(t))}</span>" for t in (p.get("tags") or [])
+        f"<span class='tag-pill'>{e(str(t).upper())}</span>" for t in (p.get("tags") or [])
     )
-    blocks = "".join(_block_html(b) for b in (p.get("blocks") or []))
+    read_mins = p.get("read_minutes", 1)
+
+    blocks_html = _render_segmented_blocks(p.get("blocks") or [])
+    actions_html = _render_action_items_html(p.get("action_items"))
+    insight_html = _render_insight_html(p.get("insight"), read_mins)
+    references_html = _render_references_html(p.get("artifacts") or [])
+    concepts_html = _render_concepts_html(p.get("concepts") or [])
+
     platform = e(str(p.get("platform") or ""))
     creator = e(str(p.get("creator") or ""))
     source_url = str(p.get("source_url") or "")
@@ -430,15 +787,16 @@ def _render_share_page(p: dict) -> str:
     src_html = ""
     if src_line or source_url:
         link = (
-            f" <a href='{e(source_url, quote=True)}'>original</a>"
+            f" · <a href='{e(source_url, quote=True)}' target='_blank' rel='noopener'>original reel</a>"
             if source_url.startswith(("http://", "https://")) else ""
         )
-        src_html = f"<p class='source'>From {e(src_line)}{link}</p>" if src_line else (
-            f"<p class='source'><a href='{e(source_url, quote=True)}'>View original</a></p>"
+        src_html = f"<div class='source-line'>From {e(src_line)}{link}</div>" if src_line else (
+            f"<div class='source-line'><a href='{e(source_url, quote=True)}' target='_blank' rel='noopener'>View original reel</a></div>"
             if link else ""
         )
+
     return f"""<!DOCTYPE html>
-<html lang='en'>
+<html lang='en' data-theme='dark'>
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
@@ -450,92 +808,747 @@ def _render_share_page(p: dict) -> str:
 <meta property='og:type' content='article'>
 {thumb_tag}
 <meta name='twitter:card' content='summary_large_image'>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet'>
 <style>
-  :root {{ --bg:#F5F0E8; --ink:#181818; --muted:#6b6259; --line:#e2d9c8; --card:#fffdf8; }}
-  * {{ box-sizing:border-box; }}
-  body {{ margin:0; background:var(--bg); color:var(--ink);
-         font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-         line-height:1.6; }}
-  .wrap {{ max-width:640px; margin:0 auto; padding:24px 20px 64px; }}
-  .brand {{ display:flex; align-items:center; gap:10px; margin-bottom:28px; }}
-  .brand .mark {{ width:30px; height:30px; border-radius:9px; background:var(--ink);
-                  color:var(--bg); display:flex; align-items:center; justify-content:center;
-                  font-weight:800; font-size:17px; }}
-  .brand span {{ font-weight:700; letter-spacing:.02em; }}
-  .thumb {{ width:100%; border-radius:14px; margin:0 0 20px; display:block; }}
-  .pills {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }}
-  .pill {{ font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
-           background:var(--ink); color:var(--bg); padding:4px 12px; border-radius:999px; }}
-  .tag {{ font-size:12px; color:var(--muted); border:1px solid var(--line);
-          padding:4px 12px; border-radius:999px; }}
-  h1 {{ font-size:28px; line-height:1.25; margin:0 0 16px; letter-spacing:-.01em; }}
-  .tldr {{ background:var(--card); border:1px solid var(--line); border-left:4px solid var(--ink);
-           border-radius:12px; padding:16px 18px; margin:0 0 24px; font-size:17px; }}
-  h2 {{ font-size:21px; margin:28px 0 10px; }} h3 {{ font-size:17px; margin:24px 0 8px; }}
-  p {{ margin:0 0 14px; }} ul, ol {{ margin:0 0 14px; padding-left:22px; }}
-  li {{ margin-bottom:6px; }}
-  .kvlist {{ margin:0 0 14px; }} .kv {{ display:flex; gap:12px; padding:8px 0;
-           border-bottom:1px solid var(--line); }}
-  .kv dt {{ font-weight:700; min-width:110px; }} .kv dd {{ margin:0; }}
-  .checklist {{ list-style:none; padding-left:0; }}
-  .checklist .box {{ margin-right:8px; }}
-  .callout {{ background:#f3ecdd; border-radius:10px; padding:12px 16px; margin:0 0 14px; }}
-  .extlink a, .source a, p a {{ color:var(--ink); }}
-  table {{ border-collapse:collapse; width:100%; margin:0 0 14px; font-size:14px; }}
-  th, td {{ border:1px solid var(--line); padding:8px 10px; text-align:left; }}
-  th {{ background:#efe8d8; }}
-  .source {{ color:var(--muted); font-size:14px; margin-top:26px; }}
-  .cta {{ position:sticky; bottom:0; padding:16px 0 8px;
-          background:linear-gradient(transparent, var(--bg) 40%); }}
-  .cta button {{ width:100%; padding:16px; font-size:17px; font-weight:700;
-                  background:var(--ink); color:var(--bg); border:0; border-radius:16px;
-                  cursor:pointer; }}
-  #getapp {{ display:none; background:var(--card); border:1px solid var(--line);
-             border-radius:14px; padding:18px; margin-top:14px; text-align:center; }}
-  #getapp p {{ color:var(--muted); font-size:14px; }}
-  #getapp .row {{ display:flex; gap:10px; margin-top:12px; }}
-  #getapp .row button {{ flex:1; padding:12px; border-radius:12px; font-weight:700;
-                         cursor:pointer; }}
-  #getapp .primary {{ background:var(--ink); color:var(--bg); border:0; }}
-  #getapp .ghost {{ background:transparent; border:1px solid var(--line); color:var(--ink); }}
-  footer {{ margin-top:44px; text-align:center; color:var(--muted); font-size:13px; }}
+  :root {{
+    --bg: #181818;
+    --raised: #222120;
+    --ink: #EDE8DF;
+    --muted: #9A928A;
+    --line: rgba(237, 232, 223, 0.08);
+    --accent: #96A885;
+    --accent-tint: rgba(150, 168, 133, 0.15);
+    --accent-border: rgba(150, 168, 133, 0.35);
+    --card-bg: #222120;
+    --card-border: rgba(237, 232, 223, 0.08);
+    --btn-primary-bg: #96A885;
+    --btn-primary-ink: #181818;
+    --hero-fade: linear-gradient(to bottom, transparent 65%, #181818);
+  }}
+  html[data-theme='light'] {{
+    --bg: #F5F0E8;
+    --raised: #EBE3D5;
+    --ink: #1C1917;
+    --muted: #6B6259;
+    --line: #E2D9C8;
+    --accent: #7D8472;
+    --accent-tint: rgba(125, 132, 114, 0.12);
+    --accent-border: rgba(125, 132, 114, 0.35);
+    --card-bg: #FFFDF8;
+    --card-border: #E2D9C8;
+    --btn-primary-bg: #1C1917;
+    --btn-primary-ink: #F5F0E8;
+    --hero-fade: linear-gradient(to bottom, transparent 65%, #F5F0E8);
+  }}
+  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
+  body {{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    transition: background 0.2s ease, color 0.2s ease;
+  }}
+  .wrap {{
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 18px 18px 120px;
+  }}
+  /* Header */
+  .header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }}
+  .brand {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--ink);
+  }}
+  .brand .mark {{
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    font-family: 'Fraunces', serif;
+  }}
+  .brand span {{
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: .02em;
+  }}
+  .theme-toggle {{
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+  }}
+  /* Hero Media */
+  .hero-media {{
+    position: relative;
+    width: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    background: var(--card-bg);
+  }}
+  .hero-img {{
+    width: 100%;
+    display: block;
+    max-height: 480px;
+    object-fit: cover;
+  }}
+  .hero-fade {{
+    position: absolute;
+    inset: 0;
+    background: var(--hero-fade);
+    pointer-events: none;
+  }}
+  /* Category Pills */
+  .category-bar {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }}
+  .type-pill {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    background: var(--accent-tint);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+    padding: 4px 11px;
+    border-radius: 999px;
+  }}
+  .tag-pill {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--muted);
+    background: var(--raised);
+    border: 1px solid var(--line);
+    padding: 4px 10px;
+    border-radius: 999px;
+  }}
+  /* Title & Meta */
+  h1.headline {{
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 27px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.4px;
+    margin: 0 0 14px;
+    color: var(--ink);
+  }}
+  .meta-strip {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+  }}
+  .read-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--raised);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 600;
+  }}
+  /* Section Eyebrow */
+  .section-eyebrow {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 28px 0 10px;
+  }}
+  .eyebrow-bar {{
+    width: 3px;
+    height: 13px;
+    background: var(--accent);
+    border-radius: 2px;
+  }}
+  .eyebrow-text {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    color: var(--accent);
+  }}
+  .eyebrow-count {{
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+  }}
+  /* Section Cards */
+  .section-card {{
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }}
+  .tldr-card {{
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--ink);
+  }}
+  /* Typography inside cards */
+  .block-heading {{
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+    margin: 0 0 10px;
+    color: var(--ink);
+  }}
+  .block-para {{
+    margin: 0 0 10px;
+    line-height: 1.6;
+    color: var(--ink);
+  }}
+  .block-para:last-child {{ margin-bottom: 0; }}
+  /* Lists */
+  .bullet-list {{
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px;
+  }}
+  .bullet-item {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }}
+  .bullet-dot {{
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 8px;
+    flex-shrink: 0;
+  }}
+  /* Step Lists */
+  .step-strip {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }}
+  .step-node {{
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent-tint);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+    flex-shrink: 0;
+  }}
+  .step-connector {{
+    flex: 1;
+    min-width: 16px;
+    height: 1px;
+    background: var(--line);
+  }}
+  .step-row {{
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }}
+  .step-row:last-child {{ border-bottom: 0; padding-bottom: 0; }}
+  .step-badge {{
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--raised);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }}
+  .step-body {{ flex: 1; line-height: 1.55; }}
+  /* Checklists */
+  .checklist {{ margin: 0 0 10px; }}
+  .check-row {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+  }}
+  .check-box {{
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+  }}
+  .check-text {{ flex: 1; line-height: 1.5; }}
+  /* Callout & Other Blocks */
+  .callout-card {{
+    display: flex;
+    gap: 12px;
+    background: var(--accent-tint);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--accent-border);
+  }}
+  .callout-bar {{
+    width: 3px;
+    border-radius: 2px;
+    background: var(--accent);
+    flex-shrink: 0;
+  }}
+  .callout-text {{ line-height: 1.55; }}
+  .kv-list {{ margin: 0; }}
+  .kv-row {{
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }}
+  .kv-dt {{ font-weight: 700; min-width: 110px; color: var(--muted); }}
+  .kv-dd {{ margin: 0; flex: 1; }}
+  .table-wrap {{ overflow-x: auto; margin-bottom: 14px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+  th, td {{ padding: 8px 12px; border: 1px solid var(--line); text-align: left; }}
+  th {{ background: var(--raised); font-weight: 600; }}
+  .places-card, .extlink-card {{
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }}
+  .extlink-card a {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
+  /* Actions Card */
+  .actions-card {{
+    padding: 18px;
+  }}
+  .action-items-list {{
+    margin-bottom: 16px;
+  }}
+  .action-item {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+  }}
+  .action-item:last-child {{ margin-bottom: 0; }}
+  .action-bullet {{
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 7px;
+    flex-shrink: 0;
+  }}
+  .action-text {{
+    line-height: 1.5;
+    flex: 1;
+  }}
+  .track-actions-btn {{
+    width: 100%;
+    padding: 13px 18px;
+    background: var(--accent);
+    color: var(--btn-primary-ink);
+    border: 0;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.15s ease;
+  }}
+  .track-actions-btn:hover {{ opacity: 0.9; }}
+  /* Going Deeper & Stat Strip */
+  .stat-strip {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+  }}
+  .stat-cell {{
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 12px 10px;
+    text-align: center;
+  }}
+  .stat-val {{
+    display: block;
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink);
+  }}
+  .stat-lbl {{
+    display: block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-top: 2px;
+  }}
+  .stat-highlight .stat-val {{ color: var(--accent); }}
+  .dive-toggle {{
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    color: var(--ink);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
+    text-align: left;
+  }}
+  .compass-icon {{ color: var(--accent); }}
+  .dive-title {{ flex: 1; }}
+  .caret-icon {{ color: var(--muted); transition: transform 0.2s ease; }}
+  .dive-content {{
+    margin-top: 10px;
+  }}
+  .dive-subcard {{
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }}
+  .dive-subhead {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 8px;
+  }}
+  .dive-list {{ margin: 0; padding-left: 20px; line-height: 1.6; }}
+  .quiz-q {{ font-weight: 600; margin: 0 0 10px; }}
+  .quiz-opts {{ display: flex; flex-direction: column; gap: 6px; }}
+  .quiz-opt {{
+    background: var(--raised);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    border: 1px solid var(--line);
+  }}
+  .deep-prompt {{ margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }}
+  /* References Strip */
+  .ref-scroll-strip {{
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x mandatory;
+  }}
+  .ref-tile {{
+    flex: 0 0 96px;
+    scroll-snap-align: start;
+    cursor: pointer;
+  }}
+  .ref-aspect {{
+    width: 96px;
+    height: 134px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--raised);
+    border: 1px solid var(--card-border);
+    position: relative;
+  }}
+  .ref-img {{
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }}
+  .ref-placeholder {{
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+  }}
+  .ref-title {{
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--ink);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }}
+  /* Concepts Wrap */
+  .concepts-wrap {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }}
+  .concept-pill {{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--raised);
+    border: 1px solid var(--card-border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--ink);
+  }}
+  .bulb-icon {{ color: var(--accent); }}
+  .concept-count {{
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 1px 6px;
+    font-family: 'IBM Plex Mono', monospace;
+  }}
+  /* Source Line & Footer */
+  .source-line {{
+    margin-top: 24px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }}
+  .source-line a {{ color: var(--accent); text-decoration: none; }}
+  footer {{
+    margin-top: 36px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+  }}
+  /* Sticky Bottom Bar */
+  .cta-bar {{
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 14px 20px 20px;
+    background: linear-gradient(to top, var(--bg) 75%, transparent);
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+  }}
+  .cta-inner {{
+    width: 100%;
+    max-width: 600px;
+  }}
+  .cta-btn {{
+    width: 100%;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
+    border: 0;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }}
+  #getapp {{
+    display: none;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 12px;
+    text-align: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  }}
+  #getapp p {{ margin: 0 0 10px; font-size: 14px; color: var(--muted); }}
+  #getapp .row {{ display: flex; gap: 8px; justify-content: center; }}
+  #getapp button {{
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }}
+  #getapp .primary {{ background: var(--accent); color: var(--btn-primary-ink); border: 0; }}
+  #getapp .ghost {{ background: transparent; border: 1px solid var(--line); color: var(--ink); }}
 </style>
 </head>
 <body>
 <div class='wrap'>
-  <div class='brand'><div class='mark'>C</div><span>Cachy</span></div>
-  {thumb_img}
-  <div class='pills'><span class='pill'>{ctype}</span>{tags}</div>
-  <h1>{title}</h1>
-  {f"<div class='tldr'>{tldr}</div>" if tldr else ""}
-  {blocks}
+  <header class='header'>
+    <div class='brand'>
+      <div class='mark'>C</div>
+      <span>Cachy</span>
+    </div>
+    <button class='theme-toggle' onclick='toggleTheme()'>
+      <span id='themeLabel'>LIGHT</span> ◐
+    </button>
+  </header>
+
+  {thumb_html}
+
+  <div class='category-bar'>
+    <span class='type-pill'>{ctype}</span>
+    {tags}
+  </div>
+
+  <h1 class='headline'>{title}</h1>
+
+  <div class='meta-strip'>
+    <div class='read-badge'>
+      <svg width='12' height='12' viewBox='0 0 256 256' fill='currentColor'>
+        <path d='M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z'/>
+      </svg>
+      <span>{read_mins} min read</span>
+    </div>
+  </div>
+
+  {f"<div class='section-group'><div class='section-eyebrow'><span class='eyebrow-bar'></span><span class='eyebrow-text'>CORE TAKEAWAY</span></div><div class='section-card tldr-card'>{tldr}</div></div>" if tldr else ""}
+
+  {blocks_html}
+
+  {actions_html}
+
+  {insight_html}
+
+  {references_html}
+
+  {concepts_html}
+
   {src_html}
-  <div class='cta'>
-    <button onclick='saveToCachy()'>Save to my Cachy</button>
+
+  <footer>Shared via Cachy · turn reels into knowledge</footer>
+</div>
+
+<div class='cta-bar'>
+  <div class='cta-inner'>
+    <button class='cta-btn' onclick='saveToCachy()'>
+      <svg width='18' height='18' viewBox='0 0 256 256' fill='currentColor'>
+        <path d='M192,24H64A16,16,0,0,0,48,40V224a8,8,0,0,0,12.65,6.51L128,183.3l67.35,47.21A8,8,0,0,0,208,224V40A16,16,0,0,0,192,24Zm0,182.45-59.35-41.59a8,8,0,0,0-9.3,0L64,206.45V40H192Z'/>
+      </svg>
+      <span>Save to my Cachy</span>
+    </button>
     <div id='getapp'>
-      <p>You'll need the Cachy app to save this card.</p>
+      <p>Save to your Cachy account and access this card offline anytime.</p>
       <div class='row'>
         <button class='ghost' onclick='copyLink()'>Copy link</button>
       </div>
     </div>
   </div>
-  <footer>Shared via Cachy · turn reels into knowledge</footer>
 </div>
+
 <script>
 (function() {{
+  var theme = localStorage.getItem('cachy_theme') || 'dark';
+  function applyTheme(t) {{
+    document.documentElement.setAttribute('data-theme', t);
+    var lbl = document.getElementById('themeLabel');
+    if (lbl) lbl.textContent = t === 'dark' ? 'LIGHT' : 'DARK';
+  }}
+  applyTheme(theme);
+
+  window.toggleTheme = function() {{
+    var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('cachy_theme', next);
+    applyTheme(next);
+  }};
+
+  window.toggleDiveDeeper = function() {{
+    var content = document.getElementById('diveContent');
+    var caret = document.getElementById('diveCaret');
+    if (!content) return;
+    if (content.style.display === 'none') {{
+      content.style.display = 'block';
+      if (caret) caret.style.transform = 'rotate(180deg)';
+    }} else {{
+      content.style.display = 'none';
+      if (caret) caret.style.transform = 'rotate(0deg)';
+    }}
+  }};
+
   var left = false;
   document.addEventListener('visibilitychange', function() {{ left = document.hidden; }});
   window.saveToCachy = function() {{
     window.location.href = 'cachy://s/{token}';
     setTimeout(function() {{
-      if (!left) document.getElementById('getapp').style.display = 'block';
+      if (!left) {{
+        var modal = document.getElementById('getapp');
+        if (modal) modal.style.display = 'block';
+      }}
     }}, 1500);
   }};
+
   window.copyLink = function() {{
     var u = '{url}';
-    if (navigator.clipboard) navigator.clipboard.writeText(u);
+    if (navigator.clipboard) {{
+      navigator.clipboard.writeText(u);
+      alert('Link copied to clipboard!');
+    }}
   }};
 }})();
 </script>
 </body>
 </html>"""
+

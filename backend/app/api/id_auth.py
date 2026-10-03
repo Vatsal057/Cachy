@@ -114,8 +114,8 @@ async def username_available(request: Request, username: str = "") -> dict:
     _require_enabled()
     _check_ip_rate(request)
     uname = passwords.normalize_username(username)
-    if passwords.username_error(uname):
-        return {"available": False, "reason": passwords.username_error(uname)}
+    if (err := passwords.username_error(uname)) is not None:
+        return {"available": False, "reason": err}
     async with db.session() as s:
         taken = await db.get_id_account_by_username(s, username=uname) is not None
     return {"available": not taken}
