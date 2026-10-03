@@ -295,3 +295,57 @@ async def test_share_page_and_save_with_rich_sections(client, database) -> None:
         assert new_id in conc_row.source_card_ids
         assert card_id in conc_row.source_card_ids
 
+
+async def test_share_page_with_schema_1_6_list_quiz_and_poison_blocks(client, database) -> None:
+    """Real cards in Schema 1.6 have insight.quiz as a list[dict] (not a wrapped dict)
+    and may contain diverse block types. Neither /s/{token} nor /share/{token} may 500."""
+    _as("uid-a")
+    async with database.session() as s:
+        card = db.CardRow(
+            owner_id="uid-a",
+            source_url="https://example.com/reel-schema16",
+            state=CardState.READY.value,
+            one_liner="Schema 1.6 real card",
+            tldr="Summary of the reel",
+            blocks=[
+                {"type": "heading", "text": "Heading no level"},  # no level
+                {"type": "paragraph", "text": "Some text"},
+                {"type": "bullet_list", "items": [{"text": "Dict bullet"}, "String bullet"]},
+                {"type": "table", "headers": ["Col 1", "Col 2"], "rows": [["A", "B"], "not-a-list"]},
+                {"type": "unknown_future_block", "payload": "xyz"},
+            ],
+            insight={
+                "rabbit_hole": {
+                    "questions": ["Why does this matter?"],
+                },
+                # Schema 1.6: bare list of quiz question dicts
+                "quiz": [
+                    {
+                        "question": "What is the key takeaway?",
+                        "options": ["Option A", "Option B"],
+                        "answer_index": 0,
+                        "explanation": "Because of reasons.",
+                    }
+                ],
+                "deep_research_prompt": "Explore more about this topic.",
+            },
+        )
+        s.add(card)
+        await s.commit()
+        await s.refresh(card)
+        card_id = card.id
+
+    token = (await client.post(f"/cards/{card_id}/share")).json()["token"]
+
+    # 1. JSON endpoint
+    json_resp = await client.get(f"/share/{token}")
+    assert json_resp.status_code == 200, json_resp.text
+    assert json_resp.json()["one_liner"] == "Schema 1.6 real card"
+
+    # 2. HTML page endpoint
+    page_resp = await client.get(f"/s/{token}")
+    assert page_resp.status_code == 200, page_resp.text
+    assert "Schema 1.6 real card" in page_resp.text
+    assert "Active Recall Quiz" in page_resp.text
+    assert "What is the key takeaway?" in page_resp.text
+

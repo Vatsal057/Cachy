@@ -63,35 +63,41 @@ async def _resolve_share(
             raise HTTPException(status_code=404, detail="link not found")
 
         # Load linked catalog references for this card
-        art_stmt = select(db.ArtifactRow).order_by(db.ArtifactRow.created_at.desc())
-        all_arts = (await s.execute(art_stmt)).scalars().all()
-        artifacts = [
-            {
-                "id": a.id,
-                "type": a.type,
-                "title": a.title,
-                "creator": a.creator,
-                "year": a.year,
-                "thumbnail": a.thumbnail,
-                "description": a.description,
-            }
-            for a in all_arts
-            if link.card_id in (a.source_card_ids or [])
-        ]
+        artifacts = []
+        try:
+            art_stmt = select(db.ArtifactRow).order_by(db.ArtifactRow.created_at.desc())
+            all_arts = (await s.execute(art_stmt)).scalars().all()
+            for a in all_arts:
+                sc_ids = a.source_card_ids if isinstance(a.source_card_ids, list) else []
+                if link.card_id in sc_ids:
+                    artifacts.append({
+                        "id": a.id,
+                        "type": a.type,
+                        "title": a.title,
+                        "creator": a.creator,
+                        "year": a.year,
+                        "thumbnail": a.thumbnail,
+                        "description": a.description,
+                    })
+        except Exception as exc:
+            log.warning("error loading artifacts for share: %s", exc)
 
         # Load linked concepts for this card
-        conc_stmt = select(db.ConceptRow).order_by(db.ConceptRow.created_at.desc())
-        all_concs = (await s.execute(conc_stmt)).scalars().all()
-        concepts = [
-            {
-                "id": c.id,
-                "name": c.name,
-                "description": getattr(c, "description", None),
-                "source_count": len(c.source_card_ids or []),
-            }
-            for c in all_concs
-            if link.card_id in (c.source_card_ids or [])
-        ]
+        concepts = []
+        try:
+            conc_stmt = select(db.ConceptRow).order_by(db.ConceptRow.created_at.desc())
+            all_concs = (await s.execute(conc_stmt)).scalars().all()
+            for c in all_concs:
+                sc_ids = c.source_card_ids if isinstance(c.source_card_ids, list) else []
+                if link.card_id in sc_ids:
+                    concepts.append({
+                        "id": c.id,
+                        "name": c.name,
+                        "description": getattr(c, "definition", None) or getattr(c, "description", None),
+                        "source_count": len(sc_ids),
+                    })
+        except Exception as exc:
+            log.warning("error loading concepts for share: %s", exc)
     return link, row, artifacts, concepts
 
 
@@ -419,9 +425,14 @@ async def share_page(token: str, request: Request) -> str:
     """Server-rendered share page (OG tags need server HTML)."""
     link, row, artifacts, concepts = await _resolve_share(token)
     base = _base_url(request)
-    return _render_share_page(
-        _public_payload(link, row, artifacts, concepts, token, base)
-    )
+    payload = _public_payload(link, row, artifacts, concepts, token, base)
+    try:
+        return _render_share_page(payload)
+    except Exception as exc:
+        log.error("Failed to render rich share page for %s: %s", token, exc, exc_info=True)
+        title = html.escape(str(row.one_liner or "A card shared from Cachy"))
+        tldr = html.escape(str(row.tldr or ""))
+        return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>{title} · Cachy</title></head><body style='font-family:sans-serif;padding:24px;background:#181818;color:#ede8df'><h1>{title}</h1><p>{tldr}</p></body></html>"""
 
 
 @router.get("/.well-known/assetlinks.json")
@@ -495,8 +506,8 @@ def _render_block_content(b: dict) -> str:
         return f"<p class='block-para'>{txt(b.get('text'))}</p>"
     if t == "bullet_list":
         items = "".join(
-            f"<li class='bullet-item'><span class='bullet-dot'></span><span>{txt(i)}</span></li>"
-            for i in b.get("items") or []
+            f"<li class='bullet-item'><span class='bullet-dot'></span><span>{txt(i.get('text') if isinstance(i, dict) else i)}</span></li>"
+            for i in (b.get("items") or [])
         )
         return f"<ul class='bullet-list'>{items}</ul>" if items else ""
     if t == "step_list":
@@ -504,14 +515,14 @@ def _render_block_content(b: dict) -> str:
     if t == "checklist":
         items = "".join(
             f"<div class='check-row'><span class='check-box'>&#9744;</span><span class='check-text'>{txt(i.get('text') if isinstance(i, dict) else i)}</span></div>"
-            for i in b.get("items") or []
+            for i in (b.get("items") or [])
         )
         return f"<div class='checklist'>{items}</div>" if items else ""
     if t == "key_value":
         rows = "".join(
             f"<div class='kv-row'><dt class='kv-dt'>{txt(p.get('key') if isinstance(p, dict) else '')}</dt>"
             f"<dd class='kv-dd'>{txt(p.get('value') if isinstance(p, dict) else '')}</dd></div>"
-            for p in b.get("pairs") or []
+            for p in (b.get("pairs") or [])
         )
         return f"<dl class='kv-list'>{rows}</dl>" if rows else ""
     if t == "callout":
@@ -522,10 +533,10 @@ def _render_block_content(b: dict) -> str:
             f"</div>"
         )
     if t == "table":
-        headers = "".join(f"<th>{txt(h)}</th>" for h in b.get("headers") or [])
+        headers = "".join(f"<th>{txt(h)}</th>" for h in (b.get("headers") or []))
         rows = "".join(
-            "<tr>" + "".join(f"<td>{txt(c)}</td>" for c in (r or [])) + "</tr>"
-            for r in b.get("rows") or []
+            "<tr>" + "".join(f"<td>{txt(c)}</td>" for c in (r if isinstance(r, list) else [r])) + "</tr>"
+            for r in (b.get("rows") or [])
         )
         return (
             f"<div class='table-wrap'><table>"
@@ -535,7 +546,7 @@ def _render_block_content(b: dict) -> str:
     if t == "map":
         items = "".join(
             f"<div class='place-row'><span class='pin-icon'>📍</span><span>{txt(p.get('name') if isinstance(p, dict) else p)}</span></div>"
-            for p in b.get("places") or []
+            for p in (b.get("places") or [])
         )
         return f"<div class='places-card'>{items}</div>" if items else ""
     if t == "link":
@@ -616,12 +627,20 @@ def _render_insight_html(insight: dict | None, read_minutes: int) -> str:
     if not insight or not isinstance(insight, dict):
         return ""
     rh = insight.get("rabbit_hole") or {}
-    questions = rh.get("questions") or []
-    topics = rh.get("adjacent_topics") or []
-    concepts_list = rh.get("advanced_concepts") or []
+    if not isinstance(rh, dict):
+        rh = {}
+    questions = rh.get("questions") if isinstance(rh.get("questions"), list) else []
+    topics = rh.get("adjacent_topics") if isinstance(rh.get("adjacent_topics"), list) else []
+    concepts_list = rh.get("advanced_concepts") if isinstance(rh.get("advanced_concepts"), list) else []
     threads_count = min(5, len(questions) + len(topics) + len(concepts_list))
-    quiz = insight.get("quiz") or {}
-    quiz_q = quiz.get("questions") or []
+
+    quiz = insight.get("quiz")
+    if isinstance(quiz, list):
+        quiz_q = quiz
+    elif isinstance(quiz, dict):
+        quiz_q = quiz.get("questions") if isinstance(quiz.get("questions"), list) else []
+    else:
+        quiz_q = []
     quiz_count = len(quiz_q)
     deep_prompt = insight.get("deep_research_prompt")
 
@@ -653,8 +672,12 @@ def _render_insight_html(insight: dict | None, read_minutes: int) -> str:
         )
     if quiz_q:
         first_q = quiz_q[0]
-        q_text = e(str(first_q.get("question") or ""))
-        opts = first_q.get("options") or []
+        if isinstance(first_q, dict):
+            q_text = e(str(first_q.get("question") or ""))
+            opts = first_q.get("options") if isinstance(first_q.get("options"), list) else []
+        else:
+            q_text = e(str(first_q or ""))
+            opts = []
         opt_html = "".join(
             f"<div class='quiz-opt'><span>{e(str(o))}</span></div>" for o in opts
         )
@@ -790,11 +813,35 @@ def _render_share_page(p: dict) -> str:
     )
     read_mins = p.get("read_minutes", 1)
 
-    blocks_html = _render_segmented_blocks(p.get("blocks") or [])
-    actions_html = _render_action_items_html(p.get("action_items"))
-    insight_html = _render_insight_html(p.get("insight"), read_mins)
-    references_html = _render_references_html(p.get("artifacts") or [])
-    concepts_html = _render_concepts_html(p.get("concepts") or [])
+    try:
+        blocks_html = _render_segmented_blocks(p.get("blocks") or [])
+    except Exception as exc:
+        log.warning("error rendering blocks for share: %s", exc)
+        blocks_html = ""
+
+    try:
+        actions_html = _render_action_items_html(p.get("action_items"))
+    except Exception as exc:
+        log.warning("error rendering action items for share: %s", exc)
+        actions_html = ""
+
+    try:
+        insight_html = _render_insight_html(p.get("insight"), read_mins)
+    except Exception as exc:
+        log.warning("error rendering insight for share: %s", exc)
+        insight_html = ""
+
+    try:
+        references_html = _render_references_html(p.get("artifacts") or [])
+    except Exception as exc:
+        log.warning("error rendering references for share: %s", exc)
+        references_html = ""
+
+    try:
+        concepts_html = _render_concepts_html(p.get("concepts") or [])
+    except Exception as exc:
+        log.warning("error rendering concepts for share: %s", exc)
+        concepts_html = ""
 
     platform = e(str(p.get("platform") or ""))
     creator = e(str(p.get("creator") or ""))
