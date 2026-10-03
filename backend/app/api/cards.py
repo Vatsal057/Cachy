@@ -543,6 +543,7 @@ async def delete_card(card_id: str, owner_id: OwnerDep) -> dict:
         keyframes = list(row.keyframes or [])
         await session.execute(delete(db.JobRow).where(db.JobRow.card_id == card_id))
         await session.execute(delete(db.CardRow).where(db.CardRow.id == card_id))
+        await session.execute(delete(db.ShareLinkRow).where(db.ShareLinkRow.card_id == card_id))
         await db.cleanup_after_card_deletion(session, card_id)
         await session.commit()
     media.remove_card_media(card_id, [thumb, *keyframes])

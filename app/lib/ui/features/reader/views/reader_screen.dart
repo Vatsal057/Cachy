@@ -10,8 +10,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../data/repositories/card_repository.dart';
+import '../../../../data/services/api_client.dart';
 import '../../../../data/services/highlight_store.dart';
 import '../../../../domain/models/artifact.dart';
 import '../../../../domain/models/card.dart' as model;
@@ -444,6 +446,11 @@ class _FaceAppBar extends StatelessWidget {
         ),
       ),
       actions: [
+        if (card.isReady)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: _ShareButton(cardId: card.cardId),
+          ),
         if (onToggleFullscreen != null)
           Padding(
             padding: const EdgeInsets.all(8),
@@ -502,6 +509,175 @@ class _CircleButton extends StatelessWidget {
           width: 40,
           height: 40,
           child: PhosphorIcon(icon, color: Colors.white, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+/// Share affordance: opens the card's link sheet (get-or-create the public
+/// link, then copy / share / revoke). Only rendered for ready cards (sharing
+/// a card that's still building 409s on the backend).
+class _ShareButton extends StatefulWidget {
+  const _ShareButton({required this.cardId});
+  final String cardId;
+
+  @override
+  State<_ShareButton> createState() => _ShareButtonState();
+}
+
+class _ShareButtonState extends State<_ShareButton> {
+  bool _busy = false;
+
+  Future<void> _open() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = context.read<CardRepository>().api;
+      final url =
+          await api.getShareLink(widget.cardId) ?? await api.createShareLink(widget.cardId);
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        useSafeArea: true,
+        builder: (_) => _ShareOptionsSheet(cardId: widget.cardId, url: url),
+      );
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.friendlyMessage)));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text("Couldn't create the share link. Try again.")));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _CircleButton(
+      icon: _busy
+          ? PhosphorIconsRegular.circleNotch
+          : PhosphorIconsRegular.shareNetwork,
+      onTap: _open,
+    );
+  }
+}
+
+/// The card's public link: copy it, send it through the OS share sheet, or
+/// revoke it (revoked links stop opening immediately).
+class _ShareOptionsSheet extends StatefulWidget {
+  const _ShareOptionsSheet({required this.cardId, required this.url});
+  final String cardId;
+  final String url;
+
+  @override
+  State<_ShareOptionsSheet> createState() => _ShareOptionsSheetState();
+}
+
+class _ShareOptionsSheetState extends State<_ShareOptionsSheet> {
+  bool _revoking = false;
+
+  Future<void> _revoke() async {
+    if (_revoking) return;
+    setState(() => _revoking = true);
+    try {
+      await context.read<CardRepository>().api.revokeShareLink(widget.cardId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Share link revoked')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.friendlyMessage)));
+      }
+    } finally {
+      if (mounted) setState(() => _revoking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Share this card', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              'Anyone with the link can view it — no Cachy account needed.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.url,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy link',
+                    icon: const PhosphorIcon(PhosphorIconsRegular.copy, size: 20),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: widget.url));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Link copied')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () =>
+                  Share.share(widget.url, subject: 'Shared from Cachy'),
+              icon: const PhosphorIcon(PhosphorIconsRegular.shareNetwork,
+                  size: 20),
+              label: const Text('Share…'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: _revoking ? null : _revoke,
+              icon: const PhosphorIcon(PhosphorIconsRegular.trash, size: 18),
+              label: Text(_revoking ? 'Revoking…' : 'Revoke link'),
+              style: TextButton.styleFrom(foregroundColor: scheme.error),
+            ),
+          ],
         ),
       ),
     );

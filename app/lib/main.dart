@@ -10,6 +10,7 @@ import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
@@ -29,6 +30,7 @@ import 'ui/core/root_gate.dart';
 import 'ui/core/theme.dart';
 import 'ui/core/ui_bus.dart';
 import 'ui/features/share/views/share_screen.dart';
+import 'ui/features/share/views/shared_card_sheet.dart';
 
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -118,11 +120,75 @@ class CachyApp extends StatefulWidget {
 class _CachyAppState extends State<CachyApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<List<SharedMediaFile>>? _intentSub;
+  StreamSubscription<Uri>? _linkSub;
+  final List<String> _pendingShareTokens = [];
+  bool _saveSheetOpen = false;
 
   @override
   void initState() {
     super.initState();
     _wireShareIntent();
+    _wireDeepLinks();
+    widget.appController.addListener(_drainPendingShareTokens);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _drainPendingShareTokens());
+  }
+
+  /// Cachy share links: `https://<host>/s/<token>` and `cachy://s/<token>`
+  /// (fired by the share page's "Save to my Cachy" button).
+  void _wireDeepLinks() {
+    late final AppLinks appLinks;
+    try {
+      appLinks = AppLinks();
+    } catch (_) {
+      return; // plugin unavailable on this platform
+    }
+    appLinks.getInitialLink().then((uri) {
+      if (uri != null) _onDeepLink(uri);
+    }).catchError((_) {});
+    _linkSub = appLinks.uriLinkStream.listen(_onDeepLink, onError: (_) {});
+  }
+
+  String? _shareTokenFromUri(Uri uri) {
+    if (uri.scheme == 'cachy' &&
+        uri.host == 's' &&
+        uri.pathSegments.isNotEmpty) {
+      return uri.pathSegments.first;
+    }
+    if ((uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.pathSegments.length >= 2 &&
+        uri.pathSegments[0] == 's') {
+      return uri.pathSegments[1];
+    }
+    return null;
+  }
+
+  void _onDeepLink(Uri uri) {
+    final token = _shareTokenFromUri(uri);
+    if (token == null || _pendingShareTokens.contains(token)) return;
+    _pendingShareTokens.add(token);
+    _drainPendingShareTokens();
+  }
+
+  /// Show the save sheet once the navigator exists and the user is signed in.
+  /// Tokens that arrive before login wait — AppController notifies on auth
+  /// changes, which re-triggers the drain.
+  void _drainPendingShareTokens() {
+    if (_saveSheetOpen || _pendingShareTokens.isEmpty) return;
+    // The navigator's own context can't locate the Navigator (only ancestors
+    // are searched) — the overlay's context sits below it, so sheet lookups
+    // resolve correctly.
+    final overlayCtx = _navigatorKey.currentState?.overlay?.context;
+    if (overlayCtx == null) return;
+    final app = Provider.of<AppController>(overlayCtx, listen: false);
+    final idAuth = Provider.of<IdAuthService>(overlayCtx, listen: false);
+    if (app.authUser == null && !idAuth.isSignedIn) return;
+    final token = _pendingShareTokens.removeAt(0);
+    _saveSheetOpen = true;
+    showSharedCardSheet(overlayCtx, token).whenComplete(() {
+      _saveSheetOpen = false;
+      _drainPendingShareTokens();
+    });
   }
 
   /// Register as a share target: handle both a cold-start share and shares that
@@ -170,6 +236,8 @@ class _CachyAppState extends State<CachyApp> {
   @override
   void dispose() {
     _intentSub?.cancel();
+    _linkSub?.cancel();
+    widget.appController.removeListener(_drainPendingShareTokens);
     super.dispose();
   }
 

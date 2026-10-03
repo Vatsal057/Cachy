@@ -295,6 +295,49 @@ class ApiClient {
   }
 
   // ------------------------------------------------------------------------- //
+  // Sharing — public unlisted links (/s/<token>)
+  // ------------------------------------------------------------------------- //
+
+  /// Create (idempotent) the public share link for a card. Returns the full URL.
+  Future<String> createShareLink(String cardId) async {
+    final resp =
+        await _send((h) => _client.post(_uri('/cards/$cardId/share'), headers: h));
+    return _decodeMap(resp)['url'] as String;
+  }
+
+  /// The active share URL for a card, or null when there is none.
+  Future<String?> getShareLink(String cardId) async {
+    try {
+      final resp = await _send(
+          (h) => _client.get(_uri('/cards/$cardId/share'), headers: h));
+      return _decodeMap(resp)['url'] as String?;
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Revoke the card's share link.
+  Future<void> revokeShareLink(String cardId) async {
+    await _send((h) => _client.delete(_uri('/cards/$cardId/share'), headers: h));
+  }
+
+  /// Public payload of a share link (no auth needed). Feeds the save sheet.
+  Future<Map<String, dynamic>> getSharedCard(String token) async {
+    final resp =
+        await _send((h) => _client.get(_uri('/share/$token'), headers: h));
+    return _decodeMap(resp);
+  }
+
+  /// "Save to my Cachy": clone the shared card into the caller's library.
+  /// Returns the new card id.
+  Future<String> saveSharedCard(String token) async {
+    final resp = await _send(
+        (h) => _client.post(_uri('/share/$token/save'), headers: h));
+    return _decodeMap(resp)['card_id'] as String;
+  }
+
+  // ------------------------------------------------------------------------- //
   // Cards
   // ------------------------------------------------------------------------- //
 

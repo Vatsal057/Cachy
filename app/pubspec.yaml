@@ -68,6 +68,8 @@ dependencies:
   firebase_core: ^4.11.0
   firebase_auth: ^6.5.4
   google_sign_in: ^6.2.1
+  # Deep links: open Cachy share URLs (/s/<token>) + the cachy:// scheme.
+  app_links: ^6.3.0
 
 dev_dependencies:
   flutter_test:

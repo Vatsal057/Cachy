@@ -727,6 +727,61 @@ async def clear_id_login_failures(db_session: AsyncSession, *, row: IdAccountRow
         await db_session.commit()
 
 
+class ShareLinkRow(Base):
+    """Public (unlisted) share link for one card.
+
+    The token is unguessable (`secrets.token_urlsafe`); anyone holding the
+    `/s/<token>` URL can view the card — no login. One active link per card
+    (re-sharing returns the existing token); deleting the card deletes the
+    link. Revocation = row delete.
+    """
+
+    __tablename__ = "share_links"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True)
+    card_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    owner_id: Mapped[str] = mapped_column(String, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+async def get_share_link_by_token(
+    db_session: AsyncSession, *, token: str
+) -> ShareLinkRow | None:
+    return await db_session.get(ShareLinkRow, token)
+
+
+async def get_share_link_by_card(
+    db_session: AsyncSession, *, card_id: str, owner_id: str | None = None
+) -> ShareLinkRow | None:
+    """The active link for a card. With `owner_id`, a card owned by anyone
+    else reads as absent."""
+    res = await db_session.execute(
+        select(ShareLinkRow).where(ShareLinkRow.card_id == card_id)
+    )
+    row = res.scalars().first()
+    if row is not None and owner_id is not None and row.owner_id != owner_id:
+        return None
+    return row
+
+
+async def create_share_link(
+    db_session: AsyncSession, *, token: str, card_id: str, owner_id: str
+) -> ShareLinkRow:
+    row = ShareLinkRow(token=token, card_id=card_id, owner_id=owner_id)
+    db_session.add(row)
+    await db_session.commit()
+    return row
+
+
+async def delete_share_links_for_card(db_session: AsyncSession, *, card_id: str) -> int:
+    """Drop all share links for a card (called on card deletion / revoke)."""
+    res = await db_session.execute(
+        delete(ShareLinkRow).where(ShareLinkRow.card_id == card_id)
+    )
+    await db_session.commit()
+    return res.rowcount or 0
+
+
 # --------------------------------------------------------------------------- #
 # Engine / session lifecycle
 # --------------------------------------------------------------------------- #

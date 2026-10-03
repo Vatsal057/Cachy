@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     ig_session_data: str = ""  # Raw JSON session string from HF Space Secret
     ig_poll_interval_seconds: float = 20.0
 
+    # Android verified app links for share URLs (/.well-known/assetlinks.json).
+    # JSON array string; unset -> empty (https links fall back to the browser).
+    assetlinks_json: str = ""
+
     # quotas (per UTC day)
     quota_cards_per_day: int = 10
     quota_chat_per_day: int = 30

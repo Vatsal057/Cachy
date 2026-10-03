@@ -35,6 +35,27 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="text/plain"/>
             </intent-filter>
+            <!-- Cachy share links: https://<host>/s/<token> opens in the app.
+                 Verified app links need /.well-known/assetlinks.json to carry
+                 the release keystore's SHA-256 (ASSETLINKS_JSON server secret);
+                 until then the system shows a browser/app chooser instead. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"/>
+                <data android:host="vatxzz-cachy.hf.space"/>
+                <data android:pathPrefix="/s/"/>
+            </intent-filter>
+            <!-- Custom scheme fired by the share page's "Save to my Cachy"
+                 button: cachy://s/<token>. Needs no verification. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="cachy"/>
+                <data android:host="s"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

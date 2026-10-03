@@ -20,7 +20,6 @@ Security notes:
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -32,6 +31,7 @@ from app import passwords
 from app.auth import OwnerDep
 from app.config import get_settings
 from app.id_tokens import mint_id_token
+from app.rate_limit import RateLimiter
 from app.store import db
 
 log = logging.getLogger("app.id_auth")
@@ -39,10 +39,7 @@ router = APIRouter(prefix="/id", tags=["id-auth"])
 
 _MAX_FAILS = 5
 _LOCK_MINUTES = 15
-_IP_LIMIT = 20  # requests
-_IP_WINDOW = 60.0  # seconds
-
-_ip_hits: dict[str, deque[float]] = {}
+_id_limiter = RateLimiter(limit=20, window_seconds=60.0)
 # Fixed hash so login attempts for nonexistent usernames cost ~the same as
 # real verifications (timing-based username enumeration resistance).
 _DUMMY_HASH = passwords.hash_secret("cachy-id-dummy-" + uuid.uuid4().hex)
@@ -54,21 +51,7 @@ def _require_enabled() -> None:
 
 
 def _check_ip_rate(request: Request) -> None:
-    ip = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    hits = _ip_hits.get(ip)
-    if hits is None:
-        hits = _ip_hits[ip] = deque()
-    while hits and hits[0] <= now - _IP_WINDOW:
-        hits.popleft()
-    if len(hits) >= _IP_LIMIT:
-        raise HTTPException(status_code=429, detail="too many attempts, slow down")
-    hits.append(now)
-    # Bound the table: sweep idle IPs once it gets large.
-    if len(_ip_hits) > 5000:
-        cutoff = now - _IP_WINDOW
-        for key in [k for k, dq in _ip_hits.items() if not dq or dq[-1] <= cutoff]:
-            del _ip_hits[key]
+    _id_limiter.check(request)
 
 
 def _mint(uid: str, username: str) -> str:

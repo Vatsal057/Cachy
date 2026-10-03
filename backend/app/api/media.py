@@ -35,7 +35,14 @@ async def get_media(card_id: str, filename: str, owner_id: MediaOwnerDep) -> Any
         row = await db.get_card_row(s, card_id)
     if row is None or row.owner_id != owner_id:
         raise HTTPException(status_code=404, detail="not found")
+    return await stream_card_media(card_id, filename)
 
+
+async def stream_card_media(card_id: str, filename: str) -> Any:
+    """Stream one media file from the HF dataset repo. No ownership check —
+    callers authorize first (owner check above, or a valid share token)."""
+    if not filename or "/" in filename or filename.startswith("."):
+        raise HTTPException(status_code=404, detail="not found")
     settings = get_settings()
     if not settings.hf_media_enabled:
         raise HTTPException(status_code=404, detail="media not configured")
