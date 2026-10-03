@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
 import '../../../../data/services/auth_service.dart';
+import '../../../../data/services/id_auth_service.dart';
 import '../../../../data/services/local_ai/gemma_local_ai_service.dart';
 import '../../../../data/services/local_ai/local_ai_service.dart';
 import '../../../../data/services/obsidian_export.dart';
@@ -21,6 +22,7 @@ import '../../../core/brand.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/responsive_center.dart';
 import '../../../core/widgets/stat_strip.dart';
+import '../../onboarding/views/id_auth_screen.dart';
 
 // ponytail: client-side gate only (extractable from the APK) — it hides the
 // developer server controls from casual users, it is not real security.
@@ -318,12 +320,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   /// Signed-in-with-Google shows the account row; everyone else (anonymous or
-  /// not-yet-signed-in) gets the backup nudge. Sign out sits below either way.
+  /// not-yet-signed-in) gets the backup nudge — unless they hold a Cachy ID
+  /// session, which is already server-backed. Sign out sits below either way.
+  /// Any Firebase identity (Google or anonymous guest) can claim a Cachy ID;
+  /// linking preserves the uid, so guest data carries over.
   Widget _accountSection(ThemeData theme) {
     final user = context.watch<AppController>().authUser;
+    final idAuth = context.watch<IdAuthService>();
     final signedIn = user != null && !user.isAnonymous;
+    final idSignedIn = idAuth.isSignedIn;
     return Column(
       children: [
+        if (idSignedIn)
+          _Tile(
+            icon: PhosphorIconsRegular.at,
+            title: 'Cachy ID',
+            subtitle: '@${idAuth.username}',
+            showChevron: false,
+          ),
         if (signedIn) ...[
           _accountRow(theme, user),
           _instagramTile(theme),
@@ -333,18 +347,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: 'Used Cachy before with a name? Bring those cards in.',
             onTap: _promptRestoreByName,
           ),
-        ] else
+        ] else if (!idSignedIn)
           _backupBanner(theme),
+        if (!idSignedIn && user != null)
+          _Tile(
+            icon: PhosphorIconsRegular.at,
+            title: 'Claim a Cachy ID',
+            subtitle:
+                'A simple ID + password for this account. No email needed.',
+            onTap: _claimCachyId,
+          ),
         _Tile(
           icon: PhosphorIconsRegular.signOut,
           title: 'Sign out',
-          subtitle: signedIn
+          subtitle: signedIn || idSignedIn
               ? 'Your cards stay safe in your account.'
               : 'Clear your name and reset the app to the setup screen.',
           onTap: _confirmSignOut,
           destructive: true,
         ),
       ],
+    );
+  }
+
+  /// Claim a Cachy ID onto the current Firebase identity (Google or guest).
+  /// The uid is preserved, so existing cards stay put.
+  Future<void> _claimCachyId() async {
+    final fbToken = await context.read<AuthService>().idToken();
+    if (fbToken == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => IdAuthScreen(
+          mode: IdAuthMode.register,
+          linkFirebaseToken: fbToken,
+          onDone: () => Navigator.of(context).pop(),
+        ),
+      ),
     );
   }
 

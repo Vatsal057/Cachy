@@ -22,6 +22,8 @@ class LocalStore {
   static const _splitPaneFractionKey = 'split_pane_fraction';
   static const _localAiEnabledKey = 'local_ai_enabled';
   static const _preferLocalModelKey = 'prefer_local_model';
+  static const _idTokenKey = 'cachy_id_token';
+  static const _idUsernameKey = 'cachy_id_username';
 
   static Future<LocalStore> open() async =>
       LocalStore(await SharedPreferences.getInstance());
@@ -54,6 +56,23 @@ class LocalStore {
   Future<void> setPreferLocalModel(bool v) =>
       _prefs.setBool(_preferLocalModelKey, v);
 
+  /// Cachy ID session (username + password, no email). The JWT is the API
+  /// bearer token and is preferred over the Firebase token while present.
+  /// Stored in SharedPreferences like the rest of LocalStore — a deliberate
+  /// simplicity call for now; migrate to flutter_secure_storage if the threat
+  /// model ever needs it.
+  String? get idToken => _prefs.getString(_idTokenKey);
+  Future<void> setIdToken(String token) => _prefs.setString(_idTokenKey, token);
+
+  String? get idUsername => _prefs.getString(_idUsernameKey);
+  Future<void> setIdUsername(String username) =>
+      _prefs.setString(_idUsernameKey, username);
+
+  Future<void> clearIdSession() async {
+    await _prefs.remove(_idTokenKey);
+    await _prefs.remove(_idUsernameKey);
+  }
+
   /// Clears user identity and onboarding state, effectively signing the user
   /// out and forcing them back through onboarding + the login gate on next
   /// launch. The legacy name key is cleared too (it only lingers for users
@@ -61,6 +80,7 @@ class LocalStore {
   Future<void> clearUser() async {
     await _prefs.remove(_userNameKey);
     await _prefs.remove(_seenOnboardingKey);
+    await clearIdSession();
   }
 
   /// Split-pane divider position as a fraction of available width.

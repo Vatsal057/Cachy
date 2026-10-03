@@ -9,21 +9,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/services/auth_service.dart';
+import '../../data/services/id_auth_service.dart';
 import '../../data/services/local_store.dart';
 
 class AppController extends ChangeNotifier {
-  AppController(this._store, this._auth)
+  AppController(this._store, this._auth, this._idAuth)
       : _themeMode = _decode(_store.themeMode),
         _authUser = _auth.currentUser {
     _authSub = _auth.userChanges.listen((u) {
       _authUser = u;
       notifyListeners();
     });
+    _idAuth.addListener(_onIdAuthChanged);
   }
 
   final LocalStore _store;
   final AuthService _auth;
+  final IdAuthService _idAuth;
   late final StreamSubscription<AuthUser?> _authSub;
+
+  void _onIdAuthChanged() => notifyListeners();
 
   AuthUser? _authUser;
 
@@ -31,10 +36,11 @@ class AppController extends ChangeNotifier {
   /// signed out. Drives the login gate and the profile account section.
   AuthUser? get authUser => _authUser;
 
-  /// True once the user has cleared onboarding but has no Firebase identity
-  /// yet — the one moment [RootGate] shows the login screen. Identity is now
-  /// the Firebase uid (Google or anonymous); no name is collected up front.
-  bool get needsLogin => seenOnboarding && _authUser == null;
+  /// True once the user has cleared onboarding but has no identity yet — the
+  /// one moment [RootGate] shows the login screen. Identity is the Firebase
+  /// uid (Google or anonymous) or a Cachy ID session.
+  bool get needsLogin =>
+      seenOnboarding && _authUser == null && !_idAuth.isSignedIn;
 
   Future<void> signInWithGoogle({
     Future<void> Function(String guestIdToken)? mergeGuestData,
@@ -65,12 +71,13 @@ class AppController extends ChangeNotifier {
 
   Future<void> completeOnboarding() => _store.setSeenOnboarding(true);
 
-  /// Signs out of Firebase and clears the user's name + onboarding flag so
-  /// [RootGate] redirects back to the name-entry screen on the next render.
-  /// Also wipes the offline card cache so the next account on this device
-  /// can't read the previous user's library.
+  /// Signs out of Firebase and clears the Cachy ID session, the user's name +
+  /// onboarding flag so [RootGate] redirects back to the name-entry screen on
+  /// the next render. Also wipes the offline card cache so the next account
+  /// on this device can't read the previous user's library.
   Future<void> logout() async {
     await _auth.signOut();
+    await _idAuth.signOut();
     await _store.clearUser();
     await _store.clearCardCache();
     notifyListeners();
@@ -85,6 +92,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _authSub.cancel();
+    _idAuth.removeListener(_onIdAuthChanged);
     super.dispose();
   }
 

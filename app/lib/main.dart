@@ -17,6 +17,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'data/repositories/card_repository.dart';
 import 'data/services/auth_service.dart';
+import 'data/services/id_auth_service.dart';
 import 'data/services/local_ai/gemma_local_ai_service.dart';
 import 'data/services/local_ai/local_ai_service.dart';
 import 'data/services/api_client.dart';
@@ -40,21 +41,28 @@ Future<void> main() async {
   final authService = FirebaseAuthService();
   final store = await LocalStore.open();
   final highlightStore = await HighlightStore.open();
+  // The Cachy ID JWT (username + password session) wins while present;
+  // otherwise the Firebase ID token is used. `late` because the closure only
+  // runs on requests, after idAuth is assigned below.
+  late final IdAuthService idAuth;
   final api = ApiClient(
     baseUrl: await ApiClient.resolveBaseUrl(store: store),
     store: store,
-    // Every request carries the Firebase ID token (uid = backend owner_id);
+    // Every request carries a bearer token (uid = backend owner_id);
     // without this the backend 401s all data routes.
-    tokenProvider: authService.idToken,
+    tokenProvider: ({bool forceRefresh = false}) async =>
+        idAuth.validToken ?? authService.idToken(forceRefresh: forceRefresh),
   );
+  idAuth = IdAuthService(baseUrlOf: () => api.baseUrl, store: store);
   final repository = CardRepository(api: api, store: store);
-  final appController = AppController(store, authService);
+  final appController = AppController(store, authService, idAuth);
   final localAi = GemmaLocalAiService(store: store);
   FlutterNativeSplash.remove();
   runApp(CachyApp(
     repository: repository,
     appController: appController,
     authService: authService,
+    idAuthService: idAuth,
     highlightStore: highlightStore,
     localAi: localAi,
   ));
@@ -92,12 +100,14 @@ class CachyApp extends StatefulWidget {
     required this.repository,
     required this.appController,
     required this.authService,
+    required this.idAuthService,
     required this.highlightStore,
     required this.localAi,
   });
   final CardRepository repository;
   final AppController appController;
   final AuthService authService;
+  final IdAuthService idAuthService;
   final HighlightStore highlightStore;
   final LocalAiService localAi;
 
@@ -170,6 +180,7 @@ class _CachyAppState extends State<CachyApp> {
         ChangeNotifierProvider<CardRepository>.value(value: widget.repository),
         ChangeNotifierProvider<AppController>.value(value: widget.appController),
         Provider<AuthService>.value(value: widget.authService),
+        ChangeNotifierProvider<IdAuthService>.value(value: widget.idAuthService),
         ChangeNotifierProvider<HighlightStore>.value(value: widget.highlightStore),
         ChangeNotifierProvider<LocalAiService>.value(value: widget.localAi),
         ChangeNotifierProvider<UiBus>(create: (_) => UiBus()),

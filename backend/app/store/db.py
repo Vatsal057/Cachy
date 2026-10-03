@@ -469,6 +469,33 @@ class InstagramLinkRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class IdAccountRow(Base):
+    """Username/password identity ("Cachy ID", no email).
+
+    `uid` doubles as `owner_id` everywhere, so ID users' cards, jobs, quota
+    and conversations work with zero changes to the rest of the store.
+
+    A row can also be *linked* to a Firebase account: then `uid` IS that
+    account's Firebase uid and the same library is reachable via Google
+    sign-in or via the ID's username + password. Fresh ID registrations get
+    `uid = "id_<uuid4hex>"`, which can never collide with Firebase uids.
+    """
+
+    __tablename__ = "id_accounts"
+
+    uid: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True)  # normalized lowercase
+    password_hash: Mapped[str] = mapped_column(Text)  # argon2id
+    recovery_hash: Mapped[str] = mapped_column(Text)  # argon2id of the recovery code
+    firebase_uid: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 def _today() -> str:
     """Current UTC day key."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -624,6 +651,80 @@ async def get_owner_by_instagram_username(
     norm = ig_username.strip().lower().lstrip("@")
     row = await db_session.get(InstagramLinkRow, norm)
     return row.owner_id if row else None
+
+
+# --------------------------------------------------------------------------- #
+# Cachy ID accounts — username/password identities (no email)
+# --------------------------------------------------------------------------- #
+
+async def get_id_account_by_username(
+    db_session: AsyncSession, *, username: str
+) -> IdAccountRow | None:
+    """Find an ID account by normalized (lowercase) username."""
+    res = await db_session.execute(
+        select(IdAccountRow).where(IdAccountRow.username == username)
+    )
+    return res.scalars().first()
+
+
+async def get_id_account_by_uid(
+    db_session: AsyncSession, *, uid: str
+) -> IdAccountRow | None:
+    """Find an ID account by uid (= owner_id)."""
+    return await db_session.get(IdAccountRow, uid)
+
+
+async def get_id_account_by_firebase_uid(
+    db_session: AsyncSession, *, firebase_uid: str
+) -> IdAccountRow | None:
+    """Find the ID linked to a Firebase account, if any."""
+    res = await db_session.execute(
+        select(IdAccountRow).where(IdAccountRow.firebase_uid == firebase_uid)
+    )
+    return res.scalars().first()
+
+
+async def create_id_account(
+    db_session: AsyncSession,
+    *,
+    uid: str,
+    username: str,
+    password_hash: str,
+    recovery_hash: str,
+    firebase_uid: str | None = None,
+) -> IdAccountRow:
+    row = IdAccountRow(
+        uid=uid,
+        username=username,
+        password_hash=password_hash,
+        recovery_hash=recovery_hash,
+        firebase_uid=firebase_uid,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    return row
+
+
+async def set_id_password(
+    db_session: AsyncSession, *, row: IdAccountRow, password_hash: str
+) -> None:
+    """Replace the password hash and clear any lockout state."""
+    row.password_hash = password_hash
+    row.failed_attempts = 0
+    row.locked_until = None
+    await db_session.commit()
+
+
+async def note_id_login_failure(db_session: AsyncSession, *, row: IdAccountRow) -> None:
+    row.failed_attempts = (row.failed_attempts or 0) + 1
+    await db_session.commit()
+
+
+async def clear_id_login_failures(db_session: AsyncSession, *, row: IdAccountRow) -> None:
+    if row.failed_attempts or row.locked_until:
+        row.failed_attempts = 0
+        row.locked_until = None
+        await db_session.commit()
 
 
 # --------------------------------------------------------------------------- #

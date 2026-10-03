@@ -1,8 +1,11 @@
-"""Verified identity: Firebase ID token -> uid.
+"""Verified identity: Firebase ID token -> uid, or Cachy ID JWT -> uid.
 
-The client sends `Authorization: Bearer <ID token>`; we verify the signature
-against Google's public certs via `google-auth`. No service-account secret is
-needed for verification — only the project id (the token's expected audience).
+The client sends `Authorization: Bearer <token>`; Firebase tokens are verified
+against Google's public certs via `google-auth` (no service-account secret
+needed — only the project id as audience). Cachy ID tokens (username +
+password, see app/api/id_auth.py) are HS256 JWTs verified with CACHY_ID_SECRET.
+Routing is by the token's `iss` claim; either way the uid returned IS the
+backend owner_id.
 firebase-admin is deliberately not used here: its client construction eagerly
 loads Application Default Credentials, which we don't have in a free deploy.
 """
@@ -18,6 +21,10 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
 from app.config import get_settings
+from app.id_tokens import (
+    is_cachy_id_token,
+    verify_id_token as _verify_cachy_id_token,
+)
 
 log = logging.getLogger("app.auth")
 
@@ -49,22 +56,48 @@ async def verify_async(token: str) -> dict:
     return await asyncio.to_thread(_verify, token)
 
 
+class AuthNotConfigured(Exception):
+    """The presented token type's auth backend has no credentials configured."""
+
+
+async def verify_any_async(token: str) -> str:
+    """uid from either a Firebase ID token or a Cachy ID token.
+
+    Routing is by the unverified `iss` claim (cheap, local); the signature is
+    always verified afterwards by the selected verifier. Raises
+    AuthNotConfigured when that token type's backend isn't set up, ValueError
+    on any invalid token."""
+    settings = get_settings()
+    if is_cachy_id_token(token):
+        if not settings.cachy_id_enabled:
+            raise AuthNotConfigured("cachy id auth not configured")
+        claims = _verify_cachy_id_token(token, secret=settings.cachy_id_secret)
+        return str(claims["sub"])
+    if not settings.firebase_project_id:
+        raise AuthNotConfigured("auth not configured")
+    decoded = await verify_async(token)
+    uid = uid_of(decoded)
+    if not uid:
+        raise ValueError("token missing subject")
+    return uid
+
+
 async def get_owner(authorization: str | None = Header(None)) -> str:
-    """FastAPI dependency: the verified Firebase uid of the caller."""
-    if not get_settings().firebase_project_id:
-        raise HTTPException(status_code=503, detail="auth not configured")
+    """FastAPI dependency: the verified uid of the caller.
+
+    Accepts Firebase ID tokens (Google/anonymous) AND Cachy ID tokens
+    (username + password, see app/api/id_auth.py). Routing is by the token's
+    `iss` claim; the uid returned IS the backend owner_id either way."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        decoded = await verify_async(token)
-    except Exception as exc:  # firebase raises several exc types; all mean 401
+        return await verify_any_async(token)
+    except AuthNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
         log.info("token verification failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=401, detail="invalid or expired token")
-    uid = uid_of(decoded)
-    if not uid:
-        raise HTTPException(status_code=401, detail="token missing subject")
-    return uid
 
 
 OwnerDep = Annotated[str, Depends(get_owner)]
@@ -78,8 +111,6 @@ async def get_owner_query_or_header(
 
     Browser `<img>` tags can't send an Authorization header, so web thumbnails
     fetch the auth-gated /media proxy with the token in the query string."""
-    if not get_settings().firebase_project_id:
-        raise HTTPException(status_code=503, detail="auth not configured")
     raw: str | None = None
     if authorization and authorization.startswith("Bearer "):
         raw = authorization.removeprefix("Bearer ").strip()
@@ -88,14 +119,12 @@ async def get_owner_query_or_header(
     if not raw:
         raise HTTPException(status_code=401, detail="missing bearer token")
     try:
-        decoded = await verify_async(raw)
+        return await verify_any_async(raw)
+    except AuthNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         log.info("token verification failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=401, detail="invalid or expired token")
-    uid = uid_of(decoded)
-    if not uid:
-        raise HTTPException(status_code=401, detail="token missing subject")
-    return uid
 
 
 MediaOwnerDep = Annotated[str, Depends(get_owner_query_or_header)]

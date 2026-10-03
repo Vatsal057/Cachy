@@ -19,6 +19,10 @@ class Settings(BaseSettings):
 
     # auth — Firebase project id; token verification needs no secret.
     firebase_project_id: str = ""
+    # Cachy ID auth (username + password, no email). Unset secret disables
+    # /id/* entirely; the token lifetime is configurable per deploy.
+    cachy_id_secret: str = ""
+    cachy_id_token_days: int = 30
     # hardening — unset ADMIN_TOKEN disables admin/debug endpoints entirely;
     # CORS_ORIGINS is comma-separated (empty -> localhost dev default).
     admin_token: str = ""
@@ -122,6 +126,10 @@ class Settings(BaseSettings):
     @property
     def hf_media_enabled(self) -> bool:
         return bool(self.hf_media_repo and self.hf_api_key)
+
+    @property
+    def cachy_id_enabled(self) -> bool:
+        return bool(self.cachy_id_secret.strip())
 
     @property
     def groq_enabled(self) -> bool:

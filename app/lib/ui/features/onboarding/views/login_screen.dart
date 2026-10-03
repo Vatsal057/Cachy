@@ -11,6 +11,7 @@ import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/auth_service.dart';
 import '../../../core/brand.dart';
 import '../../../core/widgets/responsive_center.dart';
+import 'id_auth_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onDone});
@@ -40,6 +41,13 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Push the Cachy ID form; its own onDone completes the login gate.
+  void _openIdAuth(IdAuthMode mode) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => IdAuthScreen(mode: mode, onDone: widget.onDone),
+    ));
   }
 
   @override
@@ -102,6 +110,32 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _openIdAuth(IdAuthMode.register),
+                    icon: const PhosphorIcon(PhosphorIconsRegular.at, size: 20),
+                    label: const Text('Create a Cachy ID'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextButton(
+                      onPressed:
+                          _busy ? null : () => _openIdAuth(IdAuthMode.login),
+                      child: Text(
+                        'Sign in with a Cachy ID',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
                   Center(
                     child: TextButton(
                       onPressed: _busy
