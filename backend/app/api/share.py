@@ -485,7 +485,11 @@ def _render_block_content(b: dict) -> str:
         return e(str(v or ""))
 
     if t == "heading":
-        lvl = 3 if b.get("level", 2) >= 3 else 2
+        try:
+            _lvl = int(b.get("level") or 2)
+        except (TypeError, ValueError):
+            _lvl = 2
+        lvl = 3 if _lvl >= 3 else 2
         return f"<h{lvl} class='block-heading'>{txt(b.get('text'))}</h{lvl}>"
     if t == "paragraph":
         return f"<p class='block-para'>{txt(b.get('text'))}</p>"
@@ -520,7 +524,7 @@ def _render_block_content(b: dict) -> str:
     if t == "table":
         headers = "".join(f"<th>{txt(h)}</th>" for h in b.get("headers") or [])
         rows = "".join(
-            "<tr>" + "".join(f"<td>{txt(c)}</td>" for c in r) + "</tr>"
+            "<tr>" + "".join(f"<td>{txt(c)}</td>" for c in (r or [])) + "</tr>"
             for r in b.get("rows") or []
         )
         return (
