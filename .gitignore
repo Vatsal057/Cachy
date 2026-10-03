@@ -21,6 +21,7 @@ windows/
 macos/
 # Dependencies
 node_modules/
+.dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .kiro
@@ -28,7 +29,11 @@ node_modules/
 build/
 dist/
 *.app/
+*.apk
+release_assets/
 web_dist/
+website/out/
+website/.next/
 
 # Environment
 .env
@@ -41,9 +46,7 @@ web_dist/
 demo/
 graph/
 # Python / Agent
-
-context.md 
-i-want-you-to-spicy-dusk.md
+context.md
 # Root-level Python prototype agent only — anchored so it does NOT swallow the
 # Flutter feature dir app/lib/ui/features/presenter/.
 /presenter/

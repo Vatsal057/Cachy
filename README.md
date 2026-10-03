@@ -23,6 +23,8 @@ Your cards link to each other through a semantic knowledge graph, and a reel-sty
 - **Feed** — insights, highlights, quizzes, and serendipitous cross-card connections replayed reel-style, at zero extra LLM cost
 - **Chat** — with a single card, or across your whole library
 - **Concepts & catalog** — extracted concepts get on-demand AI definitions; mentioned books/movies/products collect into a browsable catalog
+- **Cachy IDs** — username + password accounts, no email needed; link an existing Google/guest account and keep your library
+- **Public share links** — any card gets an unlisted link anyone can open (no account); Save to my Cachy clones it into the viewer's library
 - **Free-first** — every AI dependency has a fallback chain (Gemini → Cerebras → Groq → local); missing keys degrade gracefully, never fail the job
 
 ## Architecture

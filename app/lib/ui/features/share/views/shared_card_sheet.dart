@@ -9,7 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
-import '../../../reader/views/reader_screen.dart';
+import '../../reader/views/reader_screen.dart';
 
 Future<void> showSharedCardSheet(BuildContext context, String token) {
   return showModalBottomSheet(
@@ -41,21 +41,22 @@ class _SharedCardSheetState extends State<_SharedCardSheet> {
 
   Future<void> _save() async {
     if (_saving) return;
+    // Capture before the async gap — the sheet's context is gone after pop().
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final api = context.read<CardRepository>().api;
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      final cardId = await context
-          .read<CardRepository>()
-          .api
-          .saveSharedCard(widget.token);
+      final cardId = await api.saveSharedCard(widget.token);
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      navigator.pop();
+      messenger.showSnackBar(
         const SnackBar(content: Text('Saved to your library')),
       );
-      Navigator.of(context).push(
+      navigator.push(
         MaterialPageRoute(builder: (_) => ReaderScreen(cardId: cardId)),
       );
     } on ApiException catch (e) {
@@ -175,7 +176,7 @@ class _SharedCardSheetState extends State<_SharedCardSheet> {
             borderRadius: BorderRadius.circular(12),
             child: Image.network(thumb,
                 height: 160, width: double.infinity, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                errorBuilder: (_, _, _) => const SizedBox.shrink()),
           ),
         if (thumb != null && thumb.isNotEmpty) const SizedBox(height: 12),
         Text(title, style: theme.textTheme.headlineSmall),
