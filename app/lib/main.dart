@@ -44,10 +44,11 @@ Future<void> main() async {
   final store = await LocalStore.open();
   final highlightStore = await HighlightStore.open();
   // The Cachy ID JWT (username + password session) wins while present;
-  // otherwise the Firebase ID token is used. `late` because the closure only
-  // runs on requests, after idAuth is assigned below.
-  late final IdAuthService idAuth;
-  final api = ApiClient(
+  // otherwise the Firebase ID token is used. `late` because baseUrlOf is only
+  // called on requests, after api is assigned below.
+  late final ApiClient api;
+  final idAuth = IdAuthService(baseUrlOf: () => api.baseUrl, store: store);
+  api = ApiClient(
     baseUrl: await ApiClient.resolveBaseUrl(store: store),
     store: store,
     // Every request carries a bearer token (uid = backend owner_id);
@@ -55,7 +56,6 @@ Future<void> main() async {
     tokenProvider: ({bool forceRefresh = false}) async =>
         idAuth.validToken ?? authService.idToken(forceRefresh: forceRefresh),
   );
-  idAuth = IdAuthService(baseUrlOf: () => api.baseUrl, store: store);
   final repository = CardRepository(api: api, store: store);
   final appController = AppController(store, authService, idAuth);
   final localAi = GemmaLocalAiService(store: store);
