@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.auth import get_owner
+from app.auth import get_optional_owner, get_owner
 from app.main import app
 from app.models.card import CardState
 from app.store import db
@@ -28,7 +28,12 @@ async def _ready_card(database, owner="uid-a", url="https://example.com/reel1"):
 
 
 def _as(uid):
-    app.dependency_overrides[get_owner] = lambda: uid
+    if uid is None:
+        app.dependency_overrides.pop(get_owner, None)
+        app.dependency_overrides.pop(get_optional_owner, None)
+    else:
+        app.dependency_overrides[get_owner] = lambda: uid
+        app.dependency_overrides[get_optional_owner] = lambda: uid
 
 
 async def test_share_create_idempotent(client, database) -> None:
@@ -87,6 +92,7 @@ async def test_share_json_is_safe_subset(client, database) -> None:
     _as("uid-a")
     card_id = await _ready_card(database)
     token = (await client.post(f"/cards/{card_id}/share")).json()["token"]
+    _as(None)  # unauthenticated / public caller
     resp = await client.get(f"/share/{token}")
     assert resp.status_code == 200
     data = resp.json()
@@ -94,7 +100,17 @@ async def test_share_json_is_safe_subset(client, database) -> None:
     assert data["blocks"][0]["text"] == "Hello <world>"  # raw in JSON is fine
     assert "owner_id" not in data
     assert "raw_bundle" not in data
+    assert data["is_owner"] is False
+    assert "card_id" not in data
     assert (await client.get("/share/nope")).status_code == 404
+
+    # Now verify owner calling GET /share/{token} gets is_owner=True and card_id
+    _as("uid-a")
+    owner_resp = await client.get(f"/share/{token}")
+    assert owner_resp.status_code == 200
+    owner_data = owner_resp.json()
+    assert owner_data["is_owner"] is True
+    assert owner_data["card_id"] == card_id
 
 
 async def test_save_copy_flow(client, database) -> None:
@@ -122,12 +138,13 @@ async def test_save_copy_flow(client, database) -> None:
     assert again.json() == {"card_id": new_id, "already_saved": True}
 
 
-async def test_save_own_card_409(client, database) -> None:
+async def test_save_own_card_returns_existing(client, database) -> None:
     _as("uid-a")
     card_id = await _ready_card(database)
     token = (await client.post(f"/cards/{card_id}/share")).json()["token"]
     resp = await client.post(f"/share/{token}/save")
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    assert resp.json() == {"card_id": card_id, "already_saved": True, "is_owner": True}
 
 
 async def test_save_bad_token_404(client, database) -> None:

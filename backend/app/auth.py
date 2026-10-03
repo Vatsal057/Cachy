@@ -103,6 +103,21 @@ async def get_owner(authorization: str | None = Header(None)) -> str:
 OwnerDep = Annotated[str, Depends(get_owner)]
 
 
+async def get_optional_owner(authorization: str | None = Header(None)) -> str | None:
+    """Optional verified uid of caller if Bearer token is provided and valid, else None."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        return await verify_any_async(token)
+    except Exception as exc:
+        log.debug("optional token verification failed: %s: %s", type(exc).__name__, exc)
+        return None
+
+
+OptionalOwnerDep = Annotated[str | None, Depends(get_optional_owner)]
+
+
 async def get_owner_query_or_header(
     authorization: str | None = Header(None),
     token: str | None = Query(None),

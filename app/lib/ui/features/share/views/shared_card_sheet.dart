@@ -150,6 +150,8 @@ class _SharedCardSheetState extends State<_SharedCardSheet> {
 
   Widget _preview(
       ThemeData theme, ColorScheme scheme, Map<String, dynamic> data) {
+    final isOwner = data['is_owner'] == true;
+    final cardId = (data['card_id'] as String?) ?? '';
     final title = (data['one_liner'] as String?) ?? 'Shared card';
     final tldr = (data['tldr'] as String?) ?? '';
     final thumb = data['thumbnail_url'] as String?;
@@ -161,12 +163,22 @@ class _SharedCardSheetState extends State<_SharedCardSheet> {
       children: [
         Row(
           children: [
-            const PhosphorIcon(PhosphorIconsRegular.shareNetwork, size: 18),
+            PhosphorIcon(
+              isOwner
+                  ? PhosphorIconsRegular.userCheck
+                  : PhosphorIconsRegular.shareNetwork,
+              size: 18,
+              color: isOwner ? scheme.primary : null,
+            ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('Someone shared a card with you',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                      color: scheme.onSurfaceVariant)),
+              child: Text(
+                isOwner ? 'This is your card' : 'Someone shared a card with you',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: isOwner ? scheme.primary : scheme.onSurfaceVariant,
+                  fontWeight: isOwner ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
             ),
           ],
         ),
@@ -197,24 +209,44 @@ class _SharedCardSheetState extends State<_SharedCardSheet> {
           Text(_error!, style: TextStyle(color: scheme.error)),
         ],
         const SizedBox(height: 18),
-        FilledButton.icon(
-          onPressed: _saving ? null : _save,
-          icon: _saving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const PhosphorIcon(PhosphorIconsRegular.bookmarkSimple, size: 20),
-          label: const Text('Save to my library'),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(52),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
+        if (isOwner && cardId.isNotEmpty)
+          FilledButton.icon(
+            onPressed: () {
+              final navigator = Navigator.of(context);
+              navigator.pop();
+              navigator.push(
+                MaterialPageRoute(builder: (_) => ReaderScreen(cardId: cardId)),
+              );
+            },
+            icon: const PhosphorIcon(PhosphorIconsRegular.bookOpen, size: 20),
+            label: const Text('Open in Reader'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+            ),
+          )
+        else
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const PhosphorIcon(PhosphorIconsRegular.bookmarkSimple, size: 20),
+            label: const Text('Save to my library'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+            ),
           ),
-        ),
         const SizedBox(height: 8),
         Text(
-          'A copy lands in your library — the original stays theirs.',
+          isOwner
+              ? 'This card is already saved in your library.'
+              : 'A copy lands in your library — the original stays theirs.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall
               ?.copyWith(color: scheme.onSurfaceVariant),

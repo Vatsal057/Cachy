@@ -31,7 +31,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 
 from app.api.media import stream_card_media
-from app.auth import OwnerDep
+from app.auth import OptionalOwnerDep, OwnerDep
 from app.config import get_settings
 from app.models.card import CardState
 from app.rate_limit import RateLimiter
@@ -292,12 +292,23 @@ async def revoke_share_link(card_id: str, owner_id: OwnerDep) -> dict:
 # --------------------------------------------------------------------------- #
 
 @router.get("/share/{token}")
-async def share_json(token: str, request: Request) -> dict:
-    """Public JSON payload for a share link (used by the app's save sheet)."""
+async def share_json(
+    token: str, request: Request, caller_id: OptionalOwnerDep = None
+) -> dict:
+    """Public JSON payload for a share link (used by the app's save sheet).
+
+    If the caller is the card's owner, includes `is_owner: True` and `card_id`
+    so the app can offer 'Open in Reader' instead of a clone prompt."""
     link, row, artifacts, concepts = await _resolve_share(token)
-    return _public_payload(
+    payload = _public_payload(
         link, row, artifacts, concepts, token, _base_url(request)
     )
+    if caller_id is not None and caller_id == link.owner_id:
+        payload["is_owner"] = True
+        payload["card_id"] = row.id
+    else:
+        payload["is_owner"] = False
+    return payload
 
 
 @router.post("/share/{token}/save")
@@ -307,11 +318,12 @@ async def save_shared_card(
     """"Save to my Cachy": clone the shared card into the caller's library.
 
     No quota charge — the card is already structured. Idempotent per source
-    URL: saving the same shared card twice returns the first copy."""
+    URL: saving the same shared card twice returns the first copy.
+    Saving own card returns the existing card_id without error."""
     _save_limiter.check(request)
     link, row, _, _ = await _resolve_share(token)
     if link.owner_id == owner_id:
-        raise HTTPException(status_code=409, detail="you already own this card")
+        return {"card_id": row.id, "already_saved": True, "is_owner": True}
     async with db.session() as s:
         dup = await db.find_card_by_url(s, row.source_url, owner_id=owner_id)
         if dup is not None:
