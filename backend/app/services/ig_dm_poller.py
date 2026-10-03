@@ -54,14 +54,14 @@ class InstagramDMPoller:
         )
         self.session_data: str = session_data.strip()
         self.poll_interval_seconds: float = poll_interval_seconds
-        self.cl: Client = Client(private_transport="requests")
+        self.cl: Client = Client(private_transport="curl")
         self._last_checked_timestamp: int = 0
         self._is_logged_in: bool = False
 
         if self.session_data and not self.session_file.exists():
             try:
                 clean_session = self.session_data.replace(
-                    '"private_transport": "curl"', '"private_transport": "requests"'
+                    '"private_transport": "requests"', '"private_transport": "curl"'
                 )
                 self.session_file.parent.mkdir(parents=True, exist_ok=True)
                 self.session_file.write_text(clean_session, encoding="utf-8")
@@ -79,10 +79,13 @@ class InstagramDMPoller:
             try:
                 log.info("Loading Instagram session from %s", self.session_file)
                 self.cl.load_settings(self.session_file)
+                # CRITICAL: load_settings restores settings from json which may have had
+                # "private_transport": "requests". We MUST enforce curl transport with HTTP/2 ALPN
+                # to prevent Instagram's datacenter firewall from terminating TLS handshakes.
                 try:
-                    self.cl._configure_private_session_retry("requests")
-                except Exception:
-                    pass
+                    self.cl._configure_private_session_retry("curl")
+                except Exception as e:
+                    log.warning("Failed to configure curl transport: %s", e)
                 self.cl.account_info()
                 self._is_logged_in = True
                 log.info("Logged into Instagram using saved session (%s)", self.cl.user_id)
@@ -93,16 +96,6 @@ class InstagramDMPoller:
                 log.error("Instagram checkpoint challenge required: %s", e)
                 return False
             except Exception as e:
-                if "curl private transport failed" in str(e) or "SSLError" in str(e):
-                    try:
-                        log.info("Curl transport failed; retrying account_info with requests transport...")
-                        self.cl._configure_private_session_retry("requests")
-                        self.cl.account_info()
-                        self._is_logged_in = True
-                        log.info("Logged into Instagram using saved session with requests transport (%s)", self.cl.user_id)
-                        return True
-                    except Exception as retry_err:
-                        log.warning("Could not restore session with requests transport: %s", retry_err)
                 log.warning("Could not restore Instagram session (%s); falling back to password login", e)
 
         if not self.username or not self.password:
@@ -112,7 +105,7 @@ class InstagramDMPoller:
         try:
             log.info("Logging into Instagram as @%s with password...", self.username)
             try:
-                self.cl._configure_private_session_retry("requests")
+                self.cl._configure_private_session_retry("curl")
             except Exception:
                 pass
             self.cl.login(self.username, self.password)

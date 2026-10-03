@@ -98,7 +98,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _Tile(
             icon: PhosphorIconsRegular.hash,
             title: 'Version',
-            subtitle: '1.0.1',
+            subtitle: '1.0.2',
             showChevron: false, // hidden developer gate — looks inert
             onTap: _onVersionTap,
           ),
@@ -329,6 +329,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final idAuth = context.watch<IdAuthService>();
     final signedIn = user != null && !user.isAnonymous;
     final idSignedIn = idAuth.isSignedIn;
+    final anySignedIn = signedIn || idSignedIn;
     return Column(
       children: [
         if (idSignedIn)
@@ -338,8 +339,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: '@${idAuth.username}',
             showChevron: false,
           ),
-        if (signedIn) ...[
-          _accountRow(theme, user),
+        if (signedIn) _accountRow(theme, user),
+        if (anySignedIn) ...[
           _instagramTile(theme),
           _Tile(
             icon: PhosphorIconsRegular.clockCounterClockwise,
@@ -347,7 +348,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: 'Used Cachy before with a name? Bring those cards in.',
             onTap: _promptRestoreByName,
           ),
-        ] else if (!idSignedIn)
+        ] else
           _backupBanner(theme),
         if (!idSignedIn && user != null)
           _Tile(
@@ -360,7 +361,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _Tile(
           icon: PhosphorIconsRegular.signOut,
           title: 'Sign out',
-          subtitle: signedIn || idSignedIn
+          subtitle: anySignedIn
               ? 'Your cards stay safe in your account.'
               : 'Clear your name and reset the app to the setup screen.',
           onTap: _confirmSignOut,
