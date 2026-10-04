@@ -4,101 +4,167 @@ emoji: 🧠
 colorFrom: purple
 colorTo: blue
 sdk: docker
+app_port: 7860
 pinned: false
 ---
 
-# Cachy 🧠
+<div align="center">
 
-**Reel-to-knowledge.** Share an Instagram Reel, TikTok, YouTube Short, or article — get back a structured knowledge card: a one-liner, TL;DR, and typed content blocks (steps, facts, checklists, tables), plus the concepts and artifacts (books, movies, products) mentioned in it.
+# 🧠 Cachy
 
-Your cards link to each other through a semantic knowledge graph, and a reel-style **Feed** replays your own saved knowledge back to you — so your library becomes a knowledge garden, not a bookmark graveyard.
+### *Turn short-form media into permanent, structured knowledge.*
 
-**Try it:** [vatxzz-cachy.hf.space](https://vatxzz-cachy.hf.space) · **Android APK:** [latest release](../../releases/latest)
+[![Live Web App](https://img.shields.io/badge/Live_App-vatxzz--cachy.hf.space-blue?style=for-the-badge&logo=huggingface)](https://vatxzz-cachy.hf.space)
+[![Android APK](https://img.shields.io/badge/Download_APK-Android_Release-green?style=for-the-badge&logo=android)](https://github.com/Vatsal057/Cachy/releases/latest)
+[![Documentation](https://img.shields.io/badge/Docs-Complete_Suite-purple?style=for-the-badge&logo=googledocs)](docs/README.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
-## Features
+</div>
 
-- **Share → card in seconds** — share sheet on Android, paste a link on web; watch the pipeline stream progress live (SSE)
-- **Typed knowledge blocks** — steps, key-value facts, checklists, callouts, maps, tables — not a wall of summary text
-- **Knowledge graph** — Obsidian-style force-directed graph linking cards by semantic similarity, shared tags, and referenced artifacts, with auto-labeled clusters
-- **Feed** — insights, highlights, quizzes, and serendipitous cross-card connections replayed reel-style, at zero extra LLM cost
-- **Chat** — with a single card, or across your whole library
-- **Concepts & catalog** — extracted concepts get on-demand AI definitions; mentioned books/movies/products collect into a browsable catalog
-- **Cachy IDs** — username + password accounts, no email needed; link an existing Google/guest account and keep your library
-- **Public share links** — any card gets an unlisted link anyone can open (no account); Save to my Cachy clones it into the viewer's library
-- **Free-first** — every AI dependency has a fallback chain (Gemini → Cerebras → Groq → local); missing keys degrade gracefully, never fail the job
+---
 
-## Architecture
+## 💡 What is Cachy?
 
-Dual-client: a **Flutter** app (`/app`, web + Android) talking to an async **FastAPI** backend (`/backend`) over REST + Server-Sent Events.
+Every week, you save dozens of useful Instagram Reels, TikToks, YouTube Shorts, and web articles. Yet native bookmarks become a **link graveyard**: videos are unsearchable, slow to retrieve, and require re-watching 60–90 seconds of audio just to find a single ingredient, workout step, or command.
 
-- Single SQLite DB, in-process async job worker — no Redis, no Celery, deploys as one free HF Space
-- Ingestion via `yt-dlp` / `instaloader` / `trafilatura`; keyframe OCR with `pytesseract` + OpenCV; transcription via Groq Whisper with local `faster-whisper` fallback
-- Card generation LLM chain: Gemini 2.5 Flash → Cerebras Llama 3.3 70B → Groq Llama 3.3 70B → plain-paragraph fallback
-- Pure-Python graph clustering (label propagation); force-directed layout computed client-side in Flutter
+**Cachy extracts the signal from the noise.**
 
-See [CACHY_OVERVIEW.md](CACHY_OVERVIEW.md) for the full technical breakdown.
+Share any reel, video, or article to Cachy — or simply **DM it to `@cachyapp` on Instagram** — and get back a clean, structured **knowledge card**:
+- **Executive One-Liner & TL;DR**
+- **Interactive Checklists & Step-by-Step Instructions**
+- **Key-Value Facts, Ingredients & Specs**
+- **Callout Tips, Warnings & Quotes**
+- **Locations & Interactive Maps**
+- **Extracted Concepts & Referenced Books/Movies/Products**
 
-## The database kept running out of quota
+Your cards connect automatically into an interactive **knowledge graph**, and a reel-style **Feed** replays your saved insights back to you so you actually retain what you learn.
 
-The Space lost its database part-way through every month. No traffic spike, plenty
-of storage left. It reads like a quota problem and it was a polling problem.
+---
 
-The in-process job worker asked the jobs table for work **every second**, whether
-or not anything was queued. Neon's free plan suspends compute after 5 minutes idle
-and allows 100 CU-hours a month, which is roughly 400 hours at the 0.25 CU floor
-against about 730 hours in a month. Polling once a second means it never gets five
-quiet minutes, so it never suspends. That is ~86,400 empty checks a day, ~2.6M a
-month, and the whole allowance gone in about **17 days** of an app nobody was using.
+## ✨ Flagship Features
 
-The loop now waits on an `asyncio.Event` that `POST /cards` fires once the job row
-is committed, and doubles its wait up to 30 minutes while the queue is empty. Job
-pickup is as fast as it was, because the enqueue path wakes the worker directly.
+### 📥 1. Instagram Auto-Save Bot (`@cachyapp`)
+No need to switch apps. Link your Instagram handle in your Cachy profile and **DM reels directly to `@cachyapp`**. 
+- Automatically approves message requests and extracts reel URLs (including mobile share-sheet links).
+- Enqueues background downloading, transcribes audio, and sends an immediate confirmation DM.
+- Supports burst queues (send up to 10 reels in a row; all will be batched and saved).
 
-My first ceiling was 6 minutes and getting that wrong is the part worth keeping.
-It clears the 5-minute window, so it looked right, and it drops the query count by
-99.7%. But every query restarts the suspend timer, so at interval `P` the compute
-stays awake `min(P, S)/P` of the time. At 6 minutes that is **83% awake**, 608
-hours a month, which moves the failure from day 17 to day 20 and calls it fixed.
-Fewer queries and less compute turned out to be two different problems. At 30
-minutes it is 17% awake, about 122 hours, with room to spare.
+### 📋 2. Interactive Typed Knowledge Cards (Schema `1.6`)
+Say goodbye to walls of AI text. Cards are built from modular, interactive blocks:
+- **Step Lists:** Step-by-step guides with checkable progress.
+- **Checklists:** Dynamic ingredient and to-do lists that preserve your checked state.
+- **Key-Value Blocks:** Structured parameters (e.g. prep time, difficulty, camera settings).
+- **Interactive Quizzes:** 3–5 multiple-choice questions per card to test your retention.
+- **Rabbit Hole Research:** Tap any concept to explore branching follow-up threads.
 
-Moving to a provider that does not meter compute would have made the symptom go
-away and left the 2.6M queries running, so the provider stayed.
-`worker_idle_max_seconds` in `backend/app/config.py` carries the arithmetic, and
-`backend/tests/test_worker_idle.py` asserts the awake fraction against the budget
-rather than just checking the interval beats five minutes, so the 6-minute version
-cannot quietly come back.
+### 📱 3. On-Device Local AI (Google Gemma 3 1B)
+Cachy respects free-tier limits. If cloud daily card quotas are reached:
+- The backend extracts raw transcripts and OCR, then flags the card as `degraded`.
+- Your phone’s local **Gemma 3 1B** model (`flutter_gemma`) automatically structures the card on-device with zero cloud API usage.
 
-## Run it yourself
+### 🕸️ 4. Dynamic Knowledge Graph & Replay Feed
+- **Force-Directed Graph:** An Obsidian-style physics graph rendered client-side in Flutter. Links cards by semantic vector similarity (`0.26`–`0.66`), shared tags, and referenced entities.
+- **Knowledge Replay Feed:** A TikTok-style vertical feed that resurfaces micro-moments from your own library: key takeaways, quiz questions, punchy highlights, and serendipitous cross-card links.
 
-### Full stack (backend + web frontend)
+### 💬 5. Card & Full-Library AI Chat
+- **Card Chat:** Ask questions specific to a single card (e.g., *"What can I substitute for coconut milk in this recipe?"*).
+- **Library Chat:** Ask questions across your entire knowledge base (e.g., *"Summarize all productivity techniques I've saved across different videos"*).
 
+### 🔗 6. Unlisted Sharing & "Save to My Cachy"
+- Generate unlisted share links (`/share/{token}`) with server-rendered OpenGraph previews for WhatsApp, iMessage, and Twitter.
+- Anyone can read the card on the web without logging in, or tap **"Save to my Cachy"** to clone it directly into their library with zero quota charge.
+
+### 🎙️ 7. Self-Driving Presenter Agent
+Built right into the web app: tap **Present** to launch an autonomous AI demo agent that speaks using the browser's Web Speech API while navigating, clicking, and demonstrating features across the entire app.
+
+### 📦 8. Obsidian Vault Export
+Export your entire personal knowledge base in one click as a `.zip` archive formatted as an **Obsidian vault** with YAML frontmatter, Markdown blocks, tags, and local media keyframes.
+
+---
+
+## 🏗️ Architecture & Tech Stack
+
+```
+[Flutter Client (Android / Web)]
+              │
+              │ REST + Server-Sent Events (SSE)
+              ▼
+[FastAPI Asynchronous Backend (Port 7860)]
+       │                      │
+       ├─► In-Process Worker  ├─► Instagram DM Poller (@cachyapp)
+       │   (6 Pipeline Steps) │   (instagrapi + requests transport)
+       │                      │
+       ├─► AI Fallback Chain  └─► Database Layer
+       │   1. Gemini 2.5 Flash    • Production: Neon PostgreSQL
+       │   2. Cerebras Llama 3.3  • Local Dev: SQLite (aiosqlite)
+       │   3. Groq Llama 3.3
+       │   4. On-Device Gemma 3
+```
+
+- **Frontend:** Flutter 3+ (Dart) with MVVM architecture, Provider state management, and CanvasKit/Wasm rendering.
+- **Backend:** FastAPI (Python 3.11), SQLAlchemy 2.0 async, `instagrapi` for DM polling, and `trafilatura` for clean article scraping.
+- **AI & Audio Engine:** Groq Whisper Turbo (`whisper-large-v3-turbo`) with fallback to local `faster-whisper`; Gemini 2.5 Flash + Cerebras Llama 3.3 70B for structuring; `BAAI/bge-small-en-v1.5` for vector embeddings.
+- **Cloud Infrastructure:** Hugging Face Spaces (Docker SDK), Neon Serverless PostgreSQL.
+
+---
+
+## 📚 Documentation Suite
+
+Complete, deep-dive specifications are maintained in the [`docs/`](docs/README.md) directory:
+
+| Document | Topic |
+|---|---|
+| **[`docs/01_PRODUCT_REQUIREMENTS_DOCUMENT.md`](docs/01_PRODUCT_REQUIREMENTS_DOCUMENT.md)** | Product Vision, Personas, Schema 1.6 specifications, and PRD |
+| **[`docs/02_SYSTEM_ARCHITECTURE.md`](docs/02_SYSTEM_ARCHITECTURE.md)** | Detailed subsystem architecture, data flow, and database models |
+| **[`docs/03_INGESTION_AND_INSTAGRAM_BOT.md`](docs/03_INGESTION_AND_INSTAGRAM_BOT.md)** | Instagram `@cachyapp` DM bot, pending inbox rules, and resolvers |
+| **[`docs/04_ON_DEVICE_AI_AND_FALLBACKS.md`](docs/04_ON_DEVICE_AI_AND_FALLBACKS.md)** | Google Gemma 3 1B on-device structuring and LLM fallback cascades |
+| **[`docs/05_AUTHENTICATION_AND_SECURITY.md`](docs/05_AUTHENTICATION_AND_SECURITY.md)** | Firebase Auth + Cachy ID password auth, quotas, and security |
+| **[`docs/06_API_REFERENCE.md`](docs/06_API_REFERENCE.md)** | Full REST API & SSE streaming reference (26+ endpoints) |
+| **[`docs/07_DEPLOYMENT_AND_OPERATIONS.md`](docs/07_DEPLOYMENT_AND_OPERATIONS.md)** | Hugging Face Spaces deployment, Docker configuration, and APK builds |
+
+---
+
+## 🚀 Quickstart & Local Setup
+
+### 1. Run the Full Stack
+To spin up both the FastAPI backend and the web frontend locally:
 ```bash
 ./start.py
 ```
 
-### Backend alone
-
+### 2. Backend Alone
 ```bash
-cd backend && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -e .
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API keys (all optional — missing ones fall back) load from `.env`; see `backend/app/config.py`.
-
-### Flutter app
-
+### 3. Flutter App (Web & Mobile)
 ```bash
 cd app
 flutter pub get
 flutter run -d chrome --dart-define=CACHY_API_BASE=http://localhost:8000
 ```
 
-### Docker (as deployed on HF Spaces)
-
+### 4. Build Release Android APK
 ```bash
-docker build -t cachy . && docker run -p 7860:7860 cachy
+cd app
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-## License
+---
 
-MIT — see [LICENSE](LICENSE)
+## 🚢 Cloud Deployment (Hugging Face Spaces)
+
+Cachy runs entirely on a free-tier Hugging Face Space. Deploy changes with one command:
+```bash
+./deploy_hf.sh "feat: your update message"
+```
+This builds the Flutter web distribution, detaches a clean deployment commit, and pushes to your Hugging Face Space.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
