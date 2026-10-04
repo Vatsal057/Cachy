@@ -1,93 +1,92 @@
 # Product Requirements Document (PRD) — Cachy
 
-**Version:** 2.0  
-**Status:** Active / Production  
-**Last Updated:** October 2026  
-**Authors:** Cachy Engineering Team  
+**Product:** Cachy — The Short-Form Media to Knowledge Engine  
+**Version:** 2.0 (Schema Version `1.6`)  
+**Status:** In Production (Android Native APK + Web App)  
+**Distribution:** Direct Download (GitHub APK) + Hosted Web App (`vatxzz-cachy.hf.space`)  
 
 ---
 
-## 1. Executive Summary
+## 1. Executive Summary & Vision
 
-Cachy is an AI-powered personal knowledge capture engine that turns ephemeral, short-form media (Instagram Reels, TikToks, YouTube Shorts) and web articles into permanent, structured **knowledge cards**. Instead of letting saved links turn into an unorganized "bookmark graveyard," Cachy extracts core steps, recipes, frameworks, entities, and key-value facts, connects them into an interactive **knowledge graph**, and replays insights through a curated **knowledge feed**.
+Every day, people scroll through dozens of high-value Instagram Reels, TikToks, YouTube Shorts, and insightful web articles. They tap "Save" or "Bookmark", yet 90% of saved videos are never watched again. Native bookmarking creates a **link graveyard**: videos are unsearchable, slow to retrieve, and require re-watching 60–90 seconds of audio/video just to find a single ingredient, code snippet, or workout step.
 
----
+**Cachy transforms ephemeral video clips into structured, permanent knowledge cards.**
 
-## 2. Problem Statement & User Personas
-
-### 2.1 The Problem
-- **Ephemeral Consumption:** Users save dozens of useful reels, tips, workout routines, recipes, and tech tutorials every week on social media.
-- **Link Graveyards:** Native bookmarks (Instagram Saved, TikTok Favorites, Chrome Bookmarks) only save links—not knowledge. Finding a specific recipe or step 3 weeks later requires re-watching videos.
-- **Cognitive Overload:** Video is a high-bandwidth, slow-to-retrieve medium. Users cannot easily search or reference a 60-second video without re-watching it.
-
-### 2.2 Target Personas
-1. **The Curious Scroller / Lifelong Learner:** Scans Instagram/TikTok for book summaries, psychology insights, coding tips, and productivity frameworks. Wants quick access without re-watching.
-2. **The Recipe & DIY Collector:** Saves cooking videos, DIY crafts, and workout routines. Needs typed ingredients, step-by-step checklists, and timers.
-3. **The Offline Student / Commuter:** Needs knowledge accessible offline on their mobile device without burning data or relying on cloud availability.
+Instead of storing dead links, Cachy extracts actionable steps, recipes, frameworks, and entities, connects them into an interactive **knowledge graph**, and replays them through an intelligent **knowledge feed**.
 
 ---
 
-## 3. Product Vision & Principles
+## 2. Target Personas & Core User Journeys
 
-1. **Capture is Sacred:** From native Android share sheets to Instagram DMs (`@cachyapp`), capturing a link must be effortless, reliable, and instant.
-2. **Free-First, Graceful Degradation:** No feature should fail hard because a third-party API key is depleted. The system cascades through multiple AI providers (Gemini → Cerebras → Groq → On-Device Gemma → Rule-based fallback).
-3. **Calm Editorial Aesthetic:** "Calm Editorial Glass": deep charcoal and warm paper palettes, Fraunces serif typography, Inter body, and IBM Plex Mono labels. Zero flashy gamification, streaks, or aggressive push notifications.
-4. **Structured Knowledge over Raw Text:** Rather than dumping a transcript, content is structured into typed blocks (steps, key-value tables, checklists, callouts, and maps).
-
----
-
-## 4. Key Features & Functional Requirements
-
-### 4.1 Automated Ingestion
-- **Native Share Sheet:** Android/iOS intent receiver (`receive_sharing_intent`) allows sharing directly to Cachy from any app.
-- **Instagram Auto-Save Bot:** Users link their Instagram handle in their profile and DM reels to `@cachyapp`. The server approves pending message requests, extracts reel links, enqueues ingestion, and sends a confirmation reply DM.
-- **Supported Media:** Instagram Reels/Posts, TikTok videos, YouTube Shorts, and standard web articles (extracted via `trafilatura`).
-
-### 4.2 Ingestion & Processing Pipeline
-1. **Ingest:** Download video/audio via `yt-dlp` / keyless resolvers or scrape clean article text.
-2. **Extract:** Audio transcription via Groq Whisper (`whisper-large-v3-turbo`) or local `faster-whisper`; video keyframes and OCR via OpenCV and `pytesseract`.
-3. **Structure:** LLM structures raw data into typed blocks (`HeadingBlock`, `ParagraphBlock`, `StepListBlock`, `KeyValueBlock`, `ChecklistBlock`, `CalloutBlock`, `MapBlock`, `TableBlock`).
-4. **Insight Pass:** Generates rabbit-hole discussion threads and interactive multiple-choice quiz questions.
-5. **Catalog & Concepts:** Extracts referenced artifacts (books, movies, tools) and key conceptual nodes.
-6. **Embeddings:** Generates semantic embeddings (`BAAI/bge-small-en-v1.5`) for vector search and graph clustering.
-
-### 4.3 Interactive Knowledge Graph
-- Visual representation of cards, concepts, and artifacts.
-- Links created via semantic cosine similarity (threshold `0.26`–`0.66`), shared tags, and artifact references.
-- Force-directed physics simulation rendered client-side in Flutter.
-- Cluster detection via pure-Python label propagation.
-
-### 4.4 Knowledge Feed & Serendipity
-- A TikTok/Reel-style vertical feed that replays your own saved cards back to you in bite-sized moments (Key Insights, Quiz questions, Highlights, and Serendipity connections).
-- **Serendipity Engine:** Discovers surprising conceptual bridges between two unrelated cards (e.g., linking a cooking card to a productivity framework).
-
-### 4.5 Sharing & Public Access
-- Public card sharing via unique short URLs (`/share/{id}`).
-- Responsive web reader with action item extraction, reference links, and "Clone to My Cachy" functionality.
-- Android App Links integration (`/.well-known/assetlinks.json`) to open shared links natively in the mobile app.
-
-### 4.6 Dual Authentication
-- **Firebase Auth:** Anonymous-first authentication with optional one-tap Google Account linking.
-- **Cachy ID:** Privacy-focused username/password authentication for users avoiding third-party identity providers.
-
-### 4.7 On-Device Local AI
-- Integrated Google Gemma 3 1B on-device model (`flutter_gemma`).
-- If cloud daily quotas are exceeded, the mobile client structures raw extraction bundles locally on-device.
+### 2.1 Personas
+1. **The Casual Scroller (Primary):**
+   - *Profile:* Uses Instagram/TikTok on commute or evening downtime; finds cooking tips, fitness routines, tech hacks, and book summaries.
+   - *Pain Point:* "I saw an amazing recipe on Instagram 3 weeks ago, but can't find it among my 500 saved reels."
+   - *Journey:* DMs the reel to `@cachyapp` on Instagram or shares via the Android share sheet. Later opens Cachy to see a fully structured ingredient list, checklist, and timer.
+2. **The Knowledge Worker & Student:**
+   - *Profile:* Reads substacks, tech tutorials, and watch educational shorts.
+   - *Pain Point:* Needs concepts interconnected and exportable to tools like Obsidian.
+   - *Journey:* Collects articles and tutorials, explores cross-card connections via the graph, asks questions to the entire library via AI chat, and exports as an Obsidian markdown vault.
 
 ---
 
-## 5. Non-Functional Requirements
+## 3. Core Functional Requirements
 
-### 5.1 Performance & Latency
-- Ingestion pipeline time: < 30 seconds for standard 60-second video.
-- Real-time pipeline updates streamed via Server-Sent Events (SSE).
-- Search query latency: < 150ms over 1,000+ local cards.
+### 3.1 Seamless Ingestion Channels
+- **FR-1.1: Native Mobile Share Sheet:** Registered via `receive_sharing_intent` on Android. Sharing any URL to Cachy opens the transparent pipeline overlay.
+- **FR-1.2: Instagram Bot Auto-Save (`@cachyapp`):**
+  - Users link their Instagram username in the Cachy profile (`/me/instagram`).
+  - Sending reels or posts to `@cachyapp` triggers automated ingestion, message request approval, and an immediate DM confirmation reply.
+  - Supports burst sharing (up to 10 consecutive reels in a single batch).
+- **FR-1.3: In-App Manual Capture:** Fast paste dialog with URL preview and real-time Server-Sent Events (SSE) progress bar.
 
-### 5.2 Scalability & Resource Discipline
-- Backend runnable on a single free Hugging Face Space (CPU tier, 16GB RAM).
-- In-process `asyncio` background queue avoiding heavy external broker dependencies (Redis/Celery).
-- Serverless database idle backoff (up to 30 min) to protect scale-to-zero Neon Postgres compute limits.
+### 3.2 Processing Pipeline & Extraction Engine
+- **FR-2.1: Keyless & Fallback Downloading:** Keyless resolver chain (`yt-dlp` → `vidssave` → `savethevideo` → `saveig` → `downloadgram`) ensuring high reliability without paid scraping APIs.
+- **FR-2.2: Audio Transcription:** Primary Groq Whisper Turbo (`whisper-large-v3-turbo`) with fallback to local in-process `faster-whisper`.
+- **FR-2.3: Visual OCR & Keyframes:** OpenCV keyframe extraction and `pytesseract` OCR for on-screen text, carousel slides, and diagrams.
+- **FR-2.4: Ephemeral Media Storage:** Original source video is deleted immediately after extraction; only lightweight keyframes and thumbnails are retained.
 
-### 5.3 Reliability & Privacy
-- Source video files discarded immediately after keyframe extraction and audio transcription; zero permanent raw video storage.
-- All data isolated by `owner_id` with verified identity headers on all mutating routes.
+### 3.3 Structured Knowledge Schema (Schema `1.6`)
+Every card is structured into typed, interactive blocks rather than a monolithic wall of text:
+1. **`HeadingBlock`**: Section demarcation (`level: 2 | 3`).
+2. **`ParagraphBlock`**: Core explanations and narrative insights.
+3. **`StepListBlock`**: Ordered step-by-step procedures with interactive checkboxes (`checkable: true`).
+4. **`KeyValueBlock`**: Structured parameter pairs (e.g., Cooking Time: 25 mins, Difficulty: Medium).
+5. **`ChecklistBlock`**: Interactive to-do and ingredient lists with persistent checked state.
+6. **`CalloutBlock`**: Highlights, pro-tips, warnings, and quotes with confidence scores and source URLs.
+7. **`LinkBlock`**: External references, papers, and product URLs.
+8. **`MapBlock`**: Geographic coordinates (`lat`, `lng`, `name`, `address`) that link directly to native Maps.
+9. **`TableBlock`**: Tabular comparisons with named columns and rows.
+
+### 3.4 Deep Insight Layer & Learning
+- **FR-3.1: Interactive Quizzes:** 3–5 multiple-choice questions per card with explanations to test user comprehension.
+- **FR-3.2: Rabbit Hole Explorations:** Branching topical exploration prompts that let users dive deeper into sub-topics with breadcrumb trails.
+- **FR-3.3: Card & Library AI Chat:** Contextual Q&A on a single card or cross-referencing insights across the entire library.
+
+### 3.5 Discovery, Feed & Knowledge Graph
+- **FR-4.1: Serendipity Engine:** Discovers non-obvious conceptual links between cards using mid-band semantic cosine similarity (`0.26`–`0.66`) with a cross-content-type bonus.
+- **FR-4.2: Knowledge Replay Feed:** TikTok-style vertical scroll feed that serves micro-moments from saved cards (Insights, Quizzes, Highlights, Connections) at zero LLM cost.
+- **FR-4.3: Interactive Force-Directed Graph:** Live physics-based knowledge graph rendered client-side in Flutter, with clustering calculated via pure-Python label propagation.
+
+### 3.6 Public Sharing & Web Reader
+- **FR-5.1: Unlisted Share Links:** Public short URLs (`/share/{token}` and `/s/{token}`) with server-rendered OpenGraph meta tags for rich social previews on WhatsApp, iMessage, and Telegram.
+- **FR-5.2: "Save to My Cachy":** One-click cloning of shared cards into the receiver's personal library with zero quota deduction.
+- **FR-5.3: Android App Links:** Deep linking (`/.well-known/assetlinks.json`) allowing shared web links to open natively in the Android app.
+
+### 3.7 Self-Driving Presenter Mode
+- **FR-6.1: Autonomous Interactive Tour:** Integrated demo agent floating as a glowing glyph. Uses the Web Speech API to speak while autonomously navigating, clicking, and driving the app across all features.
+- **FR-6.2: Audience Q&A:** Visitors can ask questions; the backend orchestrates ordered `{say, action}` beats so the agent *performs* the answer directly in the UI.
+
+### 3.8 Obsidian Vault Export
+- **FR-7.1: One-Click Markdown Zip:** Client-side generation of an Obsidian-ready vault containing YAML frontmatter, tags, Markdown blocks, and local media attachments.
+
+---
+
+## 4. Non-Functional Requirements & Design Aesthetics
+
+- **Design Philosophy:** "Calm Editorial Glass" — warm paper / deep charcoal dark mode, Fraunces serif display, Inter body text, IBM Plex Mono labels.
+- **Quota & Cost Discipline:**
+  - 10 cards/day for free users; 30 chat queries/day.
+  - Scale-to-zero database protection: 30-minute idle worker backoff to prevent draining serverless Neon Postgres compute limits.
+- **Graceful Degradation:** Automatic cascade from Gemini 2.5 Flash → Cerebras Llama 3.3 → Groq Llama 3.3 → On-Device Gemma 3 1B → Plain Text Fallback.
