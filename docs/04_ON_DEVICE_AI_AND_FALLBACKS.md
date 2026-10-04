@@ -42,14 +42,62 @@ Cachy operates on the principle that lack of cloud API credits or network thrott
 
 ## 2. On-Device AI: Google Gemma 3 1B
 
-On mobile devices (Android), Cachy integrates Google's Gemma 3 1B model using `flutter_gemma`.
+On mobile devices (Android), Cachy integrates Google's **Gemma 3 1B IT (int4)** model via `flutter_gemma` (backed by Google MediaPipe LLM Inference C++ runtime).
 
-### 2.1 Workflow for Degraded Cards
-1. **Cloud Quota Exhaustion:** When an unauthenticated user or free account exceeds the daily quota (`quota_cards_per_day = 10`), the server extracts keyframes and audio transcript as usual, but skips cloud LLM structuring.
-2. **Card State:** The card is saved with `degraded = True` and its raw extraction bundle is stored in the database.
-3. **Client Notification:** The mobile app detects `card.degraded == true` on synchronization.
-4. **On-Device Inference:** The Flutter app prompts or automatically passes the raw extraction text into the locally hosted Gemma 3 1B model, generating typed blocks directly on the phone.
-5. **Sync Back:** The structured blocks are uploaded back to the server via `PUT /cards/{id}/structure`, promoting the card to fully structured status without burning cloud tokens.
+### 2.1 Scope: What On-Device AI Does vs. Does NOT Do
+
+| Task | Where It Runs | Technology | Handled by On-Device Gemma? |
+| :--- | :--- | :--- | :--- |
+| **Reel Ingestion & Download** | Cloud Backend | `yt-dlp` / Instagram Private API | ❌ **No.** Reels require network, cookies, and video download. |
+| **Audio Transcription** | Cloud Backend | Groq Whisper / Faster-Whisper | ❌ **No.** Gemma is a text-only SLM; cannot process audio. |
+| **Visual OCR / Keyframes** | Cloud Backend | Tesseract / MediaPipe Vision | ❌ **No.** Gemma 3 1B IT int4 is text-only. |
+| **Raw Bundle Assembly** | Cloud Backend | Python Worker Pipeline | ❌ **No.** Server packages transcript + captions into raw bundle. |
+| **Card Structuring & Synthesis** | **User's Android Phone** | **Gemma 3 1B IT (MediaPipe)** | ✅ **YES.** Turns raw bundle text into checklists, headings, and one-liners. |
+
+> **Note on Instagram DM Bot (`@cachyapp`):** Reels sent via Instagram DM are processed entirely in the cloud backend (Hugging Face Spaces) using Google Gemini. The Instagram DM bot does **not** invoke the on-device model.
+
+### 2.2 Model Artifact & Storage
+- **Model File:** `gemma3-1b-it-int4.task` (~554 MB, int4 quantized).
+- **Distribution:** Hosted on GitHub Releases (`https://github.com/Vatsal057/Cachy/releases/download/model-v1/gemma3-1b-it-int4.task`).
+- **Storage:** Downloaded on-demand via Settings into the app's sandboxed storage (`FlutterGemma.installModel()`). It is never bundled directly into the base APK.
+
+### 2.3 Hardware & OS Requirements
+- **OS Support:** Android only (`Platform.isAndroid`). iOS, Web, and desktop platforms report `LocalAiPhase.unsupported`.
+- **Architecture:** 64-bit ARM (`arm64-v8a`), Android 8.0+ (API 26+).
+- **RAM Requirement:** Requires ~1.2 GB to 1.5 GB available RAM during inference. Devices with ≥ 6 GB RAM run at ~15–25 tokens/sec. On low-end 3 GB RAM devices, Android Low Memory Killer (LMK) may terminate the app under background load.
+
+### 2.4 Prompt & Target JSON Schema
+To guarantee deterministic JSON from a 1B model, the target schema is simplified to 3 primitive blocks (`paragraph`, `checklist`, `heading`) instead of the full 9-block cloud schema:
+
+```json
+{
+  "base": {
+    "one_liner": "Single concise sentence",
+    "tldr": "2-3 sentence overview",
+    "content_type": "recipe|tutorial|tip|product_list|travel|news_explainer|other",
+    "tags": ["tag1", "tag2"]
+  },
+  "blocks": [
+    {"type": "paragraph", "text": "..."},
+    {"type": "checklist", "items": [{"text": "...", "checked": false}]},
+    {"type": "heading", "text": "..."}
+  ]
+}
+```
+
+### 2.5 Defensive JSON Guardrails
+In `app/lib/data/services/local_ai/local_ai_service.dart`:
+1. **Fencing & Clamping:** `parseModelCardJson()` strips markdown code fences (` ```json `) and clamps to the outermost `{` and `}`, discarding conversational prefixes or suffixes.
+2. **Silent Grace:** If JSON decoding fails, the error is caught, and the clean extractive paragraph card remains intact without crashing.
+3. **Server Validation:** Uploading the generated JSON to `POST /cards/{id}/structure` passes through backend `_validate()`. Malformed payloads receive HTTP 422 and are rejected, preserving the paragraph card.
+
+### 2.6 Step-by-Step Workflow for Degraded Cards
+1. **Cloud Quota Exhaustion / Prefer Local:** When an unauthenticated or quota-limited user saves a reel, or when `prefer_local = true` is set, the server extracts keyframes and audio transcript as usual, but skips cloud LLM structuring.
+2. **Card State:** The card is saved with `degraded = True` and its raw extraction bundle is stored in `CardRow.raw_bundle`.
+3. **Client Detection:** The Flutter app detects `_quotaDegraded && ai.canStructure` in `ShareViewModel`.
+4. **Bundle Retrieval:** The client fetches the stored bundle from `GET /cards/{id}/bundle`.
+5. **On-Device Inference:** `GemmaLocalAiService.structureBundle()` runs the local Gemma 3 1B model at temperature `0.3` (capped at 4,000 characters).
+6. **Upload & Promotion:** The structured payload is sent via `POST /cards/{id}/structure`, promoting the card to fully structured status without burning cloud tokens.
 
 ---
 
