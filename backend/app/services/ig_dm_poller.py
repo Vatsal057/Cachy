@@ -45,6 +45,7 @@ class InstagramDMPoller:
         password: str,
         session_file: Path | str = "ig_session.json",
         session_data: str = "",
+        proxy: str = "",
         poll_interval_seconds: float = 20.0,
     ) -> None:
         self.username: str = username.strip()
@@ -53,8 +54,15 @@ class InstagramDMPoller:
             Path(session_file) if isinstance(session_file, str) else session_file
         )
         self.session_data: str = session_data.strip()
+        self.proxy: str = proxy.strip()
         self.poll_interval_seconds: float = poll_interval_seconds
         self.cl: Client = Client(private_transport="requests")
+        if self.proxy:
+            try:
+                self.cl.set_proxy(self.proxy)
+                log.info("Configured Instagram proxy: %s", self.proxy.split("@")[-1])
+            except Exception as e:
+                log.warning("Could not set proxy %s: %s", self.proxy, e)
         self._last_checked_timestamp: int = 0
         self._is_logged_in: bool = False
 

@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     ig_bot_password: str = ""
     ig_session_path: str = "ig_session.json"
     ig_session_data: str = ""  # Raw JSON session string from HF Space Secret
+    ig_proxy: str = ""  # Optional HTTP/SOCKS5 proxy to bypass cloud datacenter IP blocks
     ig_poll_interval_seconds: float = 20.0
 
     # Android verified app links for share URLs (/.well-known/assetlinks.json).

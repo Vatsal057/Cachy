@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
             password=settings.ig_bot_password,
             session_file=settings.ig_session_path,
             session_data=settings.ig_session_data,
+            proxy=settings.ig_proxy,
             poll_interval_seconds=settings.ig_poll_interval_seconds,
         )
         _ig_stop_event.clear()
