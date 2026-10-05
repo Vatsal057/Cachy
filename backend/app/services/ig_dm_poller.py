@@ -8,6 +8,7 @@ in the processing pipeline.
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
 import logging
 import random
 import re
@@ -21,6 +22,8 @@ from instagrapi.exceptions import (
     FeedbackRequired,
     LoginRequired,
 )
+from requests.adapters import HTTPAdapter
+from urllib3.response import HTTPResponse
 
 from app import quota
 from app.models.card import CardState
@@ -34,6 +37,57 @@ log = logging.getLogger("services.ig_dm_poller")
 _REEL_URL_REGEX = re.compile(
     r"https?://(?:www\.)?instagram\.com/(?:share/)?(?:reel|reels|p)/([a-zA-Z0-9_\-]+)"
 )
+
+
+class ChromeCurlAdapter(HTTPAdapter):
+    """Adapter that routes HTTP requests through curl_cffi with Chrome TLS impersonation.
+
+    Bypasses datacenter TLS fingerprint blocking on Instagram endpoints by
+    matching genuine Google Chrome BoringSSL ClientHello handshakes.
+    """
+
+    def __init__(self, impersonate: str = "chrome124", proxy: str = "") -> None:
+        super().__init__()
+        try:
+            from curl_cffi.requests import Session as CurlSession
+
+            proxies = {"http": proxy, "https": proxy} if proxy else None
+            self.session: CurlSession | None = CurlSession(impersonate=impersonate, proxies=proxies)
+        except Exception as e:
+            log.warning("curl_cffi not available for ChromeCurlAdapter: %s", e)
+            self.session = None
+
+    def send(self, request, **kwargs):
+        if self.session is None:
+            return super().send(request, **kwargs)
+
+        headers = dict(request.headers)
+        headers.pop("Host", None)
+        headers.pop("host", None)
+
+        resp = self.session.request(
+            method=request.method,
+            url=request.url,
+            headers=headers,
+            data=request.body,
+            timeout=kwargs.get("timeout", 30),
+            allow_redirects=False,
+        )
+
+        res_headers = dict(resp.headers)
+        res_headers.pop("content-encoding", None)
+        res_headers.pop("Content-Encoding", None)
+
+        return self.build_response(
+            request,
+            HTTPResponse(
+                body=BytesIO(resp.content),
+                status=resp.status_code,
+                headers=res_headers,
+                reason=resp.reason,
+                preload_content=False,
+            ),
+        )
 
 
 class InstagramDMPoller:
@@ -56,7 +110,8 @@ class InstagramDMPoller:
         self.session_data: str = session_data.strip()
         self.proxy: str = proxy.strip()
         self.poll_interval_seconds: float = poll_interval_seconds
-        self.cl: Client = Client(private_transport="requests")
+        self.cl: Client = Client()
+        self._mount_transports()
         if self.proxy:
             try:
                 self.cl.set_proxy(self.proxy)
@@ -66,16 +121,26 @@ class InstagramDMPoller:
         self._last_checked_timestamp: int = 0
         self._is_logged_in: bool = False
 
-        if self.session_data and not self.session_file.exists():
+        if self.session_data:
             try:
-                clean_session = self.session_data.replace(
-                    '"private_transport": "curl"', '"private_transport": "requests"'
-                )
                 self.session_file.parent.mkdir(parents=True, exist_ok=True)
-                self.session_file.write_text(clean_session, encoding="utf-8")
-                log.info("Initialized Instagram session file from session_data secret")
+                self.session_file.write_text(self.session_data, encoding="utf-8")
+                log.info("Initialized Instagram session file from session_data secret (%s)", self.session_file)
             except Exception as e:
                 log.warning("Could not write session_data to %s: %s", self.session_file, e)
+
+    def _mount_transports(self) -> None:
+        """Mount Chrome TLS impersonation adapter across private & public sessions."""
+        try:
+            adapter = ChromeCurlAdapter(impersonate="chrome124", proxy=self.proxy)
+            if adapter.session is not None:
+                self.cl.private.mount("https://", adapter)
+                self.cl.private.mount("http://", adapter)
+                self.cl.public.mount("https://", adapter)
+                self.cl.public.mount("http://", adapter)
+                log.debug("Mounted Chrome TLS impersonation adapter on instagrapi")
+        except Exception as e:
+            log.warning("Could not mount ChromeCurlAdapter: %s", e)
 
     def login(self) -> bool:
         """Authenticate with Instagram using stored session file or credentials.
@@ -83,15 +148,31 @@ class InstagramDMPoller:
         Dumps session settings to disk upon successful authentication to reuse
         cookies and avoid triggering repeated 2FA or checkpoint challenges.
         """
+        # Discover alternative session file locations if default does not exist
+        if not self.session_file.exists():
+            for candidate in (
+                Path("ig_session.json"),
+                Path("backend/ig_session.json"),
+                Path("/app/ig_session.json"),
+                Path("/data/ig_session.json"),
+            ):
+                if candidate.exists():
+                    self.session_file = candidate
+                    log.info("Discovered Instagram session file at %s", candidate)
+                    break
+
+        self._mount_transports()
+
         if self.session_file.exists():
             try:
                 log.info("Loading Instagram session from %s", self.session_file)
                 self.cl.load_settings(self.session_file)
-                # Ensure we use requests transport so cloud Docker containers don't fail with curl SSLError
-                try:
-                    self.cl._configure_private_session_retry("requests")
-                except Exception as e:
-                    log.warning("Failed to configure requests transport: %s", e)
+                self._mount_transports()
+                if self.proxy:
+                    try:
+                        self.cl.set_proxy(self.proxy)
+                    except Exception:
+                        pass
                 self.cl.account_info()
                 self._is_logged_in = True
                 log.info("Logged into Instagram using saved session (%s)", self.cl.user_id)
@@ -102,17 +183,15 @@ class InstagramDMPoller:
                 log.error("Instagram checkpoint challenge required: %s", e)
                 return False
             except Exception as e:
-                if "curl private transport failed" in str(e) or "SSLError" in str(e):
-                    try:
-                        log.info("Curl transport failed; retrying account_info with requests transport...")
-                        self.cl._configure_private_session_retry("requests")
-                        self.cl.account_info()
-                        self._is_logged_in = True
-                        log.info("Logged into Instagram using saved session with requests transport (%s)", self.cl.user_id)
-                        return True
-                    except Exception as retry_err:
-                        log.warning("Could not restore session with requests transport: %s", retry_err)
-                log.warning("Could not restore Instagram session (%s); falling back to password login", e)
+                log.warning("Could not restore Instagram session (%s); retrying with Chrome TLS transport...", e)
+                try:
+                    self._mount_transports()
+                    self.cl.account_info()
+                    self._is_logged_in = True
+                    log.info("Logged into Instagram using saved session after retry (%s)", self.cl.user_id)
+                    return True
+                except Exception as retry_err:
+                    log.warning("Could not restore session: %s", retry_err)
 
         if not self.username or not self.password:
             log.warning("Instagram bot credentials missing; skipping DM poller login")
@@ -120,13 +199,11 @@ class InstagramDMPoller:
 
         try:
             log.info("Logging into Instagram as @%s with password...", self.username)
-            try:
-                self.cl._configure_private_session_retry("requests")
-            except Exception:
-                pass
+            self._mount_transports()
             self.cl.login(self.username, self.password)
             self.session_file.parent.mkdir(parents=True, exist_ok=True)
             self.cl.dump_settings(self.session_file)
+            self._mount_transports()
             self._is_logged_in = True
             log.info("Successfully logged into Instagram and dumped session to %s", self.session_file)
             return True

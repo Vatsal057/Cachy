@@ -202,7 +202,14 @@ class Settings(BaseSettings):
     def ig_bot_enabled(self) -> bool:
         from pathlib import Path
 
-        has_session = Path(self.ig_session_path).exists() or bool(self.ig_session_data.strip())
+        candidates = (
+            Path(self.ig_session_path),
+            Path("ig_session.json"),
+            Path("backend/ig_session.json"),
+            Path("/app/ig_session.json"),
+            Path("/data/ig_session.json"),
+        )
+        has_session = any(p.exists() for p in candidates) or bool(self.ig_session_data.strip())
         has_creds = bool(self.ig_bot_username.strip() and self.ig_bot_password.strip())
         return has_session or has_creds
 
