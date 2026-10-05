@@ -12,6 +12,7 @@ from io import BytesIO
 import logging
 import random
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +121,12 @@ class InstagramDMPoller:
                 log.warning("Could not set proxy %s: %s", self.proxy, e)
         self._last_checked_timestamp: int = 0
         self._is_logged_in: bool = False
+
+        # Outgoing DM rate limiting & anti-ban protection
+        self._dm_timestamps: list[float] = []
+        self._dm_hourly_limit: int = 35
+        self._dm_cooldown_until: float = 0.0
+        self._last_send_time: float = 0.0
 
         if self.session_data:
             try:
@@ -415,17 +422,26 @@ class InstagramDMPoller:
                 if is_degraded:
                     degraded_count += 1
 
-        # 4. Reply with tailored confirmation
+        # 4. Reply with tailored confirmation (varied phrasing to prevent hash spam filters)
         if new_count == 1:
             if degraded_count > 0:
                 reply = "Got it! Building your Cachy card (daily AI quota reached — saving basic summary)... ⚡"
             else:
-                reply = "Got it! Building your Cachy card... ⚡"
+                reply = random.choice([
+                    "Got it! Building your Cachy card... ⚡",
+                    "On it! Building your Cachy card... ⚡",
+                    "Received! Adding this reel to your Cachy shelf... ⚡",
+                    "Got your reel! Building your summary card... ⚡",
+                ])
         elif new_count > 1:
             if degraded_count > 0:
                 reply = f"Got it! Building {new_count} Cachy cards ({degraded_count} basic due to daily AI quota)... ⚡"
             else:
-                reply = f"Got it! Building {new_count} Cachy cards... ⚡"
+                reply = random.choice([
+                    f"Got it! Building {new_count} Cachy cards... ⚡",
+                    f"On it! Building {new_count} Cachy cards... ⚡",
+                    f"Received! Adding {new_count} reels to your Cachy shelf... ⚡",
+                ])
         else:
             if len(urls) == 1:
                 reply = "This reel is already saved on your Cachy shelf! 📚"
@@ -464,12 +480,61 @@ class InstagramDMPoller:
             log.info("Queued reel %s for owner %s (degraded=%s) via Instagram DM", url, owner_id, degraded)
             return True, degraded
 
-    def _send_reply(self, thread_id: str | int, text: str) -> None:
-        """Send a direct message reply in thread."""
+    def _send_reply(self, thread_id: str | int, text: str) -> bool:
+        """Send a direct message reply in thread with rate-limiting and anti-ban safeguards.
+
+        Returns True if sent, False if dropped due to rate limit, circuit breaker, or error.
+        """
+        now = time.monotonic()
+
+        # 1. Circuit breaker check (e.g. following FeedbackRequired or action block)
+        if now < self._dm_cooldown_until:
+            remaining = int(self._dm_cooldown_until - now)
+            log.warning(
+                "Instagram DM circuit breaker active (%ds remaining); skipping reply to thread %s",
+                remaining,
+                thread_id,
+            )
+            return False
+
+        # 2. Hourly volume limit check (rolling 3600s window)
+        self._dm_timestamps = [t for t in self._dm_timestamps if now - t < 3600.0]
+        if len(self._dm_timestamps) >= self._dm_hourly_limit:
+            log.warning(
+                "Hourly Instagram DM limit reached (%d/%d); skipping reply to thread %s to protect account",
+                len(self._dm_timestamps),
+                self._dm_hourly_limit,
+                thread_id,
+            )
+            return False
+
+        # 3. Pacing: enforce minimum delay between consecutive outgoing DMs
+        elapsed = now - self._last_send_time
+        target_gap = random.uniform(1.5, 3.0)
+        if self._last_send_time > 0 and elapsed < target_gap:
+            time.sleep(target_gap - elapsed)
+
+        # 4. Attempt send with exception handling
         try:
             self.cl.direct_send(text, thread_ids=[int(thread_id)])
+            now_sent = time.monotonic()
+            self._dm_timestamps.append(now_sent)
+            self._last_send_time = now_sent
+            return True
+        except (FeedbackRequired, ClientError) as e:
+            err_str = str(e).lower()
+            if "feedback" in err_str or isinstance(e, FeedbackRequired) or "action blocked" in err_str:
+                self._dm_cooldown_until = time.monotonic() + 1800.0  # 30-min backoff
+                log.error(
+                    "Instagram action block (FeedbackRequired) triggered. Pausing outgoing DMs for 30m to protect account: %s",
+                    e,
+                )
+            else:
+                log.warning("ClientError sending DM in thread %s: %s", thread_id, e)
+            return False
         except Exception as e:
             log.warning("Failed to send DM reply in thread %s: %s", thread_id, e)
+            return False
 
     def _mark_seen(self, thread_id: str | int) -> None:
         """Mark a thread as seen so it leaves the unread inbox filter."""

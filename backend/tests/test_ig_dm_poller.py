@@ -235,3 +235,43 @@ async def test_process_thread_replies_link_warning_for_unlinked_user(database) -
     reply_text = poller.cl.direct_send.call_args[0][0]
     assert "link your instagram" in reply_text.lower()
     poller.cl.direct_thread_mark_as_seen.assert_called_once_with("54321")
+
+
+def test_send_reply_hourly_rate_limit_drops_excess_dms() -> None:
+    from unittest.mock import patch
+    poller = InstagramDMPoller(username="bot", password="pwd")
+    poller.cl = MagicMock()
+    poller._dm_hourly_limit = 2  # Set low limit for testing
+
+    with patch("time.sleep"):
+        # First send succeeds
+        assert poller._send_reply(111, "Hello 1") is True
+        assert poller.cl.direct_send.call_count == 1
+
+        # Second send succeeds
+        assert poller._send_reply(222, "Hello 2") is True
+        assert poller.cl.direct_send.call_count == 2
+
+        # Third send exceeds hourly limit and is dropped
+        assert poller._send_reply(333, "Hello 3") is False
+        assert poller.cl.direct_send.call_count == 2  # Not called again
+
+
+def test_send_reply_feedback_required_trips_circuit_breaker() -> None:
+    from instagrapi.exceptions import FeedbackRequired
+
+    poller = InstagramDMPoller(username="bot", password="pwd")
+    poller.cl = MagicMock()
+    poller.cl.direct_send.side_effect = FeedbackRequired("Action Blocked: Please wait a few minutes")
+
+    # Initial send encounters FeedbackRequired and trips circuit breaker
+    sent = poller._send_reply(111, "Hello")
+    assert sent is False
+    assert poller._dm_cooldown_until > 0
+
+    # Subsequent send is immediately blocked by circuit breaker without touching client
+    poller.cl.direct_send.reset_mock()
+    sent_again = poller._send_reply(222, "Hello again")
+    assert sent_again is False
+    poller.cl.direct_send.assert_not_called()
+
