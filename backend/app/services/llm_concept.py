@@ -19,7 +19,9 @@ Write a plain prose overview a curious person would find useful:
 - what the idea means,
 - why it matters or where it appears.
 
-Plain prose only — no markdown, no headings, no bullet points, no preamble."""
+Rules:
+- Active voice only. Maximum 20 words per sentence.
+- Plain prose only — no markdown, no headings, no bullet points, no preamble, no filler."""
 
 
 def _call_llm(prompt: str) -> str | None:

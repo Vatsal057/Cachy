@@ -67,14 +67,20 @@ abstract class LocalAiService extends ChangeNotifier {
 /// throws — silently keeping the paragraph card it was meant to upgrade.
 const kLocalAiBundleCharCap = 4000;
 
-/// Prompt tuned for 1B models: short instruction, one few-shot example,
-/// strict JSON-only suffix.
+/// Prompt tuned for 1B models: short instruction with Crisp Technical English
+/// rules (no meta-talk, short sentences under 20 words, checklist for multi-step details),
+/// one few-shot example, and strict JSON-only suffix.
 String buildStructurePrompt(String bundle) {
   if (bundle.length > kLocalAiBundleCharCap) {
     bundle = bundle.substring(0, kLocalAiBundleCharCap);
   }
   return '''
 You turn a video's raw text into one JSON knowledge card. Reply with JSON only, no prose, no markdown fences.
+
+Rules:
+- Write directly about the subject. Never say "the video says" or "the speaker explains".
+- Sentences max 15-20 words. If an idea is long or has multiple steps, use checklist items.
+- Natural English with zero filler words.
 
 Schema:
 {"base": {"one_liner": str, "tldr": str, "content_type": "recipe|tutorial|tip|product_list|travel|news_explainer|other", "tags": [str]}, "blocks": [{"type": "paragraph", "text": str} | {"type": "checklist", "items": [{"text": str, "checked": false}]} | {"type": "heading", "text": str}]}

@@ -9,13 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ffmpeg \
         tesseract-ocr \
+        build-essential \
+        cmake \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY backend/pyproject.toml ./
 COPY backend/app ./app
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu .
 
 # Flutter web output (pre-built by deploy_hf.sh, served as SPA after API routes)
 COPY web_dist ./static

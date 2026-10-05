@@ -175,7 +175,7 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 Rules for blocks (MOST IMPORTANT):
 - Start with a `heading` (level 1) that names the main topic.
 - Use `heading` (level 2) for major sections, `heading` (level 3) for individual items within a section.
-- TIPS / HABITS / ADVICE: for each tip, emit a `heading` (level 3) with the tip name, then a `paragraph` explaining WHY it works and HOW to apply it. Never flatten tips into a bare list. If the video gives a reason or mechanism, it goes in the paragraph verbatim.
+- TIPS / HABITS / ADVICE: for each tip, emit a `heading` (level 3) with the tip name, then a `paragraph` or `bullet_list` explaining WHY it works and HOW to apply it. Never flatten tips into a bare uninformative label. If the video gives a reason or mechanism, capture it faithfully.
 - STEPS / INSTRUCTIONS: use `step_list` with every step, none omitted.
 - KEY INSIGHT or CORE PRINCIPLE: use a `callout` (variant: "info") to make it visually prominent.
 - WARNINGS or CAVEATS: use a `callout` (variant: "warning").
@@ -187,6 +187,13 @@ Rules for blocks (MOST IMPORTANT):
 - NEVER collapse multiple points into one. NEVER write "and more" or "etc."
 - Always include the explanation, the mechanism, the reason. Context is never optional.
 
+Writing Style (Crisp Technical English — Caveman clarity + STE discipline in Natural English):
+- NO META-COMMENTARY: Never write about the video, creator, speaker, narrator, or viewer (e.g. NEVER write "The video highlights...", "The speaker suggests...", "This clip demonstrates...", "It is argued that..."). Write directly and authoritatively about the subject itself.
+- SENTENCE LENGTH CAP: Maximum 20 words per sentence. One distinct idea per sentence.
+- BULLETS FOR MULTI-PART OR LONG THOUGHTS: If an explanation requires multiple attributes, reasons, or details, do NOT write a long compound sentence. Break it into concise bullet points (`bullet_list` or `key_value`) with bold lead-ins (e.g. "- **Mechanism:** ...").
+- ACTIVE VOICE & IMPERATIVE MOOD: Use active voice for explanations ("Salt tenderizes meat", not "Meat is tenderized by salt"). Use imperative verbs for actionable steps ("Boil water", "Batch emails").
+- NATURAL BUT ZERO FLUFF: Write natural, grammatical English with standard articles (a/an/the), but eliminate all throat-clearing and filler ("in order to", "basically", "it is important to note", "serves to").
+
 What NOT to include in blocks:
 - Do NOT describe the presenter's appearance, clothing, or physical setting.
 - Do NOT include on-screen UI labels, reaction graphics, or decorative text overlays that are clearly interface noise rather than the video's actual content (e.g. meme captions, split-screen labels).
@@ -194,7 +201,7 @@ What NOT to include in blocks:
 - Do NOT create a "Visual Context" section. Visual frame data is only useful for extracting on-screen information, diagrams, or products — not who is presenting or what they are wearing.
 
 Other rules:
-- base.one_liner and base.tldr MUST always be non-empty.
+- base.one_liner and base.tldr MUST always be non-empty, direct, and free of meta-narration.
 - artifacts: include ONLY concrete, named, real-world things the video names (books, tools, products). Do NOT include social media platforms or downloading tools.
 - Inline references: wrap artifact names and concept names in [[double brackets]] the FIRST time they appear in prose.
 - action_items: concrete doable tasks the video tells the viewer to take. Short imperative phrases, max ~8.
@@ -293,7 +300,22 @@ def complete(
             return out
         log.info("llm: Cerebras failed; falling back to Groq")
     if settings.groq_api_key.strip():
-        return _call_groq(prompt, max_tokens, temperature, system=system)
+        out = _call_groq(prompt, max_tokens, temperature, system=system)
+        if out:
+            return out
+        log.info("llm: Groq failed; falling back to local server model")
+    if settings.local_llm_enabled:
+        from app.services import llm_local
+
+        out = llm_local.complete_local(
+            prompt,
+            system=system,
+            max_tokens=min(max_tokens, 2048),
+            temperature=temperature,
+        )
+        if out:
+            return out
+        log.info("llm: local server model fallback failed")
     return None
 
 

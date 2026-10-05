@@ -55,18 +55,24 @@ Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
 }}
 
 Rules:
-- Ground EVERY item in the card's actual content. Do not invent. If the card is
-  thin, return fewer items — an empty list is correct. Never pad.
-- rabbit_hole: keep it TIGHT. Only the sharpest threads (at most 2-3 each), phrased
-  so they work as a prompt (e.g. "How does compound interest differ from simple
-  interest?"). Concrete, specific, self-contained.
-- quiz: test real understanding of the card's ideas, not trivia. Each question has
-  3-4 options with exactly one clearly-correct answer and a one-line explanation.
-  Return [] if the card is too thin to quiz honestly.
-- deep_research_prompt: a structured, rigorous research brief (research objectives,
-  desired output sections, constraints) an expert could paste into a frontier LLM to
-  go far beyond this video. Plain text, ~150-300 words, no markdown headers. Omit it
-  (use null) only if the topic does not reward independent research.
+- Ground EVERY item in the card's domain and ideas. Do not invent unrelated claims. If the card is thin, return fewer items — an empty list is correct. Never pad.
+- Writing Style (Crisp Technical English):
+  - NO META-COMMENTARY: Never write "The video says", "The card explains", "The author claims". State facts directly.
+  - SENTENCE LENGTH CAP: Maximum 20 words per sentence. One idea per sentence.
+  - BULLETS FOR COMPLEX LISTS: Use short bullet points whenever enumerating multiple items or objectives.
+  - ACTIVE VOICE: Use active voice and direct imperative verbs. Cut all filler and throat-clearing.
+- rabbit_hole: keep it TIGHT (at most 2-3 items each).
+  - Questions: maximum 15 words, phrased as direct standalone exploration prompts (e.g. "How does compound interest differ from simple interest?").
+  - Adjacent topics & advanced concepts: concise 2-5 word conceptual phrases branching naturally outward.
+- quiz: test deep understanding of the core mechanism, not surface trivia.
+  - Question: maximum 15 words, clear and direct.
+  - Options: 3-4 plausible choices. Distractors MUST reflect real common misconceptions, not silly throwaways. Exactly one unambiguously correct answer.
+  - Explanation: 1-2 direct sentences, maximum 20 words total. State the underlying mechanism directly. Never reference "the video" or "the creator".
+- deep_research_prompt: a structured, rigorous research brief an expert could paste into a frontier LLM to go far beyond this note.
+  - Plain text, ~150-250 words, no markdown headers.
+  - Use bullet points for specific research objectives and deliverable sections.
+  - Cap sentences at 20 words.
+  - Omit it (use null) only if the topic does not reward independent research.
 - Output strict JSON. No commentary.
 """
 

@@ -82,6 +82,13 @@ class Settings(BaseSettings):
     # tiny=39MB | base=74MB | small=244MB
     local_whisper_model: str = "base"
 
+    # local fallback LLM on HF Space (llama-cpp-python + Qwen 2.5 0.5B GGUF)
+    local_llm_enabled: bool = True
+    local_llm_repo: str = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+    local_llm_file: str = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+    local_llm_threads: int = 2
+    local_llm_ctx: int = 2048
+
     # semantic search embeddings (free, reuses hf_api_key; docs/09)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 

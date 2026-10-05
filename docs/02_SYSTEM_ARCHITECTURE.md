@@ -101,12 +101,14 @@ Stage 2: Extract
       │
       ▼
 Stage 3: Structure (AI LLM Chain)
-      ├─► Preprocess: Gemini Flash Lite strips conversational fluff
-      └─► Schema Generation: Gemini 2.5 Flash → Cerebras Llama 3.3 → Groq Llama 3.3
+      ├─► Preprocess: Gemini Flash Lite strips conversational fluff & translates in-place
+      ├─► Schema Generation: Gemini 2.5 Flash → Cerebras Llama 3.3 → Groq Llama 3.3
+      └─► Style Discipline: Crisp Technical English (Caveman brevity + 80% ASD-STE100; max 20 words/sentence, bullets for multi-part points, no meta-narration)
       │
       ▼
 Stage 4: Deep Insight Pass
       ├─► Discussion threads, rabbit-hole prompts, and interactive quizzes
+      └─► Style Discipline: Max 15-word questions, realistic misconception distractors, ≤20-word mechanism explanations, structured deep research brief
       │
       ▼
 Stage 5: Catalog & Concepts

@@ -85,6 +85,14 @@ To guarantee deterministic JSON from a 1B model, the target schema is simplified
 }
 ```
 
+#### Writing Style Discipline (Crisp Technical English)
+Both on-device Gemma 3 1B and cloud models (Gemini Flash / Cerebras Llama) enforce **Crisp Technical English** (Caveman brevity + 80% ASD-STE100 structural discipline in natural English):
+- **No Meta-Commentary:** Speak directly about the subject. Never write "The video shows", "The creator discusses", or "It is argued that".
+- **Sentence Length Cap:** Maximum 15–20 words per sentence. One distinct thought per sentence.
+- **Bullets for Long / Multi-part Details:** If a thought or explanation requires multiple steps, attributes, or reasons, break it into checklist items or concise bullets rather than writing run-on compound sentences.
+- **Active Voice & Imperatives:** Use active voice for explanations and direct imperative verbs for actionable steps ("Boil pasta", "Batch emails").
+- **Zero Fluff:** Purge throat-clearing, hedging, and filler phrases ("basically", "in order to", "serves to"). Keep proper articles (`a`, `the`) and grammatical English.
+
 ### 2.5 Defensive JSON Guardrails
 In `app/lib/data/services/local_ai/local_ai_service.dart`:
 1. **Fencing & Clamping:** `parseModelCardJson()` strips markdown code fences (` ```json `) and clamps to the outermost `{` and `}`, discarding conversational prefixes or suffixes.

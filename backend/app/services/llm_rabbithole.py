@@ -38,7 +38,7 @@ it "isn't covered". Then offer fresh threads to keep exploring.
 
 Return ONLY strict JSON (no fences):
 {{"explanation": str, "threads": [str]}}
-- explanation: 3-4 sentences, concrete and accurate. Inline **bold**/*italic* ok, sparingly. No lists/headers/links.
+- explanation: 3-4 sentences, max 20 words per sentence, active voice, concrete facts only. No meta-commentary, no filler. Inline **bold**/*italic* ok, sparingly. No lists/headers/links.
 - threads: 3-4 short (3-8 words) follow-ups that branch forward, none repeating the trail."""
 
 
