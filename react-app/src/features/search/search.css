@@ -1,0 +1,94 @@
+/* Search — header field (AppBar parity) + filter bar + CardTile result wall. */
+
+/* Search field living in the header, like the Flutter AppBar title field */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  min-height: 44px;
+}
+
+.search-bar input::placeholder {
+  color: var(--muted);
+}
+
+.search-clear {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.search-clear:active {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+/* Result count label (Brand.label 11px) */
+.search-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  padding: 10px 0 8px;
+}
+
+/* Content-type filter pills */
+.search-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 6px;
+  scrollbar-width: none;
+}
+
+.search-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.search-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface-high);
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.search-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Result wall — CardTile grid, cols from JS like Flutter's width/200 */
+.search-grid {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding-top: 8px;
+}

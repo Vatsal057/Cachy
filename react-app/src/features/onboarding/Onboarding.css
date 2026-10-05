@@ -1,0 +1,377 @@
+/* Onboarding — 3-page showcase. Mirrors the Flutter OnboardingScreen. */
+
+.onboarding-root {
+  min-height: 100dvh;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle 130% at 50% 27.5%, rgba(150, 168, 133, 0.12) 0%, rgba(150, 168, 133, 0) 70%),
+    var(--bg);
+}
+
+.onboarding-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  flex: 0 0 auto;
+}
+
+.onboarding-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.onboarding-wordmark span {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: -0.8px;
+  color: var(--ink);
+}
+
+.onboarding-skip {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 0 8px 12px;
+}
+
+.onboarding-viewport {
+  flex: 1 1 auto;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.onboarding-track {
+  display: flex;
+  width: 300%;
+  height: 100%;
+  transition: transform 260ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.onboarding-page {
+  width: 33.3333%;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.onboarding-page.pad-wide {
+  padding: 0 28px 24px;
+}
+
+.onboarding-page.pad-narrow {
+  padding: 0 24px 24px;
+}
+
+.ob-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #262524;
+  border: 1px solid var(--card-border);
+  border-radius: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  color: var(--accent);
+}
+
+.ob-pill span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  color: var(--ink);
+}
+
+.ob-headline {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.ob-headline.lg {
+  font-size: 42px;
+  line-height: 1.04;
+  letter-spacing: -0.8px;
+}
+
+.ob-headline.sm {
+  font-size: 34px;
+  line-height: 1.06;
+  letter-spacing: -0.5px;
+}
+
+.ob-headline .hl-accent {
+  color: var(--accent);
+}
+
+.ob-body {
+  margin: 0;
+  color: var(--muted);
+}
+
+.ob-body.lg {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.ob-body.md {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.ob-card {
+  width: 100%;
+  background: #1f1e1d;
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: 20px;
+  text-align: left;
+}
+
+.ob-feature-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ob-feature-ico {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(150, 168, 133, 0.1);
+  border-radius: 10px;
+  color: var(--accent);
+}
+
+.ob-feature-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ob-feature-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.ob-divider {
+  height: 1px;
+  background: var(--card-border);
+  margin: 12px 0;
+  border: none;
+}
+
+.ob-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ob-tag {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  background: #262524;
+  border: 1px solid var(--card-border);
+}
+
+.ob-tag.active {
+  background: rgba(150, 168, 133, 0.12);
+  border-color: rgba(150, 168, 133, 0.4);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.ob-vault-card {
+  width: 100%;
+  background: #1f1e1d;
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.ob-vault-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.ob-vault-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ob-vault-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+}
+
+.ob-vault-card .ob-divider {
+  margin: 0;
+}
+
+.ob-vault-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.ob-vault-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ob-vault-row-time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.ob-vault-tag {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(150, 168, 133, 0.25);
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+}
+
+.onboarding-bottom {
+  flex: 0 0 auto;
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ob-dots {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.ob-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  border: none;
+  padding: 0;
+  margin: 0 4px;
+  background: var(--card-border);
+  cursor: pointer;
+  transition:
+    width 180ms cubic-bezier(0.33, 1, 0.68, 1),
+    background 180ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.ob-dot.active {
+  width: 24px;
+  background: var(--accent);
+}
+
+.onboarding-cta {
+  width: 100%;
+  height: 56px;
+  border: none;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 16px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.onboarding-cta:active {
+  opacity: 0.85;
+}
+
+/* Splash — the launch moment (port of SplashScreen) */
+
+.splash-root {
+  position: fixed;
+  inset: 0;
+  background: #181818;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  cursor: pointer;
+}
+
+.splash-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.splash-wordmark {
+  margin-top: 20px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 44px;
+  letter-spacing: -0.8px;
+  color: #ede8df;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: splash-wordmark 650ms cubic-bezier(0.33, 1, 0.68, 1) 650ms forwards;
+}
+
+@keyframes splash-wordmark {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.splash-reel {
+  animation: splash-drop 715ms cubic-bezier(0.33, 1, 0.68, 1) forwards;
+}
+
+@keyframes splash-drop {
+  from {
+    transform: translateY(-40px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

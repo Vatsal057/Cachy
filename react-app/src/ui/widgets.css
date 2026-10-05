@@ -1,0 +1,753 @@
+/* ══════════════════════════════════════════════════════════════════
+   Shared UI primitives — port of Flutter's ui/core/widgets/
+   (glass.dart, brand.dart, card_face.dart, state_badge.dart,
+   context_menu.dart, spot_art.dart, stat_strip.dart, flourish.dart,
+   processing_glyph.dart, pipeline_progress.dart, selection_action_bar.dart,
+   split_pane.dart, loading_tiles.dart, responsive_center.dart,
+   adaptive_modal.dart, rich_text.dart) + the nav shells (home_shell.dart).
+
+   Tokens consumed from index.css:
+   --glass-fill, --glass-border, --glass-blur, --ink, --muted, --accent,
+   --on-accent, --error, --hairline, --ease-out, --motion-fast/medium/slow,
+   --motion-stagger, --radius-card, --page-pad, --spot-ink.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Ambient background (glass.dart) ── */
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(closest-side, rgba(214, 140, 90, 0.16), transparent) 8% 18%,
+    radial-gradient(closest-side, rgba(110, 140, 175, 0.12), transparent) 72% 8%,
+    radial-gradient(closest-side, rgba(150, 168, 133, 0.13), transparent) 20% 78%,
+    radial-gradient(closest-side, rgba(125, 120, 150, 0.10), transparent) 85% 70%,
+    radial-gradient(closest-side, rgba(190, 160, 120, 0.10), transparent) 50% 45%,
+    var(--ground);
+}
+
+/* ── Glass surface (glass.dart) ── */
+.glass {
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 0.8px solid var(--glass-border);
+}
+
+/* ── Brand (brand.dart) ── */
+.brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.brand-wordmark-text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+/* ── CardFace (card_face.dart) ── */
+.card-face {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+.accent-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.accent-face.dim { opacity: 0.55; }
+.accent-wash {
+  position: absolute;
+  inset: 0;
+}
+.accent-bg-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(-20deg) scale(1.8);
+  opacity: 0.07;
+}
+.accent-fg-icon {
+  position: relative;
+  display: flex;
+  opacity: 0.9;
+}
+.card-face-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: card-face-in var(--motion-medium) var(--ease-out);
+}
+@keyframes card-face-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── StateBadge (state_badge.dart) ── */
+.state-badge-ui {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  line-height: 1;
+}
+.sb-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.sb-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: sb-spin 1s linear infinite;
+}
+@keyframes sb-spin { to { transform: rotate(360deg); } }
+
+/* ── Context menu (context_menu.dart) ── */
+.ctx-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 91;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 0.8px solid var(--glass-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  animation: ctx-in var(--motion-fast) var(--ease-out);
+  transform-origin: top left;
+}
+@keyframes ctx-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.ctx-item:hover { background: rgba(255, 255, 255, 0.06); }
+.ctx-item.destructive { color: var(--error); }
+
+/* ── StatStrip (stat_strip.dart) ── */
+.stat-strip {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.stat-cell {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--raised);
+  text-align: center;
+}
+.stat-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.stat-value.accent { color: var(--accent); }
+.stat-label {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* ── ProcessingGlyph (processing_glyph.dart) ── */
+.processing-glyph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pg-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  border: 1px solid;
+  animation: pg-ripple 2.4s var(--ease-out) infinite;
+}
+@keyframes pg-ripple {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+  70% { opacity: 0.05; }
+  100% { transform: translate(-50%, -50%) scale(2.3); opacity: 0; }
+}
+.pg-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  animation: pg-breathe 2.4s ease-in-out infinite;
+}
+@keyframes pg-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* ── PipelineProgress (pipeline_progress.dart) ── */
+.pipeline-progress { width: 100%; }
+.pp-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.pp-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 26px;
+  flex-shrink: 0;
+}
+.pp-node {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pp-node.done { background: var(--accent); }
+.pp-node.active { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.pp-node.todo {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.pp-node-spinner {
+  width: 12px;
+  height: 12px;
+}
+.pp-connector {
+  width: 2px;
+  height: 24px;
+  background: var(--hairline);
+}
+.pp-connector.done { background: var(--accent); }
+.pp-body {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 20px;
+}
+.pp-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pp-label.active { color: var(--accent); }
+.pp-label.done { color: var(--ink); }
+.pp-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  opacity: 0.75;
+}
+.pp-desc.lit { opacity: 1; color: var(--muted); }
+.pp-bar {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--hairline);
+  margin-top: 16px;
+  overflow: hidden;
+}
+.pp-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width var(--motion-medium) var(--ease-out);
+}
+.pp-pct {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* ── SelectionActionBar (selection_action_bar.dart) ── */
+.selection-bar-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-bottom) + 12px);
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 0 20px;
+  pointer-events: none;
+}
+.selection-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  animation: bar-up var(--motion-medium) var(--ease-out);
+}
+@keyframes bar-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+.selection-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+.selection-spacer { width: 8px; }
+.bar-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.bar-action:hover { background: rgba(255, 255, 255, 0.06); }
+.bar-action.danger { color: var(--error); }
+
+/* ── SplitPane (split_pane.dart) ── */
+.split-pane {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.split-list {
+  flex-shrink: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+.split-divider {
+  flex-shrink: 0;
+  width: 9px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  display: flex;
+  justify-content: center;
+  touch-action: none;
+}
+.split-divider-line {
+  width: 1px;
+  height: 100%;
+  background: var(--hairline);
+}
+.split-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ── LoadingTiles (loading_tiles.dart) ── */
+.loading-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.loading-tile {
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius-card);
+  background: var(--raised);
+}
+.loading-tile.shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--raised) 40%,
+    rgba(255, 255, 255, 0.06) 50%,
+    var(--raised) 60%
+  );
+  background-size: 200% 100%;
+  animation: tile-shimmer 1.5s linear infinite;
+}
+@keyframes tile-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ── ResponsiveCenter (responsive_center.dart) ── */
+.responsive-center {
+  width: 100%;
+}
+@media (min-width: 600px) {
+  .responsive-center {
+    max-width: var(--rc-max, 680px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* ── AdaptiveModal (adaptive_modal.dart) ── */
+.adaptive-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: backdrop-in var(--motion-fast) var(--ease-out);
+}
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.adaptive-sheet {
+  width: 100%;
+  max-height: 90dvh;
+  overflow-y: auto;
+  background: var(--raised);
+  border-radius: 20px 20px 0 0;
+  padding: 8px 20px calc(20px + var(--safe-bottom));
+  animation: sheet-up var(--motion-medium) var(--ease-out);
+}
+@keyframes sheet-up {
+  from { transform: translateY(48px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--muted);
+  opacity: 0.5;
+  margin: 4px auto 12px;
+}
+@media (min-width: 600px) {
+  .adaptive-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+}
+.adaptive-dialog {
+  width: 100%;
+  max-height: 88dvh;
+  overflow-y: auto;
+  background: var(--raised);
+  border-radius: 20px;
+  padding: 24px;
+  border: 0.8px solid var(--glass-border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  animation: dialog-in var(--motion-medium) var(--ease-out);
+}
+@keyframes dialog-in {
+  from { transform: scale(0.96) translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ── RichInlineText (rich_text.dart) ── */
+.rt-b { font-weight: 700; }
+.rt-i { font-style: italic; }
+.rt-code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgba(150, 168, 133, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.rt-ref {
+  font-weight: 600;
+  color: var(--accent);
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+}
+button.rt-ref {
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ── Flourish (flourish.dart) ── */
+.flourish {
+  display: block;
+  margin: 8px auto;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Navigation shells — port of ui/core/home_shell.dart
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── App shell (AmbientBackground + launch fade) ── */
+.app-shell {
+  position: relative;
+  min-height: 100dvh;
+  background: var(--ground);
+  color: var(--ink);
+}
+.app-fade-in {
+  animation: app-fade-in 550ms var(--ease-out);
+}
+@keyframes app-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Mobile floating glass pill nav (home_shell.dart, < 600px) ── */
+.pill-nav {
+  position: fixed;
+  left: 20px;
+  right: 20px;
+  bottom: calc(var(--safe-bottom) + 12px);
+  z-index: 50;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  border-radius: 99px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 0.8px solid var(--glass-border);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.13),
+    0 0 32px rgba(150, 168, 133, 0.07);
+  animation: pill-in var(--motion-medium) var(--ease-out);
+}
+@keyframes pill-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+.pill-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 56px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+.pill-tab:active { transform: scale(0.94); }
+.pill-tab .pill-icon {
+  display: flex;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.pill-tab.active .pill-icon { transform: scale(1.10); }
+.pill-tab.active { color: var(--accent); }
+.pill-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  font-weight: 500;
+}
+.pill-tab.active .pill-label { font-weight: 700; }
+
+/* ── Desktop glass side rail (home_shell.dart, >= 600px) ── */
+.side-rail {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 50;
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0 calc(16px + var(--safe-bottom));
+  gap: 4px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border-right: 0.8px solid var(--glass-border);
+}
+.side-rail.compact { width: 64px; }
+.side-rail.extended { width: 180px; align-items: stretch; padding-left: 12px; padding-right: 12px; }
+
+.capture-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-bottom: 12px;
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.capture-btn:hover { transform: scale(1.08); }
+.capture-btn:active { transform: scale(0.95); }
+.side-rail.compact .capture-btn { width: 44px; height: 44px; }
+
+.rail-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 4px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+.side-rail.extended .rail-tab {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+}
+.rail-tab:hover { background: rgba(255, 255, 255, 0.05); }
+.rail-tab.active { color: var(--accent); }
+.rail-tab .rail-indicator {
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.rail-label {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.rail-tab.active .rail-label { display: block; font-weight: 700; }
+.side-rail.extended .rail-label { display: block; }
+.side-rail.extended .rail-tab.active .rail-label { font-weight: 700; }
+.rail-spacer { flex: 1; }
+.rail-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Mobile capture FAB (home_shell.dart) ── */
+.capture-fab {
+  position: fixed;
+  right: 20px;
+  bottom: calc(var(--safe-bottom) + 88px);
+  z-index: 50;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.capture-fab:active { transform: scale(0.94); }
+
+/* ── Shell content offsets ── */
+.shell-main {
+  min-height: 100dvh;
+}
+@media (min-width: 600px) {
+  .shell-main { margin-left: 72px; }
+}
+@media (min-width: 1100px) {
+  .shell-main { margin-left: 180px; }
+}
+/* Compact rail (height < 520px) still occupies 64px. */
+@media (min-width: 600px) and (max-height: 519px) {
+  .shell-main { margin-left: 64px; }
+}
+
+/* ── Shared small bits ── */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--ink); }
+
+.spinner {
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: sb-spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-ring, .pg-badge, .loading-tile.shimmer, .sb-spinner, .spinner,
+  .pp-node-spinner, .card-face-img, .app-fade-in, .pill-nav,
+  .selection-bar, .ctx-menu, .adaptive-sheet, .adaptive-dialog {
+    animation: none;
+  }
+}

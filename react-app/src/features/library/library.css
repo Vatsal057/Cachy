@@ -1,0 +1,214 @@
+/* ==========================================================================
+   Library feature styles — local overrides/additions only.
+   Shared tokens live in src/index.css (do not edit that file).
+   ========================================================================== */
+
+/* CardFace image fade-in — mirrors Flutter CardFace fadeInDuration 200ms.
+   The `loaded` class is added on the img's onLoad; the face starts
+   transparent so thumbnails cross-fade over the accent fallback. */
+.tile-face img {
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.tile-face img.loaded {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Library tabs — sliding pill + cross-fading panels.
+   Port of Flutter's TabBar/TabBarView in library_screen.dart:
+   40px container, 12px radius, surface-highest @ 0.6; pill radius 10 with
+   shadow on 3px padding; mono 12px labels, w700 active / w500 inactive.
+   ========================================================================== */
+
+.lib-tabs {
+  position: relative;
+  display: flex;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-highest) 60%, transparent);
+  padding: 3px;
+  margin: 6px 0 2px;
+}
+
+/* The pill glides between the three tab slots: each slot is exactly one
+   third of the inner width, so translateX(idx * 100%) lands it precisely.
+   Driven by the --lib-idx custom property set on .lib-tabs. */
+.lib-tabs-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  border-radius: 10px;
+  background: var(--ground);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  transform: translateX(calc(var(--lib-idx, 0) * 100%));
+  transition: transform 180ms ease-out;
+  pointer-events: none;
+}
+
+.lib-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+
+.lib-tab.active {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Tab panels — all three stay mounted for instant switching. The active
+   panel is in normal flow; inactive panels are absolutely stacked over the
+   same area, faded out with a slight directional slide (--lib-dir: 1 when
+   moving forward, -1 when moving back). Visibility flips at the end of the
+   fade so the outgoing panel still cross-fades instead of vanishing. */
+.lib-panels {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  touch-action: pan-y; /* horizontal swipes flip tabs; vertical scrolls natively */
+}
+
+.lib-panel {
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out,
+    visibility 0s linear 180ms;
+}
+
+.lib-panel.active {
+  position: relative;
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out,
+    visibility 0s;
+}
+
+.lib-panel:not(.active) {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: translateX(calc(var(--lib-dir, 1) * 14px));
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Concepts/Catalog render their own `.page` wrapper — strip the extra page
+   chrome so panel content lines up directly under the shared header. */
+.lib-panel > .page {
+  padding: 0;
+  margin: 0;
+  max-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-tabs-indicator,
+  .lib-panel {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Desktop split-pane — master-detail layout (port of Flutter's split_pane.dart).
+   At/above 1100px the cards tab shows the grid on the left and the reader
+   in a side panel on the right, with a draggable divider between them.
+   ========================================================================== */
+
+.lib-split {
+  display: flex;
+  align-items: stretch;
+  min-height: 60vh;
+  height: 100%;
+}
+
+.lib-split-list {
+  flex-shrink: 0;
+  min-width: 280px;
+  max-width: 50%;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.lib-split-divider {
+  flex-shrink: 0;
+  width: 8px;
+  cursor: col-resize;
+  display: flex;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.lib-split-divider-line {
+  width: 1px;
+  background: var(--hairline);
+}
+
+.lib-split-divider:hover .lib-split-divider-line {
+  background: var(--accent);
+}
+
+.lib-split-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--hairline);
+  animation: lib-split-in 260ms ease-out;
+}
+
+@keyframes lib-split-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-split-detail {
+    animation: none;
+  }
+}
+
+/* Reader pane empty state — port of Flutter's _ReaderPaneEmpty. */
+.reader-pane-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 40vh;
+  gap: 14px;
+  color: var(--muted);
+}
+
+.reader-pane-empty-icon {
+  opacity: 0.5;
+}
+
+.reader-pane-empty-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  margin: 0;
+}

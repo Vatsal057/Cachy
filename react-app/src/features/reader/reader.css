@@ -1,0 +1,739 @@
+/* Reader feature styles — mirrors Flutter's reader_screen.dart / card_face.dart.
+   Loaded after index.css; only adds what the global stylesheet lacks. */
+
+/* ── Embedded header (desktop split-pane) ──────────────────────────
+   Port of Flutter's _EmbeddedHeader: compact bar with X close, accent
+   icon, uppercase content-type label, and expand button. */
+
+.embedded-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px 12px 12px;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+.embedded-header-icon {
+  display: inline-flex;
+  margin-left: 4px;
+}
+
+.embedded-header-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+/* Embedded reader page: no hero face, fills the pane height. */
+.reader-page.embedded {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.reader-page.embedded .reading-column {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Face image — 200ms fade-in on load (mirrors Flutter CardFace's
+   CachedNetworkImage fadeInDuration). key={src} remounts per thumbnail. */
+.face-header .face-img {
+  animation: face-img-in 200ms ease-out;
+}
+
+@keyframes face-img-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face-header .face-img {
+    animation: none;
+  }
+}
+
+/* ── RichInline (port of rich_text.dart) ─────────────────────────── */
+
+.rich-ref {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rich-code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* ── Long-press targets (highlight creation) ─────────────────────── */
+/* Text isn't selectable in the reader (matches Flutter's Text.rich); the
+   press-and-hold timer in useLongPress fires the save. */
+
+.lp {
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Reset for buttons that reuse row layouts */
+.reader-page button {
+  font: inherit;
+  color: inherit;
+}
+
+.reader-page .btn-primary,
+.reader-page .btn-ghost {
+  border: none;
+  cursor: pointer;
+}
+
+.reader-page .btn-ghost {
+  border: 1px solid var(--hairline-strong);
+}
+
+/* Checklist rows — tappable full-width rows reusing .checkbox/.checklist-text */
+.checklist-toggle {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* Step rows rendered as buttons when checkable / long-pressable */
+button.step-row {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+button.step-row:not(.lp) {
+  cursor: default;
+}
+
+/* Link pill rendered as a button (tap = copy, per Flutter) */
+button.link-pill {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+/* Callout meta row: confidence chip + source link */
+.callout-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+button.callout-source-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* ── Insight section (port of insight_section.dart) ───────────────── */
+
+.insight-section {
+  margin-top: 28px;
+}
+
+.insight-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.insight-head span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Stat strip (port of stat_strip.dart) */
+.stat-strip {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stat-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 10px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Dive-deeper expander */
+.dive-deeper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: var(--raised);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.dive-deeper .dive-label {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.dive-deeper .dive-caret {
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 200ms ease-in-out;
+}
+
+.dive-deeper.expanded .dive-caret {
+  transform: rotate(180deg);
+}
+
+.dive-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  animation: block-in var(--motion-medium) var(--ease-out) both;
+}
+
+/* Shared bordered panel */
+.insight-panel {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.insight-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.insight-panel-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+/* Rabbit-hole threads */
+.thread-hint {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 6px;
+  line-height: 1.45;
+}
+
+.thread-row {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  padding: 11px 4px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.thread-row + .thread-row {
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+}
+
+.thread-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin: 7px 11px 0 2px;
+}
+
+.thread-label {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.thread-go {
+  flex-shrink: 0;
+  display: inline-flex;
+  margin: 2px 0 0 10px;
+  color: var(--muted);
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Quiz */
+.quiz-question {
+  animation: block-in var(--motion-medium) var(--ease-out) both;
+}
+
+.quiz-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.quiz-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-highest);
+  overflow: hidden;
+}
+
+.quiz-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width var(--motion-medium) var(--ease-out);
+}
+
+.quiz-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.quiz-q {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+
+.quiz-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 13px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: var(--raised);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.quiz-opt-text {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.quiz-opt.answered {
+  border-width: 1.5px;
+  cursor: default;
+}
+
+.quiz-opt.correct {
+  border-color: #2e7d52;
+  background: rgba(46, 125, 82, 0.1);
+}
+
+.quiz-opt.wrong {
+  border-color: var(--danger);
+  background: rgba(175, 58, 42, 0.1);
+}
+
+.quiz-opt.dim .quiz-opt-text {
+  color: var(--muted);
+}
+
+.quiz-opt .opt-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.quiz-wrong-icon {
+  color: var(--danger);
+}
+
+.quiz-after {
+  margin-top: 4px;
+}
+
+.quiz-explain {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid;
+  margin-bottom: 14px;
+}
+
+.quiz-explain.ok {
+  background: rgba(46, 125, 82, 0.08);
+  border-color: rgba(46, 125, 82, 0.4);
+}
+
+.quiz-explain.bad {
+  background: rgba(175, 58, 42, 0.08);
+  border-color: rgba(175, 58, 42, 0.4);
+}
+
+.quiz-explain-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.quiz-explain-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.quiz-explain-body {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink);
+  margin-top: 2px;
+}
+
+.quiz-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: block-in var(--motion-medium) var(--ease-out) both;
+}
+
+.quiz-emoji {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.quiz-score {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 8px 0 4px;
+}
+
+.quiz-msg {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+/* Deep-research panel (port of DeepResearchScreen) */
+.research-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--ground);
+  animation: block-in var(--motion-medium) var(--ease-out) both;
+}
+
+.research-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(12px + var(--safe-top)) 16px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.research-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.research-body {
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+  max-width: var(--reading-column);
+  margin: 0 auto;
+  padding: 16px var(--inset-page) 24px;
+}
+
+.research-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 8px 0 16px;
+}
+
+.research-prompt {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.research-foot {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  max-width: var(--reading-column);
+  margin: 0 auto;
+  padding: 8px 16px calc(20px + var(--safe-bottom));
+}
+
+.research-foot .btn-primary {
+  flex: 1;
+}
+
+.icon-btn-tonal {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-high);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Highlight hint — pencil icon + label (port of _HighlightHint) */
+.highlight-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dive-body,
+  .quiz-question,
+  .quiz-results,
+  .research-overlay {
+    animation: none;
+  }
+
+  .dive-deeper .dive-caret,
+  .quiz-bar-fill {
+    transition: none;
+  }
+}
+
+/* ── Primary action bar (port of primary_action_bar.dart) ─────────── */
+/* Floating glass bar fixed above the bottom edge — never a solid footer. */
+
+.primary-action-bar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(14px + var(--safe-bottom));
+  z-index: 40;
+  max-width: 648px;
+  margin-inline: auto;
+  border-radius: 22px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+}
+
+.pab-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.pab-ask-filled,
+.pab-primary {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+
+.pab-ask-outline {
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pab-primary-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.pab-more {
+  margin-left: -4px; /* row gap is 10px; More sits 6px off, like Flutter */
+  align-self: center;
+}
+
+.pab-ask-filled:active,
+.pab-primary:active,
+.pab-ask-outline:active {
+  transform: scale(0.98);
+}
+
+.pab-ask-filled:disabled,
+.pab-primary:disabled,
+.pab-ask-outline:disabled,
+.pab-more:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Busy spinner inside the primary button (self-contained so it reads on
+   the accent fill regardless of the shared .spinner's colors). */
+.pab-busy {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--on-accent) 35%, transparent);
+  border-top-color: var(--on-accent);
+  animation: pab-spin 0.8s linear infinite;
+}
+
+@keyframes pab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* More action sheet — reuses the shared .sheet-backdrop / .sheet / .sheet-handle */
+.pab-sheet {
+  padding-bottom: calc(8px + var(--safe-bottom));
+}
+
+.pab-action-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.pab-action-row:active {
+  background: var(--surface-high);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pab-busy {
+    animation: none;
+  }
+
+  .pab-ask-filled:active,
+  .pab-primary:active,
+  .pab-ask-outline:active {
+    transform: none;
+  }
+}

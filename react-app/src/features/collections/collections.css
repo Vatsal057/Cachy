@@ -1,0 +1,167 @@
+/* Collections — header, FolderTile grid, dialogs, move-to-folder sheet. */
+
+.collections-title {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.093em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.collections-grid {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 0 96px;
+}
+
+.collections-grid .tile-skeleton {
+  aspect-ratio: 0.9;
+}
+
+/* ── FolderTile (folder_tile.dart) ── */
+.folder-tile {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  aspect-ratio: 0.9;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  color: #fff;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--folder-accent, #8a5a3c) 18%, transparent);
+  border: 1.2px solid transparent;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .folder-tile.hover {
+    transform: scale(1.025);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 8px 24px 0
+      color-mix(in srgb, var(--folder-accent, #8a5a3c) 28%, transparent);
+  }
+}
+
+.folder-tile:active {
+  transform: scale(0.99);
+}
+
+.folder-face {
+  position: absolute;
+  inset: 0;
+}
+
+.folder-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+
+.folder-accent-fallback {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--folder-accent, #8a5a3c) 18%, transparent);
+}
+
+.folder-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--folder-accent, #8a5a3c) 55%, transparent) 0%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+  pointer-events: none;
+}
+
+.folder-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--folder-accent, #8a5a3c) 82%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-count {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.folder-name {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Move-to-folder sheet (folder_picker_sheet.dart) ── */
+.folder-picker {
+  padding-bottom: 12px;
+}
+
+.folder-picker-title {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: left;
+  margin: 4px 0 12px;
+  padding: 0 20px;
+}
+
+.folder-picker-list {
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.folder-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 20px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.folder-picker-row:active {
+  background: var(--accent-tint);
+}
+
+.folder-picker-row.primary {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.folder-picker-divider {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 0;
+}

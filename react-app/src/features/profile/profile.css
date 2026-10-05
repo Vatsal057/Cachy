@@ -1,0 +1,148 @@
+/* Profile ("You") — shelf header, stat strip, _Tile rows, dialogs. */
+
+.profile-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  margin: 0;
+}
+
+/* ── Shelf header: glyph + "Your shelf" ── */
+.p-shelf {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0 16px;
+}
+
+.p-shelf-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  margin: 0;
+}
+
+/* ── Stat strip (stat_strip.dart) ── */
+.p-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.p-stat {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.p-stat-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.p-stat-value.accent {
+  color: var(--accent);
+}
+
+.p-stat-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Sections ── */
+.p-section {
+  margin-bottom: 24px;
+}
+
+.p-section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.127em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+/* ── _Tile ── */
+.p-tile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: var(--raised);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+}
+
+button.p-tile:active {
+  background: var(--surface-high);
+}
+
+.p-tile-icon {
+  color: var(--accent);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.p-tile-icon.danger {
+  color: var(--danger-soft);
+}
+
+.p-tile-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.p-tile-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.p-tile-title.danger {
+  color: var(--danger-soft);
+}
+
+.p-tile-sub {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.p-tile-chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ── Dialog body copy ── */
+.p-dialog-copy {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0 0 16px;
+}
+
+.p-dialog-copy:last-child {
+  margin-bottom: 4px;
+}

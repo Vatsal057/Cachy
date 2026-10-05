@@ -1,0 +1,305 @@
+/* Actions hub — mirrors Flutter's actions_screen.dart. */
+
+:root {
+  --ax-card-bg: #1e1d1b;
+  --ax-card-bg-hover: #262523;
+  --ax-tag-bg: #2d2b28;
+  --ax-tag-fg: rgba(255, 255, 255, 0.7);
+  --ax-head-title: #e5e2da;
+  --ax-text: #ece9e2;
+  --ax-text-dim: rgba(237, 232, 223, 0.38);
+  --ax-pill-active-bg: #e8c364;
+  --ax-pill-active-fg: #181818;
+  --ax-pill-bg: #22211f;
+  --ax-pill-fg: #9a928a;
+  --ax-count-bg: rgba(255, 255, 255, 0.08);
+}
+[data-theme='light'] {
+  --ax-card-bg: #efeadf;
+  --ax-card-bg-hover: #e5dfd3;
+  --ax-tag-bg: #e2ddd2;
+  --ax-tag-fg: rgba(0, 0, 0, 0.87);
+  --ax-head-title: var(--ink);
+  --ax-text: #22201c;
+  --ax-text-dim: rgba(28, 25, 23, 0.38);
+  --ax-pill-active-bg: var(--accent);
+  --ax-pill-active-fg: var(--on-accent);
+  --ax-pill-bg: #ebe5da;
+  --ax-pill-fg: #6b6259;
+  --ax-count-bg: rgba(0, 0, 0, 0.06);
+}
+
+.ax-wrap {
+  max-width: 680px;
+  margin: 0 auto;
+  width: 100%;
+  padding-bottom: 96px;
+}
+
+/* Editorial header */
+.ax-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.ax-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 38px;
+  line-height: 1.02;
+  letter-spacing: -0.032em;
+  color: var(--ink);
+  white-space: pre-line;
+  margin-bottom: 24px;
+}
+
+/* Filter pills */
+.ax-pills {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+}
+.ax-pills::-webkit-scrollbar { display: none; }
+.ax-refresh {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  margin-left: auto;
+}
+.ax-refresh:active { background: var(--accent-tint); }
+.ax-refresh:disabled { opacity: 0.4; }
+.ax-pill {
+  flex-shrink: 0;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: var(--ax-pill-bg);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ax-pill-fg);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ax-pill.active {
+  background: var(--ax-pill-active-bg);
+  border-color: transparent;
+  color: var(--ax-pill-active-fg);
+  font-weight: 700;
+}
+
+/* Group sections */
+.ax-section {
+  padding: 14px 0 6px;
+}
+.ax-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+/* Expand toggle — a real <button> so the "open in reader" button next to it
+   is never nested inside an interactive element (invalid HTML that swallows
+   taps on mobile). Visually identical to the old single-button row. */
+.ax-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  margin: -8px 0 -8px -6px;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ax-head-main:active { background: var(--accent-tint); }
+.ax-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ax-head-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ax-head-title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ax-count {
+  background: var(--ax-count-bg);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: -2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+.ax-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  flex-shrink: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.ax-open:active { background: var(--accent-tint); color: var(--ink); }
+.ax-caret {
+  color: var(--muted);
+  flex-shrink: 0;
+  display: inline-flex;
+  margin-left: -6px;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.ax-caret.collapsed { transform: rotate(-90deg); }
+
+.ax-items {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-fast) var(--ease-out);
+}
+.ax-items.collapsed { grid-template-rows: 0fr; }
+.ax-items-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.ax-items-pad { padding-top: 10px; }
+
+/* Action item card */
+.ax-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: var(--ax-card-bg);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .ax-item:hover {
+    background: var(--ax-card-bg-hover);
+    border-color: var(--ax-hover-border, var(--hairline));
+    box-shadow: 0 4px 16px var(--ax-hover-shadow, transparent);
+  }
+}
+.ax-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--ink) 30%, transparent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ax-check.done {
+  background: var(--ax-check-fill, var(--accent));
+  border-color: var(--ax-check-fill, var(--accent));
+  color: #fff;
+}
+.ax-item-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ax-text);
+}
+.ax-item-text.done {
+  color: var(--ax-text-dim);
+  text-decoration: line-through;
+}
+.ax-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--ax-tag-bg);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 4px 10px;
+  margin-left: -2px;
+  flex-shrink: 0;
+  color: var(--ax-tag-fg);
+}
+.ax-tag span {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+/* States */
+.ax-filter-empty {
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+.ax-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--muted);
+}
+.ax-state h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  color: var(--ink);
+  margin: 16px 0 8px;
+}
+.ax-state p {
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.ax-state .btn { margin-top: 16px; }

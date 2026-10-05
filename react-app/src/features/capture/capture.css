@@ -1,0 +1,580 @@
+/* Capture — entry form (capture_sheet.dart) + pipeline (share_screen.dart). */
+
+.capture-wrap {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.capture-desc {
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ── Supported-platform chips ── */
+.platform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 20px;
+}
+
+.platform-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--surface-high);
+  border: 1px solid var(--hairline);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.platform-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Clipboard one-tap chip ── */
+.clipboard-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+
+.clipboard-chip:active {
+  transform: scale(0.99);
+}
+
+.clipboard-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.clipboard-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.clipboard-url {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Link field (filled, borderless, radius 14) ── */
+.capture-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-high);
+  border-radius: 14px;
+  padding: 0 16px;
+  margin-bottom: 16px;
+}
+
+.capture-field-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.capture-field input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  min-height: 54px;
+}
+
+.capture-field input::placeholder {
+  color: var(--muted);
+}
+
+/* ── Pipeline: determinate progress ring ── */
+.capture-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.progress-ring {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  margin-bottom: 24px;
+}
+
+.progress-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.progress-ring circle {
+  fill: none;
+  stroke-width: 6;
+}
+
+.ring-track {
+  stroke: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.ring-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 389.6;
+  stroke-dashoffset: calc(389.6 * (1 - var(--ring-progress, 0.12)));
+  transition: stroke-dashoffset 500ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.progress-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-halo {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--platform-color, #96a885) 12%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 28px color-mix(in srgb, var(--platform-color, #96a885) 45%, transparent);
+}
+
+.capture-headline {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.capture-sub {
+  margin-top: 8px;
+  font-size: 15px;
+}
+
+/* ── Processing backdrop (share_screen.dart radial: primary 0.15, center 0,-0.4) ── */
+
+.capture-processing {
+  background:
+    radial-gradient(circle 130% at 50% 30%, rgba(150, 168, 133, 0.15) 0%, rgba(150, 168, 133, 0) 70%);
+}
+
+/* ── Sending state (share_screen.dart submitting: badge + platform ingest line) ── */
+
+.send-badge {
+  margin-bottom: 20px;
+}
+
+.capture-headline-sm {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.capture-ingest {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Capturing flow head (share_screen.dart AppBar 'Capturing' + _UrlChip) ── */
+
+.capture-flow-title {
+  margin-bottom: 24px;
+}
+
+.url-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-high);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.url-chip-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.url-chip-label {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Pipeline track (pipeline_progress.dart) ── */
+
+.pipeline {
+  width: 100%;
+  margin-top: 28px;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.pipe-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.pipe-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pipe-node {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pipe-node.done {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.pipe-node.active {
+  background: var(--accent-tint);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 16px rgba(150, 168, 133, 0.35);
+}
+
+.pipe-node.pending {
+  background: var(--surface-highest);
+  border: 1px solid var(--hairline);
+}
+
+.pipe-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2.2px solid rgba(150, 168, 133, 0.25);
+  border-top-color: var(--accent);
+  animation: pipe-spin 0.9s linear infinite;
+}
+
+@keyframes pipe-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pipe-connector {
+  width: 2.5px;
+  flex: 1 1 auto;
+  min-height: 8px;
+  margin: 3px 0;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+
+.pipe-connector.done {
+  background: var(--accent);
+}
+
+.pipe-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 0 18px 14px;
+}
+
+.pipe-label {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.pipe-label.done {
+  color: var(--ink);
+}
+
+.pipe-label.active {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.pipe-desc {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.pipe-desc.dim {
+  opacity: 0.6;
+}
+
+.pipe-bar {
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--surface-highest);
+  overflow: hidden;
+}
+
+.pipe-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 500ms var(--ease-out);
+}
+
+.pipe-pct {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ── Success: spring pop (share_screen.dart _ReadyView) ── */
+
+.ready-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 0;
+}
+
+.ready-badge {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 26px rgba(150, 168, 133, 0.2);
+  animation: ready-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes ready-pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.ready-title {
+  margin: 24px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  animation: ready-rise 260ms var(--ease-out) 120ms both;
+}
+
+.ready-cta {
+  margin-top: 24px;
+  padding: 15px 28px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 16px;
+  font-weight: 700;
+  animation: ready-rise 260ms var(--ease-out) 220ms both;
+}
+
+.ready-cta:active {
+  opacity: 0.85;
+}
+
+@keyframes ready-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.capture-cancel {
+  margin-top: 28px;
+  padding: 8px 16px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.capture-cancel:active {
+  color: var(--ink);
+}
+
+/* ── Pipeline: failure view ── */
+.capture-error {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.capture-error .capture-headline {
+  margin-top: 26px;
+}
+
+.capture-error .capture-sub {
+  margin-bottom: 28px;
+}
+
+/* Ringed warning mark (share_screen.dart _WarningGlyph) */
+.warning-glyph {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  margin: 12px auto 0;
+  border-radius: 50%;
+  border: 1.4px solid rgba(175, 58, 42, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.warning-glyph::before {
+  content: '';
+  position: absolute;
+  width: 74%;
+  height: 74%;
+  border-radius: 50%;
+  border: 1.4px solid rgba(175, 58, 42, 0.18);
+}
+
+.warning-glyph .warning-badge {
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  background: rgba(175, 58, 42, 0.12);
+  border: 1.6px solid rgba(175, 58, 42, 0.5);
+  color: var(--danger-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.capture-error-card {
+  width: 100%;
+  text-align: left;
+  background: rgba(175, 58, 42, 0.12);
+  border: 1px solid rgba(175, 58, 42, 0.3);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 28px;
+}
+
+.capture-error-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--danger);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.capture-error-desc {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.capture-error-reason {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--ground);
+  border: 1px solid rgba(175, 58, 42, 0.25);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.capture-cancel-outline {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.capture-cancel-outline:active {
+  background: var(--accent-tint);
+}

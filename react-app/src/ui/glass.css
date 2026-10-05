@@ -1,0 +1,144 @@
+/* Liquid glass + micro-interactions. Imported from index.css. */
+
+/* -- Liquid glass: refraction layer (composes with .glass) -- */
+.glass-liquid {
+  /* Baseline for every browser: blur + saturate, inner highlight rim. */
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+/* Chromium-only: add the SVG displacement refraction on top of the blur. */
+@supports (backdrop-filter: url(#liquid-glass)) {
+  .glass-liquid {
+    -webkit-backdrop-filter: blur(20px) saturate(1.4) url(#liquid-glass);
+    backdrop-filter: blur(20px) saturate(1.4) url(#liquid-glass);
+  }
+}
+
+/* Slightly deeper glass for floating chrome (nav pill, action bars). */
+.glass-liquid.deep {
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  backdrop-filter: blur(24px) saturate(1.5);
+  background: rgba(28, 28, 31, 0.55);
+}
+@supports (backdrop-filter: url(#liquid-glass)) {
+  .glass-liquid.deep {
+    -webkit-backdrop-filter: blur(24px) saturate(1.5) url(#liquid-glass);
+    backdrop-filter: blur(24px) saturate(1.5) url(#liquid-glass);
+  }
+}
+
+/* ── Sheet / Modal chrome (driven by ui/animations.tsx Sheet + Modal) ── */
+.sheet-scrim,
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+}
+.sheet-scrim {
+  align-items: flex-end;
+  justify-content: center;
+}
+.modal-scrim {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.sheet-panel {
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  border-radius: 22px 22px 0 0;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 0.8px solid var(--glass-border);
+  border-bottom: 0;
+  padding: 8px 20px calc(20px + var(--safe-bottom));
+  box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.35);
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: 88dvh;
+  overflow-y: auto;
+  border-radius: 20px;
+  background: var(--raised);
+  border: 0.8px solid var(--glass-border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  padding: 24px;
+}
+
+/* ── Micro-interactions ── */
+
+/* Button press: scale 0.97, 180ms ease-out. Apply to buttons/icon buttons. */
+.press-scale {
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.press-scale:active {
+  transform: scale(0.97);
+}
+
+/* Card hover: lift 2px + soft shadow, 260ms ease-out. */
+.card-lift {
+  transition:
+    transform var(--motion-medium) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out);
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+/* Skeleton shimmer: apply to any placeholder block. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--raised);
+  border-radius: var(--radius, 14px);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 70%
+  );
+  animation: skeleton-shimmer 1.6s linear infinite;
+}
+@keyframes skeleton-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* Focus-visible rings: visible keyboard focus everywhere, never on mouse. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .press-scale,
+  .card-lift {
+    transition: none;
+  }
+  .card-lift:hover {
+    transform: none;
+  }
+  .skeleton::after {
+    animation: none;
+  }
+}
