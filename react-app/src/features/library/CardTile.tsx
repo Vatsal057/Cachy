@@ -148,17 +148,25 @@ function MetaPills({ card }: { card: Card }) {
   );
 }
 
+import { ContextMenu, buildCardMenuActions } from '../../ui/context-menu';
+
 /* ------------------------------------------------------------------ */
 /* CardTile                                                           */
 /* ------------------------------------------------------------------ */
 
-interface CardTileProps {
+export interface CardTileProps {
   card: Card;
-  onTap: () => void;
+  onTap: (e?: React.MouseEvent) => void;
   onDelete?: () => void;
   confirmTitle?: string;
   confirmBody?: string;
   confirmAction?: string;
+  selected?: boolean;
+  selectionActive?: boolean;
+  onSelectToggle?: () => void;
+  onRangeSelect?: () => void;
+  onEnterSelectionMode?: () => void;
+  onOpenInNewTab?: () => void;
 }
 
 function CardTile({
@@ -168,6 +176,12 @@ function CardTile({
   confirmTitle = 'Delete card?',
   confirmBody = 'This removes the card and its media.',
   confirmAction = 'Delete',
+  selected = false,
+  selectionActive = false,
+  onSelectToggle,
+  onRangeSelect,
+  onEnterSelectionMode,
+  onOpenInNewTab,
 }: CardTileProps) {
   const accent = contentAccent(card.base.content_type);
   const title =
@@ -177,11 +191,13 @@ function CardTile({
       : 'Untitled');
   const tags = card.base.tags ?? [];
   const pressTimer = useRef<number | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   const confirmDelete = () => {
     if (!onDelete) return;
-    if (window.confirm(`${confirmTitle}\n\n${confirmBody}\n\nOK = ${confirmAction}`))
+    if (window.confirm(`${confirmTitle}\n\n${confirmBody}\n\nOK = ${confirmAction}`)) {
       onDelete();
+    }
   };
 
   const clearPressTimer = () => {
@@ -191,61 +207,126 @@ function CardTile({
     }
   };
 
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.shiftKey && onRangeSelect) {
+      e.preventDefault();
+      onRangeSelect();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && onSelectToggle) {
+      e.preventDefault();
+      onSelectToggle();
+      return;
+    }
+    if (selectionActive && onSelectToggle) {
+      e.preventDefault();
+      onSelectToggle();
+      return;
+    }
+    onTap(e);
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onTap();
+      if (selectionActive && onSelectToggle) {
+        onSelectToggle();
+      } else {
+        onTap();
+      }
     }
   };
 
   return (
-    <div
-      className="card-tile"
-      role="button"
-      tabIndex={0}
-      aria-label={title}
-      onClick={onTap}
-      onKeyDown={handleKeyDown}
-      onContextMenu={(e) => {
-        if (onDelete) {
+    <>
+      <div
+        className={`card-tile${selected ? ' selected' : ''}`}
+        role="button"
+        tabIndex={0}
+        aria-label={title}
+        aria-selected={selected}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onContextMenu={(e) => {
           e.preventDefault();
-          confirmDelete();
-        }
-      }}
-      onPointerDown={() => {
-        if (!onDelete) return;
-        clearPressTimer();
-        pressTimer.current = window.setTimeout(confirmDelete, 550);
-      }}
-      onPointerUp={clearPressTimer}
-      onPointerLeave={clearPressTimer}
-      onPointerMove={clearPressTimer}
-      style={{ '--tile-accent': accent.color } as React.CSSProperties}
-    >
-      <CardFace card={card} />
-      <div className="tile-scrim" aria-hidden />
-      <div className="tile-content">
-        <div className="tile-type-row">
-          <accent.Icon size={13} color="rgba(255,255,255,0.7)" />
-          <span className="tile-type-label">{accent.label.toUpperCase()}</span>
-          {tags.length > 0 && <span className="tile-tag-pill">{tags[0]}</span>}
+          setMenuPos({ x: e.clientX, y: e.clientY });
+        }}
+        onPointerDown={() => {
+          clearPressTimer();
+          pressTimer.current = window.setTimeout(() => {
+            if (onEnterSelectionMode) {
+              onEnterSelectionMode();
+            } else if (onDelete) {
+              confirmDelete();
+            }
+          }, 550);
+        }}
+        onPointerUp={clearPressTimer}
+        onPointerLeave={clearPressTimer}
+        onPointerMove={clearPressTimer}
+        style={{ '--tile-accent': accent.color } as React.CSSProperties}
+      >
+        <CardFace card={card} />
+        <div className="tile-scrim" aria-hidden />
+        <div className="tile-content">
+          <div className="tile-type-row">
+            <accent.Icon size={13} color="rgba(255,255,255,0.7)" />
+            <span className="tile-type-label">{accent.label.toUpperCase()}</span>
+            {tags.length > 0 && <span className="tile-tag-pill">{tags[0]}</span>}
+          </div>
+          <p className="tile-title">{title}</p>
+          {card.state === CardState.READY && <MetaPills card={card} />}
         </div>
-        <p className="tile-title">{title}</p>
-        {card.state === CardState.READY && <MetaPills card={card} />}
+        <StateBadge card={card} />
+
+        {selected && (
+          <>
+            <div className="tile-selection-overlay" aria-hidden />
+            <div className="tile-selection-badge" aria-hidden>
+              <Check size={14} weight="bold" />
+            </div>
+          </>
+        )}
       </div>
-      <StateBadge card={card} />
-    </div>
+
+      {menuPos && (
+        <ContextMenu
+          x={menuPos.x}
+          y={menuPos.y}
+          actions={buildCardMenuActions({
+            isDesktopPlatform: true,
+            onOpen: () => onTap(),
+            onOpenNewTab: () => {
+              if (onOpenInNewTab) {
+                onOpenInNewTab();
+              } else {
+                window.open(`/reader/${encodeURIComponent(card.card_id)}`, '_blank');
+              }
+            },
+            onCopyLink: async () => {
+              const url = card.source?.url;
+              if (url) {
+                await navigator.clipboard.writeText(url).catch(() => {});
+              }
+            },
+            onDelete: () => {
+              confirmDelete();
+            },
+          })}
+          onClose={() => setMenuPos(null)}
+        />
+      )}
+    </>
   );
 }
 
 /**
  * Custom memo comparison. The tile's rendered surface depends on the card's
- * volatile fields (card_id, state incl. failure_reason, thumbnail/keyframe
- * ref) plus its display fields and meta-pill counts — handler props are
- * stable closures in every call site (navigate to /reader/<id>, delete by
- * id), so their identity is intentionally ignored.
+ * volatile fields plus its selection state.
  */
 function cardTilePropsEqual(prev: CardTileProps, next: CardTileProps): boolean {
+  if (prev.selected !== next.selected) return false;
+  if (prev.selectionActive !== next.selectionActive) return false;
   const a = prev.card;
   const b = next.card;
   if (a === b) return true;
@@ -266,5 +347,6 @@ function cardTilePropsEqual(prev: CardTileProps, next: CardTileProps): boolean {
 
 export default memo(CardTile, cardTilePropsEqual);
 
-/** Check icon re-export for the selection overlay (used by future callers). */
+/** Check icon re-export for the selection overlay. */
 export { Check };
+

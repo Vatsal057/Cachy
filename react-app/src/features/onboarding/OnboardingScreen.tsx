@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   Bookmark,
@@ -324,30 +323,16 @@ function PageLibrary() {
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Returns true when any localStorage key looks like an auth token. */
-function hasAuthToken(): boolean {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i) ?? '';
-      if (/token/i.test(key) && localStorage.getItem(key)) return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-export default function OnboardingScreen() {
-  const navigate = useNavigate();
+/**
+ * First-run walkthrough. `onDone` fires on Skip / Enter Cachy; the launch
+ * gate (App.tsx) records that onboarding was seen and moves on to sign-in.
+ */
+export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   const [index, setIndex] = useState(0);
   const touchX = useRef<number | null>(null);
   const last = index === 2;
 
-  if (hasAuthToken()) {
-    return <Navigate to="/" replace />;
-  }
-
-  const done = () => navigate('/login');
+  const done = onDone;
 
   const onTouchStart = (e: React.TouchEvent) => {
     touchX.current = e.touches[0].clientX;

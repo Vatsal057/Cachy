@@ -2,10 +2,16 @@ import type {
   ActionItem,
   ActionItems,
   Artifact,
+  ArtifactType,
+  Block,
   Card,
   CardState,
+  CatalogEntry,
+  ChatMessage,
   Collection,
   Concept,
+  ConceptDetail,
+  ConceptEntry,
   ConnectionItem,
   ContentType,
   CreateCardResponse,
@@ -14,7 +20,10 @@ import type {
   IdAuthResult,
   IdMeResult,
   IdRegisterResult,
+  LibraryChatResult,
+  PipelineEvent,
   QuotaStatus,
+  RabbitHoleStep,
   ShareLink,
   SharedCardSaveResult,
   UsernameAvailableResult,
@@ -66,7 +75,18 @@ interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined | null>;
 }
 
-const DEFAULT_BASE_URL = 'https://vatxzz-cachy.hf.space';
+export const DEFAULT_BASE_URL = 'https://vatxzz-cachy.hf.space';
+
+/** localStorage key for the developer-screen backend override. */
+export const API_BASE_STORAGE_KEY = 'cachy_api_base';
+
+function storedBaseUrl(): string {
+  try {
+    return localStorage.getItem(API_BASE_STORAGE_KEY) || DEFAULT_BASE_URL;
+  } catch {
+    return DEFAULT_BASE_URL;
+  }
+}
 
 /** Default TTL for the in-memory GET cache (60s). */
 const DEFAULT_CACHE_TTL_MS = 60_000;
@@ -120,13 +140,17 @@ export class ApiClient {
    */
   private cacheToken: string | null | undefined = undefined;
 
-  constructor(baseUrl: string = DEFAULT_BASE_URL) {
+  constructor(baseUrl: string = storedBaseUrl()) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
   /** Called before every authed request to fetch the current token. */
   setTokenProvider(fn: TokenProvider): void {
     this.tokenProvider = fn;
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   setBaseUrl(url: string): void {
@@ -364,6 +388,213 @@ export class ApiClient {
     return this.request<Card[]>('/search', { query: { q, limit } });
   }
 
+  /**
+   * Persist user-mutable block state (checked checklist items / steps). Sends
+   * the full block array; the server round-trips unknown fields untouched.
+   */
+  async patchCardBlocks(cardId: string, blocks: Block[]): Promise<Card> {
+    const card = await this.request<Card>(`/cards/${encodeURIComponent(cardId)}`, {
+      method: 'PATCH',
+      body: { blocks },
+    });
+    this.invalidate('cards:');
+    return card;
+  }
+
+  /** Restore cards from a device cache after a server wipe (skips known URLs). */
+  async importCards(cards: Card[]): Promise<number> {
+    if (cards.length === 0) return 0;
+    const res = await this.request<{ imported?: number }>('/cards/import', {
+      method: 'POST',
+      body: { cards },
+    });
+    this.invalidate('cards:');
+    return res?.imported ?? 0;
+  }
+
+  // -----------------------------------------------------------------------
+  // Chat + rabbit hole (docs/13, docs/14)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Grounded Q&A over one card. Send the full history each turn; returns the
+   * assistant's reply. The conversation is persisted server-side per owner.
+   */
+  async chat(cardId: string, messages: ChatMessage[]): Promise<string> {
+    const res = await this.request<{ reply?: string }>(
+      `/cards/${encodeURIComponent(cardId)}/chat`,
+      { method: 'POST', body: { messages } },
+    );
+    this.invalidate('me:');
+    return res?.reply ?? '';
+  }
+
+  /** Saved chat for a card, oldest → newest. Empty when none. */
+  async chatHistory(cardId: string): Promise<ChatMessage[]> {
+    const res = await this.request<{ messages?: ChatMessage[] }>(
+      `/cards/${encodeURIComponent(cardId)}/chat`,
+    );
+    return normalizeMessages(res?.messages);
+  }
+
+  /**
+   * Explore one rabbit-hole thread. Unlike chat this isn't confined to the
+   * card: it returns an explanation plus fresh follow-on threads. `trail` is
+   * the threads already explored; `root` is the topic that started the dive
+   * (persistence key).
+   */
+  async exploreRabbitHole(
+    cardId: string,
+    topic: string,
+    trail: string[],
+    root: string,
+  ): Promise<RabbitHoleStep> {
+    const res = await this.request<{ explanation?: string; threads?: unknown[] }>(
+      `/cards/${encodeURIComponent(cardId)}/rabbithole`,
+      { method: 'POST', body: { topic, trail, root } },
+    );
+    this.invalidate('me:');
+    return {
+      topic,
+      explanation: res?.explanation ?? '',
+      threads: (res?.threads ?? []).map(String),
+    };
+  }
+
+  /** Saved rabbit-hole trail for a card + root topic, oldest → deepest. */
+  async rabbitHoleHistory(cardId: string, root: string): Promise<RabbitHoleStep[]> {
+    const res = await this.request<{ steps?: Array<Partial<RabbitHoleStep>> }>(
+      `/cards/${encodeURIComponent(cardId)}/rabbithole`,
+      { query: { root } },
+    );
+    return (res?.steps ?? []).map((s) => ({
+      topic: s.topic ?? '',
+      explanation: s.explanation ?? '',
+      threads: (s.threads ?? []).map(String),
+    }));
+  }
+
+  /** Cross-card Q&A. Stateless: replay the full history each turn. */
+  async libraryChat(messages: ChatMessage[]): Promise<LibraryChatResult> {
+    const res = await this.request<Partial<LibraryChatResult>>('/library/chat', {
+      method: 'POST',
+      body: { messages },
+    });
+    this.invalidate('me:');
+    return {
+      reply: res?.reply ?? '',
+      sources: (res?.sources ?? []).map((s) => ({
+        card_id: s.card_id ?? '',
+        one_liner: s.one_liner ?? '',
+      })),
+    };
+  }
+
+  async libraryChatHistory(): Promise<ChatMessage[]> {
+    const res = await this.request<{ messages?: ChatMessage[] }>('/library/chat');
+    return normalizeMessages(res?.messages);
+  }
+
+  // -----------------------------------------------------------------------
+  // Pipeline stream (SSE) — GET /cards/{id}/stream
+  // -----------------------------------------------------------------------
+
+  /**
+   * Subscribe to the transparent pipeline. The route is Bearer-header only
+   * (EventSource can't send headers), so this reads the SSE body with fetch.
+   * Calls `onEvent` per stage, resolves when a terminal event arrives or the
+   * stream ends. Abort with `signal`. Throws ApiException on HTTP errors.
+   */
+  async streamCard(
+    cardId: string,
+    onEvent: (e: PipelineEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const headers: Record<string, string> = { Accept: 'text/event-stream' };
+    const token = this.tokenProvider();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/cards/${encodeURIComponent(cardId)}/stream`, {
+        headers,
+        signal,
+      });
+    } catch (e) {
+      if (signal?.aborted) return;
+      throw new ApiException(0, 'Network error — check your connection.');
+    }
+    if (!res.ok || !res.body) throw new ApiException(res.status, 'stream failed');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        buf += decoder.decode(value, { stream: true });
+        let idx: number;
+        // SSE events end with a blank line.
+        while ((idx = buf.search(/\r?\n\r?\n/)) >= 0) {
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx).replace(/^\r?\n\r?\n/, '');
+          const data = frame
+            .split(/\r?\n/)
+            .filter((l) => l.startsWith('data:'))
+            .map((l) => l.slice(5).trimStart())
+            .join('');
+          if (!data) continue; // keep-alive comment frame
+          let evt: PipelineEvent;
+          try {
+            evt = JSON.parse(data) as PipelineEvent;
+          } catch {
+            continue; // malformed frame — stream stays alive
+          }
+          onEvent(evt);
+          if (evt.state === 'ready' || evt.state === 'failed') return;
+        }
+      }
+    } catch (e) {
+      if (signal?.aborted) return;
+      throw e;
+    } finally {
+      reader.cancel().catch(() => undefined);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Account — Instagram auto-save link, guest/legacy migration
+  // -----------------------------------------------------------------------
+
+  /** Linked Instagram handle, or null when unlinked. */
+  async getInstagramLink(): Promise<string | null> {
+    const res = await this.request<{ ig_username?: string | null }>('/me/instagram');
+    return res?.ig_username ?? null;
+  }
+
+  /** Link a handle; returns the normalized username. */
+  async linkInstagram(igUsername: string): Promise<string> {
+    const res = await this.request<{ ig_username: string }>('/me/instagram', {
+      method: 'POST',
+      body: { ig_username: igUsername },
+    });
+    return res.ig_username;
+  }
+
+  async unlinkInstagram(): Promise<void> {
+    await this.request<unknown>('/me/instagram', { method: 'DELETE' });
+  }
+
+  /** Adopt a legacy name-keyed library; returns rows claimed. 409 = taken. */
+  async claimLegacyLibrary(name: string): Promise<number> {
+    const res = await this.request<{ claimed?: number }>('/auth/claim', {
+      method: 'POST',
+      body: { name },
+    });
+    this.invalidate('cards:');
+    return res?.claimed ?? 0;
+  }
+
   // -----------------------------------------------------------------------
   // Sharing
   // -----------------------------------------------------------------------
@@ -438,9 +669,31 @@ export class ApiClient {
   // Catalog / concepts / quota
   // -----------------------------------------------------------------------
 
-  listCatalog(params?: { limit?: number; offset?: number }): Promise<Artifact[]> {
+  listCatalog(params?: {
+    limit?: number;
+    offset?: number;
+    type?: ArtifactType;
+  }): Promise<Artifact[]> {
     return this.request<Artifact[]>('/catalog', {
-      query: { limit: params?.limit ?? 50, offset: params?.offset ?? 0 },
+      query: {
+        type: params?.type,
+        limit: params?.limit ?? 50,
+        offset: params?.offset ?? 0,
+      },
+    });
+  }
+
+  /** Artifacts a single card references — the reader "References" strip. */
+  cardArtifacts(cardId: string, limit = 50): Promise<CatalogEntry[]> {
+    return this.request<CatalogEntry[]>('/catalog', {
+      query: { card_id: cardId, limit },
+    });
+  }
+
+  /** Save a referenced artifact into the Catalog tab (long-press to save). */
+  saveCatalogEntry(artifactId: string): Promise<CatalogEntry> {
+    return this.request<CatalogEntry>(`/catalog/${encodeURIComponent(artifactId)}/save`, {
+      method: 'POST',
     });
   }
 
@@ -474,6 +727,18 @@ export class ApiClient {
 
   getConcept(conceptId: string): Promise<unknown> {
     return this.request<unknown>(`/concepts/${encodeURIComponent(conceptId)}`);
+  }
+
+  /** Concepts extracted from one card (reader "Concepts" strip). */
+  cardConcepts(cardId: string, limit = 50): Promise<ConceptEntry[]> {
+    return this.request<ConceptEntry[]>('/concepts', {
+      query: { card_id: cardId, limit },
+    });
+  }
+
+  /** Typed concept detail: the entry plus related concepts. */
+  getConceptDetail(conceptId: string): Promise<ConceptDetail> {
+    return this.request<ConceptDetail>(`/concepts/${encodeURIComponent(conceptId)}`);
   }
 
   async defineConcept(conceptId: string): Promise<Concept> {
@@ -530,6 +795,16 @@ export class ApiClient {
       () => this.request<QuotaStatus>('/me/quota'),
     );
   }
+}
+
+/** Normalise a `messages` array into role/content pairs, dropping empties. */
+function normalizeMessages(raw: ChatMessage[] | undefined): ChatMessage[] {
+  return (raw ?? [])
+    .map((m) => ({
+      role: (m?.role === 'assistant' ? 'assistant' : 'user') as ChatMessage['role'],
+      content: String(m?.content ?? ''),
+    }))
+    .filter((m) => m.content.length > 0);
 }
 
 /** Shared singleton — AuthContext wires the token provider. */

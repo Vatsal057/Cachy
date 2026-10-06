@@ -10,24 +10,27 @@
  * notes the password is extractable from the bundle: it hides these
  * controls from casual users, it is not real security.
  *
- * Web notes: every Flutter control on this screen is a manual
- * server-connection override, which has no web equivalent —
- *   - the React ApiClient ships with a fixed baseUrl
- *     (https://vatxzz-cachy.hf.space) and exposes no updateBaseUrl, and
- *     changing src/api is out of scope for this port;
- *   - a browser page cannot scan the LAN for a backend;
- *   - on-device AI models (Gemma) cannot run in a browser.
- * So the server rows are display-only / disabled with explanatory copy,
- * "Reset to default backend" is omitted (nothing can be overridden, so
- * there is nothing to reset), and the on-device-model toggle renders off
- * + disabled. Nothing here is fake: no control pretends to do something
- * it doesn't.
+ * Server controls are live: "Configure server URL" persists the override in
+ * localStorage (`cachy_api_base`, read by the ApiClient on startup) and
+ * applies it immediately via `api.setBaseUrl`; "Reset to default backend"
+ * clears it. Two Flutter controls have no web equivalent and are shown as
+ * honest disabled rows — LAN discovery (browsers have no raw UDP) and the
+ * on-device model toggle (no local model can run in a browser).
  */
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { Broadcast, CaretLeft, Cpu, HardDrives } from 'phosphor-react';
+import {
+  ArrowCounterClockwise,
+  Broadcast,
+  CaretLeft,
+  CaretRight,
+  Cpu,
+  HardDrives,
+} from 'phosphor-react';
 import type { Icon } from 'phosphor-react';
 import type { ReactNode } from 'react';
+import { API_BASE_STORAGE_KEY, DEFAULT_BASE_URL, api } from '../../api/client';
+import { Modal, useToast } from '../../ui/feedback';
 import './dev.css';
 
 /**
@@ -35,9 +38,6 @@ import './dev.css';
  * password. Cleared when the tab closes (sessionStorage).
  */
 export const DEV_UNLOCK_KEY = 'cachy_dev_unlocked';
-
-/** The backend the React web client is built against (api/client.ts). */
-const FIXED_BACKEND_URL = 'https://vatxzz-cachy.hf.space';
 
 function isUnlocked(): boolean {
   try {
@@ -61,39 +61,113 @@ function Tile({
   title,
   sub,
   note,
+  mono,
   disabled,
+  onClick,
 }: {
   icon: Icon;
   title: string;
   sub: string;
   /** Extra honest-copy line for rows that can't work on web. */
   note?: string;
+  /** Render the subtitle in the mono face (URLs). */
+  mono?: boolean;
   disabled?: boolean;
+  onClick?: () => void;
 }) {
-  return (
-    <div
-      className={`d-tile${disabled ? ' disabled' : ''}`}
-      aria-disabled={disabled ? 'true' : undefined}
-    >
+  const content = (
+    <>
       <span className="d-tile-icon" aria-hidden>
         <Leading size={22} />
       </span>
       <span className="d-tile-body">
         <span className="d-tile-title">{title}</span>
-        <span className="d-tile-sub mono">{sub}</span>
+        <span className={`d-tile-sub${mono ? ' mono' : ''}`}>{sub}</span>
         {note ? <span className="d-tile-note">{note}</span> : null}
       </span>
+      {onClick ? <CaretRight size={18} className="d-tile-chevron" aria-hidden /> : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" className="d-tile tappable" onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div
+      className={`d-tile${disabled ? ' disabled' : ''}`}
+      aria-disabled={disabled ? 'true' : undefined}
+    >
+      {content}
     </div>
   );
 }
 
+/** Returns the cleaned URL, or an error message. Trailing slashes dropped. */
+function parseBackendUrl(raw: string): { url: string } | { error: string } {
+  const trimmed = raw.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: 'Enter a full URL, e.g. http://192.168.1.5:8000' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: 'The URL must start with http:// or https://' };
+  }
+  return { url: trimmed.replace(/\/+$/, '') };
+}
+
 export default function DevScreen() {
   const navigate = useNavigate();
+  const { showToast, toastNode } = useToast();
   const [unlocked] = useState(isUnlocked);
+  const [baseUrl, setBaseUrl] = useState(() => api.getBaseUrl());
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   if (!unlocked) {
     return <Navigate to="/profile" replace />;
   }
+
+  function applyUrl(url: string, persist: boolean) {
+    try {
+      if (persist) localStorage.setItem(API_BASE_STORAGE_KEY, url);
+      else localStorage.removeItem(API_BASE_STORAGE_KEY);
+    } catch {
+      /* private mode — the override lasts for this session only */
+    }
+    api.setBaseUrl(url);
+    setBaseUrl(api.getBaseUrl());
+    showToast(`Backend set to ${url || '(same origin)'}`);
+  }
+
+  function openEditor() {
+    setDraft(baseUrl);
+    setDraftError(null);
+    setEditing(true);
+  }
+
+  function saveDraft() {
+    // Flutter ignores an empty value.
+    if (!draft.trim()) {
+      setEditing(false);
+      return;
+    }
+    const parsed = parseBackendUrl(draft);
+    if ('error' in parsed) {
+      setDraftError(parsed.error);
+      return;
+    }
+    setEditing(false);
+    applyUrl(parsed.url, parsed.url !== DEFAULT_BASE_URL);
+  }
+
+  const mixedContentRisk =
+    window.location.protocol === 'https:' && /^http:\/\//i.test(draft.trim());
 
   return (
     <div className="page">
@@ -114,8 +188,9 @@ export default function DevScreen() {
         <Tile
           icon={HardDrives}
           title="Active server endpoint"
-          sub={FIXED_BACKEND_URL}
-          note="The web client is built against this backend — editing the server isn't available here."
+          sub={baseUrl || '(same origin)'}
+          mono
+          onClick={openEditor}
         />
         <Tile
           icon={Broadcast}
@@ -123,8 +198,12 @@ export default function DevScreen() {
           sub="LAN discovery needs raw network access, which browsers don't allow."
           disabled
         />
-        {/* "Reset to default backend" omitted: with no editable override on
-            web there is nothing to reset; a disabled row would only confuse. */}
+        <Tile
+          icon={ArrowCounterClockwise}
+          title="Reset to default backend"
+          sub="Clear the override and reconnect to the hosted Space."
+          onClick={() => applyUrl(DEFAULT_BASE_URL, false)}
+        />
       </Section>
 
       <Section label="AI model">
@@ -155,9 +234,63 @@ export default function DevScreen() {
       </Section>
 
       <p className="d-footnote">
-        Server controls aren&apos;t available in the web app — it always talks
-        to the hosted backend.
+        Changes take effect immediately and persist across launches. Your
+        sign-in only works on the server that issued it, so sign in again after
+        pointing the app at a different backend.
       </p>
+
+      {editing && (
+        <Modal
+          title="Configure server URL"
+          onClose={() => setEditing(false)}
+          actions={
+            <div className="d-actions">
+              <button type="button" className="d-btn d-btn-text" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+              <button type="button" className="d-btn d-btn-filled" onClick={saveDraft}>
+                Save
+              </button>
+            </div>
+          }
+        >
+          <label className="d-field-label" htmlFor="backend-url">
+            Backend URL
+          </label>
+          <input
+            id="backend-url"
+            className="input"
+            type="url"
+            inputMode="url"
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="http://192.168.1.5:8000"
+            value={draft}
+            aria-invalid={draftError ? true : undefined}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (draftError) setDraftError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveDraft();
+            }}
+          />
+          {draftError ? (
+            <p className="d-dialog-error" role="alert">
+              {draftError}
+            </p>
+          ) : mixedContentRisk ? (
+            <p className="d-dialog-hint">
+              This page is served over https, so browsers will block an http://
+              backend (except localhost).
+            </p>
+          ) : null}
+        </Modal>
+      )}
+
+      <div className="d-toast-host">{toastNode}</div>
     </div>
   );
 }

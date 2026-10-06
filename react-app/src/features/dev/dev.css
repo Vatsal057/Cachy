@@ -90,6 +90,92 @@
   opacity: 0.85;
 }
 
+button.d-tile.tappable:active {
+  background: var(--surface-high);
+}
+
+.d-tile-chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ── Server-URL dialog (Modal's .modal-actions has no shared styling) ── */
+.d-field-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.d-dialog-error,
+.d-dialog-hint {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+}
+
+.d-dialog-error {
+  color: var(--danger-soft);
+}
+
+.d-dialog-hint {
+  color: var(--muted);
+}
+
+.d-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.d-btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.d-btn:active {
+  transform: scale(0.97);
+}
+
+.d-btn-filled {
+  background: var(--accent);
+  color: var(--on-accent, var(--ground));
+}
+
+/* ── Toast (useToast renders a bare .toast with no shared styling) ── */
+.d-toast-host {
+  display: contents;
+}
+
+.d-toast-host .toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(96px + var(--safe-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 120;
+  max-width: min(92vw, 420px);
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: var(--surface-highest);
+  color: var(--ink);
+  border: 1px solid var(--hairline-strong);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
 /* ── Disabled switch (off; the toggle has no web equivalent) ── */
 .d-switch {
   position: relative;

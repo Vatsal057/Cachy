@@ -28,16 +28,88 @@ import {
   type TouchEvent,
 } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { BookOpen, Chats, Graph, MagnifyingGlass, Plus } from 'phosphor-react';
+import { BookOpen, Chats, Graph, MagnifyingGlass, Plus, X as CloseIcon } from 'phosphor-react';
 import { api, apiErrorMessage } from '../../api/client';
 import type { Card } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useMedia } from '../../ui/use-media';
+import { SelectionActionBar } from '../../ui/selection-action-bar';
+import { FolderPickerSheet } from '../collections/FolderPicker';
+import {
+  loadHighlights,
+  subscribeHighlights,
+  deleteHighlight,
+  type SavedHighlight,
+} from '../reader/highlights';
 import ConceptsScreen from '../concepts/ConceptsScreen';
 import CatalogScreen from '../catalog/CatalogScreen';
 import ReaderScreen from '../reader/ReaderScreen';
 import CardTile from './CardTile';
 import './library.css';
+
+const HIGHLIGHT_BG_COLORS = ['#D9ECCC', '#FBEFCC', '#CCD8EC', '#ECCCD4', '#DACCEC'];
+const HIGHLIGHT_FG_COLORS = ['#2D5A1E', '#5A4A10', '#1E3A5A', '#5A1E2D', '#3A1E5A'];
+
+function HighlightsSection({
+  highlights,
+  onOpenCard,
+  onDeleteHighlight,
+}: {
+  highlights: SavedHighlight[];
+  onOpenCard: (cardId: string) => void;
+  onDeleteHighlight: (id: string) => void;
+}) {
+  if (highlights.length === 0) return null;
+
+  return (
+    <div className="highlights-section">
+      <div className="highlights-label">HIGHLIGHTS</div>
+      <div className="highlights-carousel">
+        {highlights.map((h) => {
+          const idx = h.colorIndex % HIGHLIGHT_BG_COLORS.length;
+          const bg = HIGHLIGHT_BG_COLORS[idx];
+          const fg = HIGHLIGHT_FG_COLORS[idx];
+          const title =
+            h.cardTitle.length > 22 ? `${h.cardTitle.slice(0, 22)}…` : h.cardTitle;
+
+          return (
+            <div
+              key={h.id}
+              className="highlight-card"
+              style={{ backgroundColor: bg, color: fg }}
+              onClick={() => onOpenCard(h.cardId)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenCard(h.cardId);
+                }
+              }}
+            >
+              <button
+                type="button"
+                className="highlight-card-delete"
+                title="Delete highlight"
+                aria-label="Delete highlight"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteHighlight(h.id);
+                }}
+              >
+                <CloseIcon size={12} weight="bold" />
+              </button>
+              <p className="highlight-card-text">{h.text}</p>
+              <span className="highlight-card-author">— {title}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="highlights-divider" />
+    </div>
+  );
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Cachy wordmark — U-bracket glyph cradling a reel square (SVG port   */
@@ -327,61 +399,7 @@ export default function LibraryScreen({
     }
   }, []);
 
-  /** Card tap: split-pane selects into the side panel, otherwise navigate. */
-  const handleCardTap = useCallback(
-    (card: Card) => {
-      if (isSplitPane && tabRef.current === 'cards') {
-        setSelectedCardId(card.card_id);
-        return;
-      }
-      navigate(`/reader/${encodeURIComponent(card.card_id)}`);
-    },
-    [isSplitPane, navigate],
-  );
-
-  const selectTab = useCallback((next: LibraryTab) => {
-    const cur = tabRef.current;
-    if (cur === next) return;
-    setDir(tabIndex(next) > tabIndex(cur) ? 1 : -1);
-    tabRef.current = next;
-    setTab(next);
-  }, []);
-
-  // The /concepts and /catalog routes render this screen with a different
-  // initial tab. React Router updates (not remounts) the component when the
-  // route changes, so sync the tab — the pill and panels animate to it.
-  useEffect(() => {
-    if (initialTab !== initialTabRef.current) {
-      initialTabRef.current = initialTab;
-      selectTab(initialTab);
-    }
-  }, [initialTab, selectTab]);
-
-  /* ---- swipe to switch tabs ------------------------------------- */
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const handleTouchStart = useCallback((e: TouchEvent<HTMLDivElement>) => {
-    const t = e.touches[0];
-    touchStart.current = { x: t.clientX, y: t.clientY };
-  }, []);
-  const handleTouchEnd = useCallback(
-    (e: TouchEvent<HTMLDivElement>) => {
-      const s = touchStart.current;
-      touchStart.current = null;
-      if (!s) return;
-      const t = e.changedTouches[0];
-      const dx = t.clientX - s.x;
-      const dy = t.clientY - s.y;
-      // Vertical scrolls win — only deliberate horizontal swipes flip tabs.
-      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy) * 1.4)
-        return;
-      const i = tabIndex(tab);
-      if (dx < 0 && i < TABS.length - 1) selectTab(TABS[i + 1].id);
-      else if (dx > 0 && i > 0) selectTab(TABS[i - 1].id);
-    },
-    [tab, selectTab],
-  );
-
-  /* ---- cards data (unchanged) ------------------------------------ */
+  /* ---- cards data ------------------------------------------------ */
   const [cards, setCards] = useState<Card[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -432,6 +450,156 @@ export default function LibraryScreen({
   useEffect(() => {
     void loadFirstPage();
   }, [loadFirstPage]);
+
+  /* ---- highlights store ----------------------------------------- */
+  const [highlights, setHighlights] = useState<SavedHighlight[]>(loadHighlights);
+  useEffect(() => {
+    return subscribeHighlights(setHighlights);
+  }, []);
+
+  /* ---- multi-select & selection mode ----------------------------- */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastSelectedIdRef = useRef<string | null>(null);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    lastSelectedIdRef.current = null;
+  }, []);
+
+  const toggleSelect = useCallback((cardId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cardId)) {
+        next.delete(cardId);
+      } else {
+        next.add(cardId);
+      }
+      return next;
+    });
+    lastSelectedIdRef.current = cardId;
+  }, []);
+
+  const rangeSelect = useCallback((cardId: string) => {
+    if (!lastSelectedIdRef.current) {
+      toggleSelect(cardId);
+      return;
+    }
+    const lastId = lastSelectedIdRef.current;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allVisible = cards?.filter((c) => !tagFilter || (c.base.tags ?? []).includes(tagFilter)) ?? [];
+      const idx1 = allVisible.findIndex((c) => c.card_id === lastId);
+      const idx2 = allVisible.findIndex((c) => c.card_id === cardId);
+      if (idx1 === -1 || idx2 === -1) {
+        next.add(cardId);
+        return next;
+      }
+      const [start, end] = [Math.min(idx1, idx2), Math.max(idx1, idx2)];
+      for (let i = start; i <= end; i++) {
+        next.add(allVisible[i].card_id);
+      }
+      return next;
+    });
+  }, [cards, tagFilter, toggleSelect]);
+
+  const enterSelectionMode = useCallback((cardId: string) => {
+    setSelectedIds(new Set([cardId]));
+    lastSelectedIdRef.current = cardId;
+  }, []);
+
+  const handleBulkDelete = useCallback(async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+    if (!window.confirm(`Delete ${count} cards?\n\nThis removes the cards and their media.`)) {
+      return;
+    }
+    const idsToDelete = Array.from(selectedIds);
+    clearSelection();
+    setCards((prev) => (prev ? prev.filter((c) => !idsToDelete.includes(c.card_id)) : []));
+    for (const id of idsToDelete) {
+      api.deleteCard(id).catch(() => {});
+    }
+  }, [selectedIds, clearSelection]);
+
+  const handleMoveToFolder = useCallback(async (colId: string | null) => {
+    const idsToMove = Array.from(selectedIds);
+    setShowFolderPicker(false);
+    clearSelection();
+    for (const id of idsToMove) {
+      await api.moveCardToCollection(id, colId).catch(() => {});
+    }
+    void loadFirstPage();
+  }, [selectedIds, clearSelection, loadFirstPage]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedIds.size > 0) {
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedIds.size, clearSelection]);
+
+  /** Card tap: split-pane selects into the side panel, otherwise navigate. */
+  const handleCardTap = useCallback(
+    (card: Card) => {
+      if (selectedIds.size > 0) {
+        toggleSelect(card.card_id);
+        return;
+      }
+      if (isSplitPane && tabRef.current === 'cards') {
+        setSelectedCardId(card.card_id);
+        return;
+      }
+      navigate(`/reader/${encodeURIComponent(card.card_id)}`);
+    },
+    [isSplitPane, navigate, selectedIds.size, toggleSelect],
+  );
+
+  const selectTab = useCallback((next: LibraryTab) => {
+    const cur = tabRef.current;
+    if (cur === next) return;
+    clearSelection();
+    setDir(tabIndex(next) > tabIndex(cur) ? 1 : -1);
+    tabRef.current = next;
+    setTab(next);
+  }, [clearSelection]);
+
+  // The /concepts and /catalog routes render this screen with a different
+  // initial tab. React Router updates (not remounts) the component when the
+  // route changes, so sync the tab — the pill and panels animate to it.
+  useEffect(() => {
+    if (initialTab !== initialTabRef.current) {
+      initialTabRef.current = initialTab;
+      selectTab(initialTab);
+    }
+  }, [initialTab, selectTab]);
+
+  /* ---- swipe to switch tabs ------------------------------------- */
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const handleTouchStart = useCallback((e: TouchEvent<HTMLDivElement>) => {
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  }, []);
+  const handleTouchEnd = useCallback(
+    (e: TouchEvent<HTMLDivElement>) => {
+      const s = touchStart.current;
+      touchStart.current = null;
+      if (!s) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - s.x;
+      const dy = t.clientY - s.y;
+      // Vertical scrolls win — only deliberate horizontal swipes flip tabs.
+      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy) * 1.4)
+        return;
+      const i = tabIndex(tab);
+      if (dx < 0 && i < TABS.length - 1) selectTab(TABS[i + 1].id);
+      else if (dx > 0 && i > 0) selectTab(TABS[i - 1].id);
+    },
+    [tab, selectTab],
+  );
 
   /** Append the next page; guarded against overlap, over-fetch, and filter changes mid-flight. */
   const loadMore = useCallback(async () => {
@@ -527,6 +695,18 @@ export default function LibraryScreen({
         </p>
       )}
 
+      <HighlightsSection
+        highlights={highlights}
+        onOpenCard={(cardId) => {
+          if (isSplitPane && tabRef.current === 'cards') {
+            setSelectedCardId(cardId);
+          } else {
+            navigate(`/reader/${encodeURIComponent(cardId)}`);
+          }
+        }}
+        onDeleteHighlight={deleteHighlight}
+      />
+
       {availableTags.length > 0 && (
         <div className="tagbar" role="toolbar" aria-label="Filter by tag">
           {availableTags.map((tag) => (
@@ -593,6 +773,11 @@ export default function LibraryScreen({
             <CardTile
               key={card.card_id}
               card={card}
+              selected={selectedIds.has(card.card_id)}
+              selectionActive={selectedIds.size > 0}
+              onSelectToggle={() => toggleSelect(card.card_id)}
+              onRangeSelect={() => rangeSelect(card.card_id)}
+              onEnterSelectionMode={() => enterSelectionMode(card.card_id)}
               onTap={() => handleCardTap(card)}
               onDelete={() => void handleDelete(card)}
             />
@@ -641,8 +826,8 @@ export default function LibraryScreen({
           <button
             type="button"
             className="icon-btn"
-            aria-label="Chat"
-            onClick={() => navigate('/feed')}
+            aria-label="Chat with your library"
+            onClick={() => navigate('/library/chat')}
           >
             <Chats size={22} />
           </button>
@@ -707,6 +892,23 @@ export default function LibraryScreen({
           <CatalogScreen />
         </section>
       </div>
+
+      {selectedIds.size > 0 && (
+        <SelectionActionBar
+          selectedCount={selectedIds.size}
+          onClose={clearSelection}
+          onMoveToFolder={() => setShowFolderPicker(true)}
+          onDeleteSelected={() => void handleBulkDelete()}
+        />
+      )}
+
+      {showFolderPicker && (
+        <FolderPickerSheet
+          onClose={() => setShowFolderPicker(false)}
+          onPick={(colId) => void handleMoveToFolder(colId)}
+        />
+      )}
     </main>
   );
 }
+

@@ -3,12 +3,13 @@
  * Shelf header + stat strip, then Appearance / Library / About / Account
  * sections with the Flutter copy, dialogs and toasts intact.
  *
- * Web notes: Google account rows, the backup banner and "Claim a Cachy ID"
- * are N/A (web auth is Cachy-ID-only and the route requires a session);
- * Instagram linking, legacy restore and vault export have no web backend
- * yet, so their actions say so honestly instead of pretending.
+ * Web notes: Google account rows, the backup banner, "Claim a Cachy ID" and
+ * the Offline AI (on-device model) section are N/A — web auth is
+ * Cachy-ID-only, the route requires a session, and a browser can't run the
+ * local model. Export-as-vault builds a zip in the browser and downloads it
+ * (Flutter hands it to the OS share sheet).
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -27,11 +28,14 @@ import {
   Trash,
 } from 'phosphor-react';
 import type { Icon } from 'phosphor-react';
-import { api } from '../../api/client';
+import { api, ApiException } from '../../api/client';
 import type { Card, QuotaStatus } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Modal, useToast } from '../../ui/feedback';
+import { readTheme, setTheme } from '../../ui/theme';
+import type { ThemeMode } from '../../ui/theme';
 import { DEV_UNLOCK_KEY } from '../dev/DevScreen';
+import { exportVault } from './obsidian-export';
 import './profile.css';
 
 /* ------------------------------------------------------------------ */
@@ -39,24 +43,7 @@ import './profile.css';
 /* [data-theme='light']; dark is the default).                         */
 /* ------------------------------------------------------------------ */
 
-type ThemeMode = 'system' | 'light' | 'dark';
-const THEME_KEY = 'cachy_theme';
-
-function readTheme(): ThemeMode {
-  try {
-    const v = localStorage.getItem(THEME_KEY);
-    return v === 'light' || v === 'dark' ? v : 'system';
-  } catch {
-    return 'system';
-  }
-}
-
-function applyTheme(mode: ThemeMode) {
-  const dark =
-    mode === 'dark' ||
-    (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-}
+// Theme state lives in ui/theme.ts (applied at startup in main.tsx).
 
 /* ------------------------------------------------------------------ */
 /* CachyGlyph — exact port of brand.dart _GlyphPainter (reel resting   */
@@ -151,11 +138,37 @@ type DialogState =
 /** Verified against profile_screen.dart (`_kDeveloperPassword`). */
 const DEVELOPER_PASSWORD = 'vatxzz';
 
-const NOT_ON_WEB = {
-  vaultExport: "Vault export isn't available in the web app yet.",
-  instagramLink: "Instagram linking isn't available in the web app yet.",
-  libraryRestore: "Library restore isn't available in the web app yet.",
-};
+/** Instagram handles: letters, digits, periods, underscores; max 30. */
+const IG_HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
+
+/**
+ * localStorage keys this app owns that hold cached (re-downloadable) data.
+ * Anything with "cache" in a `cachy_` / `cachy:` / `cachy.` key qualifies;
+ * the auth token, username, theme, onboarding flag, API override, split-pane
+ * width and saved highlights (user data) never match.
+ */
+const CACHE_KEY_RE = /^cachy[_:.].*cache/i;
+
+/** Drop the in-memory API cache plus any owned localStorage caches. */
+function clearOfflineCache(): void {
+  api.invalidate('');
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && CACHE_KEY_RE.test(k)) doomed.push(k);
+    }
+    doomed.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* private mode — nothing persisted to clear */
+  }
+}
+
+/** Raw server detail when available — mirrors Flutter's `'$e'` interpolation. */
+function errText(e: unknown): string {
+  if (e instanceof ApiException) return e.detail || e.message;
+  return e instanceof Error ? e.message : String(e);
+}
 
 /* ------------------------------------------------------------------ */
 /* ProfileScreen                                                       */
@@ -170,29 +183,28 @@ export default function ProfileScreen() {
   const [cardCount, setCardCount] = useState<number | null>(null);
   const [weekCount, setWeekCount] = useState<number | null>(null);
   const [refCount, setRefCount] = useState<number | null>(null);
+  const [statsNonce, setStatsNonce] = useState(0);
   const [quota, setQuota] = useState<QuotaStatus | null>(null);
   const [quotaFailed, setQuotaFailed] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [devPassword, setDevPassword] = useState('');
-  const [igHandle, setIgHandle] = useState('');
-  const [restoreName, setRestoreName] = useState('');
   const [versionTaps, setVersionTaps] = useState(0);
+  const [exporting, setExporting] = useState(false);
+
+  // Instagram auto-save
+  const [igLinked, setIgLinked] = useState<string | null>(null);
+  const [igHandle, setIgHandle] = useState('');
+  const [igBusy, setIgBusy] = useState(false);
+  const [igError, setIgError] = useState<string | null>(null);
+
+  // Legacy library restore
+  const [restoreName, setRestoreName] = useState('');
+  const [restoreBusy, setRestoreBusy] = useState(false);
 
   /* Theme */
+  // Persist + apply; the OS-change listener for 'system' lives in initTheme().
   useEffect(() => {
-    applyTheme(themeMode);
-    try {
-      localStorage.setItem(THEME_KEY, themeMode);
-    } catch {
-      /* private mode — applies for this session */
-    }
-  }, [themeMode]);
-  useEffect(() => {
-    if (themeMode !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => applyTheme('system');
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    setTheme(themeMode);
   }, [themeMode]);
 
   /* Stat strip — exact counts, paginating like the library does. */
@@ -212,7 +224,7 @@ export default function ProfileScreen() {
         setWeekCount(
           all.filter((c) => {
             const t = c.meta?.created_at ? new Date(c.meta.created_at).getTime() : 0;
-            return t >= weekAgo;
+            return t > weekAgo;
           }).length,
         );
       } catch {
@@ -223,22 +235,22 @@ export default function ProfileScreen() {
       }
     })();
     (async () => {
+      let total = 0;
       try {
-        let total = 0;
         for (let offset = 0; offset < 5000; offset += 200) {
           const page = await api.listCatalog({ limit: 200, offset });
           total += page.length;
           if (page.length < 200) break;
         }
-        if (alive) setRefCount(total);
       } catch {
-        /* References stays '—' on error, like the Flutter FutureBuilder */
+        total = 0; // Flutter: catalog().catchError((_) => []) → shows 0
       }
+      if (alive) setRefCount(total);
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [statsNonce]);
 
   /* Quota meter — hidden while loading or on any error. */
   useEffect(() => {
@@ -250,6 +262,22 @@ export default function ProfileScreen() {
       })
       .catch(() => {
         if (alive) setQuotaFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /* Linked Instagram handle — any error reads as "not linked". */
+  useEffect(() => {
+    let alive = true;
+    api
+      .getInstagramLink()
+      .then((h) => {
+        if (alive) setIgLinked(h && h.length > 0 ? h : null);
+      })
+      .catch(() => {
+        if (alive) setIgLinked(null);
       });
     return () => {
       alive = false;
@@ -285,7 +313,108 @@ export default function ProfileScreen() {
     }
   }
 
-  const igLinked: string | null = null; // no link backend on web yet
+  /* ── Export as Obsidian vault ── */
+  async function onExportVault() {
+    setExporting(true);
+    try {
+      const n = await exportVault();
+      showToast(
+        n === 0
+          ? 'No cards to export yet'
+          : `Vault exported — ${n} ${n === 1 ? 'card' : 'cards'}`,
+      );
+    } catch {
+      showToast('Export failed — try again');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  /* ── Clear offline cache ── */
+  function onClearCache() {
+    setDialog(null);
+    clearOfflineCache();
+    showToast('Offline cache cleared');
+    setStatsNonce((n) => n + 1);
+  }
+
+  /* ── Instagram auto-save ── */
+  const openInstagram = useCallback(() => {
+    setIgHandle(igLinked ? `@${igLinked}` : '');
+    setIgError(null);
+    setDialog({ kind: 'instagram' });
+  }, [igLinked]);
+
+  async function saveInstagram() {
+    if (igBusy) return;
+    const input = igHandle.trim();
+    if (!input) {
+      setIgError('Enter your Instagram username.');
+      return;
+    }
+    if (!IG_HANDLE_RE.test(input.replace(/^@+/, ''))) {
+      setIgError('Usernames use letters, numbers, periods and underscores (30 max).');
+      return;
+    }
+    setIgBusy(true);
+    setIgError(null);
+    try {
+      const saved = await api.linkInstagram(input);
+      setIgLinked(saved);
+      setDialog(null);
+      showToast(`Linked @${saved}! Send reels to @cachyapp`);
+    } catch (e) {
+      setIgError(`Failed to link Instagram: ${errText(e)}`);
+    } finally {
+      setIgBusy(false);
+    }
+  }
+
+  async function unlinkInstagram() {
+    if (igBusy) return;
+    setIgBusy(true);
+    setIgError(null);
+    try {
+      await api.unlinkInstagram();
+      setIgLinked(null);
+      setDialog(null);
+      showToast('Unlinked Instagram account');
+    } catch (e) {
+      setIgError(`Failed to unlink: ${errText(e)}`);
+    } finally {
+      setIgBusy(false);
+    }
+  }
+
+  /* ── Restore old library ── */
+  function submitRestoreName() {
+    const name = restoreName.trim();
+    setDialog(name ? { kind: 'restore-confirm', name } : null);
+  }
+
+  async function runClaim(name: string) {
+    if (restoreBusy) return;
+    setRestoreBusy(true);
+    try {
+      const n = await api.claimLegacyLibrary(name);
+      setDialog(null);
+      showToast(
+        n === 0 ? 'Nothing to restore' : `Restored ${n} ${n === 1 ? 'card' : 'cards'}`,
+      );
+      if (n > 0) setStatsNonce((x) => x + 1);
+    } catch (e) {
+      setDialog(null);
+      if (e instanceof ApiException && e.status === 409) {
+        showToast('That name was already claimed.');
+      } else if (e instanceof ApiException && e.status === 404) {
+        showToast("Restoring old libraries isn't enabled on this server right now.");
+      } else {
+        showToast('Restore failed — try again');
+      }
+    } finally {
+      setRestoreBusy(false);
+    }
+  }
 
   return (
     <div className="page">
@@ -340,9 +469,10 @@ export default function ProfileScreen() {
       <Section label="Library">
         <Tile
           icon={Export}
-          title="Export as Obsidian vault"
+          title={exporting ? 'Preparing vault…' : 'Export as Obsidian vault'}
           sub="Saves every card as a markdown note, zipped to open in Obsidian."
-          onClick={() => showToast(NOT_ON_WEB.vaultExport)}
+          onClick={exporting ? undefined : () => void onExportVault()}
+          trailing={exporting ? <span className="p-spinner" role="status" aria-label="Preparing vault" /> : undefined}
         />
         <Tile
           icon={Trash}
@@ -386,10 +516,7 @@ export default function ProfileScreen() {
               ? 'Send reels to @cachyapp on Instagram to auto-save them.'
               : 'Link your Instagram handle to auto-save reels sent to @cachyapp.'
           }
-          onClick={() => {
-            setIgHandle(igLinked ? `@${igLinked}` : '');
-            setDialog({ kind: 'instagram' });
-          }}
+          onClick={openInstagram}
         />
         <Tile
           icon={ClockCounterClockwise}
@@ -415,24 +542,19 @@ export default function ProfileScreen() {
           title="Clear offline cache?"
           onClose={() => setDialog(null)}
           actions={
-            <>
-              <button type="button" className="fb-text-btn" onClick={() => setDialog(null)}>
+            <div className="p-actions">
+              <button type="button" className="p-btn p-btn-text" onClick={() => setDialog(null)}>
                 Cancel
               </button>
-              <button
-                type="button"
-                className="fb-filled-btn"
-                onClick={() => {
-                  setDialog(null);
-                  showToast('Nothing cached yet');
-                }}
-              >
+              <button type="button" className="p-btn p-btn-filled" onClick={onClearCache}>
                 Clear
               </button>
-            </>
+            </div>
           }
         >
-          <p className="p-dialog-copy">Removes locally saved cards. They re-download when opened.</p>
+          <p className="p-dialog-copy">
+            Locally saved copies are removed. Cards re-download when you open them.
+          </p>
         </Modal>
       )}
 
@@ -442,17 +564,17 @@ export default function ProfileScreen() {
           title="Developer access"
           onClose={() => setDialog(null)}
           actions={
-            <>
-              <button type="button" className="fb-text-btn" onClick={() => setDialog(null)}>
+            <div className="p-actions">
+              <button type="button" className="p-btn p-btn-text" onClick={() => setDialog(null)}>
                 Cancel
               </button>
-              <button type="button" className="fb-filled-btn" onClick={unlockDev}>
+              <button type="button" className="p-btn p-btn-filled" onClick={unlockDev}>
                 Unlock
               </button>
-            </>
+            </div>
           }
         >
-          <label className="fb-field-label" htmlFor="dev-password">
+          <label className="p-field-label" htmlFor="dev-password">
             Password
           </label>
           <input
@@ -475,53 +597,65 @@ export default function ProfileScreen() {
           title="Instagram Auto-Save"
           onClose={() => setDialog(null)}
           actions={
-            <>
+            <div className="p-actions">
               {igLinked && (
                 <button
                   type="button"
-                  className="fb-text-btn danger"
-                  onClick={() => {
-                    setDialog(null);
-                    showToast(NOT_ON_WEB.instagramLink);
-                  }}
+                  className="p-btn p-btn-text danger"
+                  disabled={igBusy}
+                  onClick={() => void unlinkInstagram()}
                 >
                   Unlink
                 </button>
               )}
-              <button type="button" className="fb-text-btn" onClick={() => setDialog(null)}>
+              <span className="p-actions-spacer" />
+              <button type="button" className="p-btn p-btn-text" onClick={() => setDialog(null)}>
                 Cancel
               </button>
               <button
                 type="button"
-                className="fb-filled-btn"
-                onClick={() => {
-                  setDialog(null);
-                  showToast(NOT_ON_WEB.instagramLink);
-                }}
+                className="p-btn p-btn-filled"
+                disabled={igBusy}
+                onClick={() => void saveInstagram()}
               >
-                Save
+                {igBusy ? 'Saving…' : 'Save'}
               </button>
-            </>
+            </div>
           }
         >
           <p className="p-dialog-copy">
             Link your Instagram username. Once linked, any reel you DM or share to @cachyapp
             will automatically appear on your Cachy shelf.
           </p>
-          <label className="fb-field-label" htmlFor="ig-handle">
+          <label className="p-field-label" htmlFor="ig-handle">
             Instagram username
           </label>
-          <div className="fb-input-wrap">
+          <div className="p-input-wrap">
             <At size={18} aria-hidden />
             <input
               id="ig-handle"
               className="input"
-              autoFocus
+              autoFocus={!igLinked}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder="@username"
               value={igHandle}
-              onChange={(e) => setIgHandle(e.target.value)}
+              aria-invalid={igError ? true : undefined}
+              onChange={(e) => {
+                setIgHandle(e.target.value);
+                if (igError) setIgError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveInstagram();
+              }}
             />
           </div>
+          {igError && (
+            <p className="p-dialog-error" role="alert">
+              {igError}
+            </p>
+          )}
         </Modal>
       )}
 
@@ -531,25 +665,14 @@ export default function ProfileScreen() {
           title="Restore old library"
           onClose={() => setDialog(null)}
           actions={
-            <>
-              <button type="button" className="fb-text-btn" onClick={() => setDialog(null)}>
+            <div className="p-actions">
+              <button type="button" className="p-btn p-btn-text" onClick={() => setDialog(null)}>
                 Cancel
               </button>
-              <button
-                type="button"
-                className="fb-filled-btn"
-                onClick={() => {
-                  const name = restoreName.trim();
-                  if (!name) {
-                    setDialog(null);
-                    return;
-                  }
-                  setDialog({ kind: 'restore-confirm', name });
-                }}
-              >
+              <button type="button" className="p-btn p-btn-filled" onClick={submitRestoreName}>
                 Restore
               </button>
-            </>
+            </div>
           }
         >
           <p className="p-dialog-copy">
@@ -559,14 +682,12 @@ export default function ProfileScreen() {
           <input
             className="input"
             autoFocus
+            autoCapitalize="words"
             placeholder="Your old name"
             value={restoreName}
             onChange={(e) => setRestoreName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const name = restoreName.trim();
-                setDialog(name ? { kind: 'restore-confirm', name } : null);
-              }
+              if (e.key === 'Enter') submitRestoreName();
             }}
             aria-label="Your old name"
           />
@@ -577,23 +698,26 @@ export default function ProfileScreen() {
       {dialog?.kind === 'restore-confirm' && (
         <Modal
           title="Restore your old library?"
-          onClose={() => setDialog(null)}
+          onClose={() => (restoreBusy ? undefined : setDialog(null))}
           actions={
-            <>
-              <button type="button" className="fb-text-btn" onClick={() => setDialog(null)}>
+            <div className="p-actions">
+              <button
+                type="button"
+                className="p-btn p-btn-text"
+                disabled={restoreBusy}
+                onClick={() => setDialog(null)}
+              >
                 Not now
               </button>
               <button
                 type="button"
-                className="fb-filled-btn"
-                onClick={() => {
-                  setDialog(null);
-                  showToast(NOT_ON_WEB.libraryRestore);
-                }}
+                className="p-btn p-btn-filled"
+                disabled={restoreBusy}
+                onClick={() => void runClaim(dialog.name)}
               >
-                Restore
+                {restoreBusy ? 'Restoring…' : 'Restore'}
               </button>
-            </>
+            </div>
           }
         >
           <p className="p-dialog-copy">
@@ -608,13 +732,13 @@ export default function ProfileScreen() {
           title="Sign out?"
           onClose={() => setDialog(null)}
           actions={
-            <>
-              <button type="button" className="fb-text-btn" onClick={() => setDialog(null)}>
+            <div className="p-actions">
+              <button type="button" className="p-btn p-btn-text" onClick={() => setDialog(null)}>
                 Cancel
               </button>
               <button
                 type="button"
-                className="fb-filled-btn danger"
+                className="p-btn p-btn-filled danger"
                 onClick={() => {
                   setDialog(null);
                   logout();
@@ -623,7 +747,7 @@ export default function ProfileScreen() {
               >
                 Sign out
               </button>
-            </>
+            </div>
           }
         >
           <p className="p-dialog-copy">
@@ -633,7 +757,7 @@ export default function ProfileScreen() {
         </Modal>
       )}
 
-      {toastNode}
+      <div className="p-toast-host">{toastNode}</div>
     </div>
   );
 }

@@ -180,6 +180,9 @@ export interface Card {
   source: CardSource;
   base: CardBase;
   action_items?: ActionItems;
+  primary_action?: { kind?: string; label?: string; payload?: Record<string, unknown> } | null;
+  /** Deep-analysis layer (docs/14); absent on simple cards. Parsed by InsightSection. */
+  insight?: Record<string, unknown> | null;
   blocks: Block[];
   media?: CardMedia;
   meta?: CardMeta;
@@ -324,6 +327,99 @@ export interface SharedCardSaveResult {
   card_id: string;
   already_saved: boolean;
   is_owner?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Chat / rabbit hole / library chat (docs/13, docs/14)
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** One card cited by a library-chat answer. */
+export interface LibrarySource {
+  card_id: string;
+  one_liner: string;
+}
+
+export interface LibraryChatResult {
+  reply: string;
+  sources: LibrarySource[];
+}
+
+/** One hop down the rabbit hole: the tapped topic, its explanation, and the
+ *  fresh threads that branch onward from it. */
+export interface RabbitHoleStep {
+  topic: string;
+  explanation: string;
+  threads: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Typed catalog / concept entries (backend CatalogEntry / ConceptEntry)
+// ---------------------------------------------------------------------------
+
+export type ArtifactType =
+  | 'book'
+  | 'movie'
+  | 'tv_show'
+  | 'podcast'
+  | 'music'
+  | 'product'
+  | 'place'
+  | 'app'
+  | 'other';
+
+export interface CatalogEntry {
+  id: string;
+  type: ArtifactType;
+  title: string;
+  creator?: string | null;
+  year?: number | null;
+  thumbnail?: string | null;
+  source_card_ids: string[];
+  /** True once the user saved it into the Catalog tab (long-press to save). */
+  saved: boolean;
+  /** On-demand LLM detail; null until "Fetch info" is pressed. */
+  description?: string | null;
+}
+
+export interface ConceptEntry {
+  id: string;
+  name: string;
+  source_card_ids: string[];
+  definition?: string | null;
+}
+
+export interface ConceptDetail {
+  entry: ConceptEntry;
+  related: ConceptEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// SSE pipeline stream — GET /cards/{id}/stream (backend StageEvent)
+// ---------------------------------------------------------------------------
+
+export type PipelineStageName =
+  | 'snapshot'
+  | 'downloading'
+  | 'extracting'
+  | 'structuring'
+  | 'persisting'
+  | 'analyzing'
+  | 'cataloging'
+  | 'conceptualizing'
+  | 'done'
+  | 'failed';
+
+export interface PipelineEvent {
+  card_id: string;
+  stage: PipelineStageName | string;
+  state: CardState;
+  detail?: string;
+  reason?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,15 +1,10 @@
 /**
  * Local highlight store — mirrors the Flutter highlight flow in
  * `reader_screen.dart` (`onHighlight` → `HighlightStore.add` → "Saved to
- * highlights" toast).
+ * highlights" toast) and `library_screen.dart` (_HighlightsSection).
  *
  * Flutter's Highlight: id (timestamp), cardId, cardTitle, text,
  * colorIndex (highlights.length % 5), createdAt.
- *
- * TODO(api): src/api/client.ts exposes no highlight endpoints, so saves are
- * local-only (this browser, localStorage). When the backend adds highlight
- * persistence, replace this module with server calls — the reader already
- * funnels every save through `addHighlight`, so the swap is one file.
  */
 
 export interface SavedHighlight {
@@ -22,6 +17,35 @@ export interface SavedHighlight {
 }
 
 const STORAGE_KEY = 'cachy.highlights.v1';
+
+type Listener = (all: SavedHighlight[]) => void;
+const listeners = new Set<Listener>();
+
+function notify(): void {
+  const all = loadHighlights();
+  listeners.forEach((fn) => {
+    try {
+      fn(all);
+    } catch {
+      /* ignore subscriber error */
+    }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) {
+      notify();
+    }
+  });
+}
+
+export function subscribeHighlights(fn: Listener): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
 
 export function loadHighlights(): SavedHighlight[] {
   try {
@@ -40,6 +64,7 @@ function persist(all: SavedHighlight[]): void {
   } catch {
     /* storage full/blocked — the toast still confirms the in-memory save */
   }
+  notify();
 }
 
 /**
@@ -63,4 +88,9 @@ export function addHighlight(input: {
   all.push(highlight);
   persist(all);
   return highlight;
+}
+
+export function deleteHighlight(id: string): void {
+  const all = loadHighlights().filter((h) => h.id !== id);
+  persist(all);
 }

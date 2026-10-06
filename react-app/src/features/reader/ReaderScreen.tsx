@@ -6,19 +6,30 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  AppWindow,
   ArrowLeft,
   ArrowsOutSimple,
+  BookOpen,
   Check,
   Circle,
   Clock,
+  FilmSlate,
+  Lightbulb,
   ListChecks,
+  MapPin,
+  Microphone,
+  MusicNote,
   PencilSimple,
+  Cube,
   Share,
+  ShoppingBag,
+  Television,
   X,
 } from 'phosphor-react';
+import type { Icon } from 'phosphor-react';
 import { api, apiErrorMessage } from '../../api/client';
 import { CardState } from '../../api/types';
-import type { ActionItems, Card } from '../../api/types';
+import type { ActionItems, Card, CatalogEntry, ConceptEntry } from '../../api/types';
 import { contentAccent } from '../../ui/content-accent';
 import { useToast } from '../../ui/feedback';
 import BlockList from './BlockRenderer';
@@ -28,6 +39,7 @@ import InsightSection, {
   parseInsight,
 } from './InsightSection';
 import { addHighlight } from './highlights';
+import { openLookup } from './artifactLookup';
 import ShareSheet from '../share/ShareSheet';
 import './reader.css';
 
@@ -354,6 +366,120 @@ function EmbeddedHeader({
 }
 
 /* ------------------------------------------------------------------ */
+/* References strip — port of Flutter's _ReferencesStrip              */
+/* ------------------------------------------------------------------ */
+
+const ARTIFACT_ICONS: Record<string, Icon> = {
+  book: BookOpen,
+  movie: FilmSlate,
+  tv_show: Television,
+  podcast: Microphone,
+  music: MusicNote,
+  product: ShoppingBag,
+  place: MapPin,
+  app: AppWindow,
+  other: Cube,
+};
+
+function ReferencesStrip({
+  entries,
+  accentColor,
+  onOpenArtifact,
+  onSaveArtifact,
+}: {
+  entries: CatalogEntry[];
+  accentColor: string;
+  onOpenArtifact: (entry: CatalogEntry) => void;
+  onSaveArtifact: (entry: CatalogEntry) => void;
+}) {
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="reader-references-strip" aria-label="References">
+      <span className="section-eyebrow" style={{ color: accentColor }}>
+        <span>References</span>
+      </span>
+      <div className="reader-references-carousel">
+        {entries.map((entry) => {
+          const IconComp = ARTIFACT_ICONS[entry.type] ?? Cube;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              className="reader-reference-tile"
+              onClick={() => onOpenArtifact(entry)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onSaveArtifact(entry);
+              }}
+              title={`${entry.title} (right-click to save to catalog)`}
+            >
+              <div className="reader-reference-thumb">
+                {entry.thumbnail ? (
+                  <img src={entry.thumbnail} alt={entry.title} loading="lazy" />
+                ) : (
+                  <IconComp size={28} color="var(--muted)" />
+                )}
+              </div>
+              <span className="reader-reference-title">{entry.title}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Concepts strip — port of Flutter's _ConceptsStrip                  */
+/* ------------------------------------------------------------------ */
+
+function ConceptsStrip({
+  entries,
+  accentColor,
+  onOpenConcept,
+}: {
+  entries: ConceptEntry[];
+  accentColor: string;
+  onOpenConcept: (entry: ConceptEntry) => void;
+}) {
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="reader-concepts-strip" aria-label="Concepts">
+      <span className="section-eyebrow" style={{ color: accentColor }}>
+        <span>Concepts</span>
+      </span>
+      <div className="reader-concepts-wrap">
+        {entries.map((entry) => {
+          const isMultiReel = entry.source_card_ids.length > 1;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              className={`reader-concept-chip${isMultiReel ? ' multi-reel' : ''}`}
+              onClick={() => onOpenConcept(entry)}
+            >
+              <Lightbulb
+                size={14}
+                weight={isMultiReel ? 'fill' : 'regular'}
+                color={isMultiReel ? accentColor : undefined}
+              />
+              <span>{entry.name}</span>
+              {isMultiReel && (
+                <span className="reader-concept-count">
+                  {entry.source_card_ids.length}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* ReaderScreen                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -376,6 +502,8 @@ export default function ReaderScreen(props: ReaderScreenProps = {}) {
   const navigate = useNavigate();
   const [card, setCard] = useState<Card | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [artifacts, setArtifacts] = useState<CatalogEntry[]>([]);
+  const [concepts, setConcepts] = useState<ConceptEntry[]>([]);
   const [shareOpen, setShareOpen] = useState(false);
   const { showToast, toastNode } = useToast();
 
@@ -384,18 +512,41 @@ export default function ReaderScreen(props: ReaderScreenProps = {}) {
     let cancelled = false;
     setCard(null);
     setError(null);
+    const decodedId = decodeURIComponent(id);
     (async () => {
       try {
-        const c = await api.getCard(decodeURIComponent(id));
+        const c = await api.getCard(decodedId);
         if (!cancelled) setCard(c);
       } catch (err) {
         if (!cancelled) setError(apiErrorMessage(err));
       }
     })();
+    api.cardArtifacts(decodedId).then((res) => {
+      if (!cancelled) setArtifacts(res);
+    }).catch(() => {
+      if (!cancelled) setArtifacts([]);
+    });
+    api.cardConcepts(decodedId).then((res) => {
+      if (!cancelled) setConcepts(res);
+    }).catch(() => {
+      if (!cancelled) setConcepts([]);
+    });
     return () => {
       cancelled = true;
     };
   }, [id]);
+
+  const handleSaveArtifact = async (entry: CatalogEntry) => {
+    try {
+      await api.saveCatalogEntry(entry.id);
+      showToast(`Saved "${entry.title}" to catalog`);
+      setArtifacts((prev) =>
+        prev.map((a) => (a.id === entry.id ? { ...a, saved: true } : a)),
+      );
+    } catch {
+      showToast("Couldn't save to catalog");
+    }
+  };
 
   const readMins = useMemo(() => (card ? estimateReadMinutes(card) : 1), [card]);
 
@@ -515,6 +666,10 @@ export default function ReaderScreen(props: ReaderScreenProps = {}) {
 
         <BlockList
           blocks={card.blocks ?? []}
+          artifacts={artifacts}
+          onOpenArtifact={openLookup}
+          concepts={concepts}
+          onOpenConcept={(c) => navigate(`/concepts/${encodeURIComponent(c.id)}`)}
           onHighlight={isReady ? handleHighlight : undefined}
           notify={showToast}
         />
@@ -529,6 +684,23 @@ export default function ReaderScreen(props: ReaderScreenProps = {}) {
             accentColor={accent.color}
             readMinutes={readMins}
             notify={showToast}
+          />
+        )}
+
+        {isReady && artifacts.length > 0 && (
+          <ReferencesStrip
+            entries={artifacts}
+            accentColor={accent.color}
+            onOpenArtifact={openLookup}
+            onSaveArtifact={(entry) => void handleSaveArtifact(entry)}
+          />
+        )}
+
+        {isReady && concepts.length > 0 && (
+          <ConceptsStrip
+            entries={concepts}
+            accentColor={accent.color}
+            onOpenConcept={(c) => navigate(`/concepts/${encodeURIComponent(c.id)}`)}
           />
         )}
 

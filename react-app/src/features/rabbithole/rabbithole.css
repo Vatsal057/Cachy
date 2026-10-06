@@ -1,0 +1,200 @@
+/* ==========================================================================
+   Rabbit hole — port of Flutter's rabbit_hole_screen.dart.
+   Shell, app bar and column come from ../chat/chat.css; --rh-accent is the
+   card's content-type accent (set inline on the screen root).
+   ========================================================================== */
+
+.rh-screen { --rh-accent: var(--accent); }
+
+/* ListView padding: (Insets.page, 12, Insets.page, 48) */
+.rh-page { padding: 12px var(--inset-page) 48px; }
+.rh-gap-16 { height: 16px; }
+
+.rh-spinner {
+  border-color: var(--rh-accent);
+  border-top-color: transparent;
+}
+.rh-loading-initial {
+  display: flex;
+  justify-content: center;
+  padding-top: 40px;
+}
+
+/* ── Breadcrumbs ── */
+.rh-crumbs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.rh-crumbs::-webkit-scrollbar { display: none; }
+.rh-crumb-item { display: inline-flex; align-items: center; flex-shrink: 0; }
+.rh-chevron {
+  display: inline-flex;
+  padding: 0 4px;
+  color: var(--ink-muted);
+}
+.rh-crumb {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.33;
+  transition: background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+.rh-crumb:disabled { cursor: default; }
+.rh-crumb:not(:disabled):hover { background: var(--surface-high); }
+.rh-crumb:not(:disabled):active { transform: scale(0.96); }
+.rh-crumb:focus-visible,
+.rh-thread:focus-visible,
+.rh-retry:focus-visible {
+  outline: 2px solid var(--rh-accent);
+  outline-offset: 2px;
+}
+.rh-crumb svg { flex-shrink: 0; }
+.rh-crumb-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rh-crumb.active {
+  background: color-mix(in srgb, var(--rh-accent) 12%, transparent);
+  color: var(--rh-accent);
+  font-weight: 700;
+}
+.rh-crumb.dim { color: color-mix(in srgb, var(--rh-accent) 60%, transparent); }
+
+/* ── Step ── */
+.rh-step { animation: rh-in var(--motion-medium) var(--ease-out); }
+.rh-topic {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: -0.3px;
+  overflow-wrap: anywhere;
+}
+.rh-explanation {
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rh-keep-going {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 24px;
+  color: var(--rh-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 1.1px;
+}
+.rh-threads {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.rh-threads li { margin-bottom: 8px; }
+.rh-thread {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 14px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-align: left;
+  transition: background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+.rh-thread-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.rh-thread svg { flex-shrink: 0; color: var(--rh-accent); }
+.rh-thread:not(:disabled):hover { background: var(--surface-high); }
+.rh-thread:not(:disabled):active { transform: scale(0.99); }
+.rh-thread:disabled { cursor: default; }
+.rh-bottoms-out {
+  margin: 20px 0 0;
+  font-size: 12px;
+  line-height: 1.33;
+  color: var(--ink-muted);
+}
+
+/* ── Loading + error ── */
+.rh-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 28px;
+}
+.rh-loading-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rh-error {
+  padding-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.rh-error-text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--danger-soft);
+}
+[data-theme='light'] .rh-error-text { color: var(--danger); }
+.rh-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--ink-muted) 50%, transparent);
+  border-radius: 12px;
+  color: var(--rh-accent);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.rh-retry:hover { background: color-mix(in srgb, var(--rh-accent) 8%, transparent); }
+
+@keyframes rh-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rh-step,
+  .rh-crumb,
+  .rh-thread { animation: none; transition: none; }
+}

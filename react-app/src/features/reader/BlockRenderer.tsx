@@ -14,13 +14,15 @@
  * - Long-press on paragraphs, bullet items, and step rows saves a highlight
  *   (Flutter's GestureDetector.onLongPress → onHighlight), when `onHighlight`
  *   is provided (ready cards only).
- * - Checklist/step toggles are optimistic local state. Flutter persists via
- *   PATCH; the web client has no patchBlocks endpoint, so toggles are
- *   visual-only for now. TODO(api): persist when the endpoint lands.
+ * - Checklist/step ticks are controlled: the reader owns the (optimistic,
+ *   PATCH-persisted) block state and feeds it back in, so what's drawn is
+ *   always what the card says. Without a toggle callback rows aren't tappable.
+ * - `[[Name]]` markers resolve to the card's artifacts/concepts through
+ *   ReferenceScope (Flutter's ReferenceScope InheritedWidget).
  * - Unknown/future block types degrade gracefully: render text/items when
  *   present, else skip — never crash.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   Check,
@@ -29,8 +31,14 @@ import {
   MapPin,
   Warning,
 } from 'phosphor-react';
-import type { Block, UnknownBlock } from '../../api/types';
-import RichInline from './RichInline';
+import type {
+  Block,
+  CatalogEntry,
+  ConceptEntry,
+  UnknownBlock,
+} from '../../api/types';
+import RichInline, { ReferenceScope } from './RichInline';
+import type { ReferenceScopeValue } from './RichInline';
 import { copyText } from './clipboard';
 import { useLongPress } from './useLongPress';
 
@@ -55,9 +63,15 @@ const KNOWN_TYPES = new Set([
 
 export interface BlockListProps {
   blocks: Block[];
-  /** Persisted toggle (Flutter PATCH). Omitted on web — toggles stay local. */
+  /** Toggle callbacks (the reader applies them optimistically + PATCHes). */
   onToggleChecklist?: (blockId: string, index: number, checked: boolean) => void;
   onToggleStep?: (blockId: string, index: number, checked: boolean) => void;
+  /** The card's referenced artifacts — resolve inline `[[Name]]` markers. */
+  artifacts?: CatalogEntry[];
+  onOpenArtifact?: (entry: CatalogEntry) => void;
+  /** The card's concepts — resolve inline `[[idea]]` wiki-links. */
+  concepts?: ConceptEntry[];
+  onOpenConcept?: (concept: ConceptEntry) => void;
   /** Long-press → save highlight. Provided only for ready cards. */
   onHighlight?: (text: string) => void;
   /** Toast sink (ReaderScreen's useToast). */
@@ -143,6 +157,10 @@ export default function BlockList({
   onHighlight,
   notify,
   animate = true,
+  artifacts,
+  onOpenArtifact,
+  concepts,
+  onOpenConcept,
 }: BlockListProps) {
   const copyLink = (url: string) => {
     void copyText(url).then((ok) => {
@@ -150,8 +168,33 @@ export default function BlockList({
     });
   };
 
+  // Inline-reference resolver, only when there's something to resolve against.
+  const scope = useMemo<ReferenceScopeValue | null>(() => {
+    const hasArtifacts = !!artifacts?.length && !!onOpenArtifact;
+    const hasConcepts = !!concepts?.length && !!onOpenConcept;
+    if (!hasArtifacts && !hasConcepts) return null;
+    const refs = new Map<string, CatalogEntry>();
+    if (hasArtifacts) {
+      for (const a of artifacts!) {
+        if (a.title?.trim()) refs.set(a.title.toLowerCase().trim(), a);
+      }
+    }
+    const conceptRefs = new Map<string, ConceptEntry>();
+    if (hasConcepts) {
+      for (const c of concepts!) {
+        if (c.name?.trim()) conceptRefs.set(c.name.toLowerCase().trim(), c);
+      }
+    }
+    return {
+      refs,
+      onTap: onOpenArtifact ?? (() => undefined),
+      conceptRefs,
+      onTapConcept: onOpenConcept,
+    };
+  }, [artifacts, onOpenArtifact, concepts, onOpenConcept]);
+
   const segments = segment(blocks ?? []);
-  return (
+  const root = (
     <div className="block-list-root">
       {segments.map((seg, i) => {
         const node = renderSegment(seg, i, {
@@ -171,6 +214,11 @@ export default function BlockList({
         );
       })}
     </div>
+  );
+  return scope ? (
+    <ReferenceScope.Provider value={scope}>{root}</ReferenceScope.Provider>
+  ) : (
+    root
   );
 }
 
