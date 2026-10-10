@@ -234,13 +234,12 @@ def _serpapi_youtube_result(url: str, output_path: str) -> DownloadResult | None
             except Exception as e:
                 log.warning("direct youtube caption extraction failed for %s: %s", vid, e)
 
+        if not title:
+            title = f"YouTube Short {vid}"
+
         if not transcript_text:
-            if title:
-                log.info("using title as fallback transcript for %s", vid)
-                transcript_text = f"Video Title: {title}. Channel: {author or 'Unknown'}"
-            else:
-                log.warning("no transcript or title found for %s via SerpApi or direct captions", vid)
-                return None
+            log.info("using title as fallback transcript for %s", vid)
+            transcript_text = f"Video Title: {title}. Channel: {author or 'Unknown'}"
 
         out_p = Path(output_path)
         out_p.parent.mkdir(parents=True, exist_ok=True)

@@ -165,7 +165,12 @@ async def health() -> dict:
     # `db` is here so a deploy running on the blank SQLite fallback can be spotted
     # from outside instead of by reading Space logs. An empty shelf and a lost
     # DATABASE_URL look identical from the client otherwise.
-    return {"status": "ok", "schema_version": SCHEMA_VERSION, "db": describe_backend()}
+    return {
+        "status": "ok",
+        "schema_version": SCHEMA_VERSION,
+        "db": describe_backend(),
+        "serpapi": get_settings().serpapi_enabled,
+    }
 
 
 @app.get("/admin/stats", dependencies=[Depends(require_admin)])
