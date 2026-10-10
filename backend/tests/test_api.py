@@ -31,6 +31,30 @@ async def test_dedup_returns_same_card(client):
     assert r2.json()["cached"] is True
 
 
+async def test_dedup_failed_card_retried(client):
+    url = "https://instagram.com/reel/failed_then_retry"
+    r1 = await client.post("/cards", json={"url": url})
+    card_id = r1.json()["card_id"]
+
+    from app.models.card import CardState
+    from app.store import db
+    from sqlalchemy import update
+
+    async with db.session() as s:
+        await s.execute(
+            update(db.CardRow)
+            .where(db.CardRow.id == card_id)
+            .values(state=CardState.FAILED.value, failure_reason="timeout")
+        )
+        await s.commit()
+
+    r2 = await client.post("/cards", json={"url": url})
+    assert r2.status_code == 200
+    assert r2.json()["card_id"] == card_id
+    assert r2.json()["state"] == "queued"
+    assert r2.json()["cached"] is False
+
+
 async def test_get_list_patch_delete(client):
     r = await client.post("/cards", json={"url": "https://instagram.com/reel/crud"})
     card_id = r.json()["card_id"]

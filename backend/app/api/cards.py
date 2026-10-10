@@ -136,26 +136,41 @@ async def create_card(
         raise HTTPException(status_code=422, detail="url is required")
 
     async with db.session() as session:
-        # Dedup: re-sharing the same reel returns the existing card (docs/02).
+        # Dedup: re-sharing the same reel returns the existing card (docs/02),
+        # unless the previous run failed — in which case we retry it cleanly.
         existing = await cache.existing_card_for_url(session, url, owner_id=owner_id)
-        if existing is not None:
+        if existing is not None and existing.state != CardState.FAILED.value:
             return CreateCardResponse(
-                card_id=existing.id, state=CardState(existing.state), cached=True
+                card_id=existing.id,
+                state=CardState(existing.state),
+                cached=True,
             )
 
         within = await quota.card_budget(owner_id, request)
         # Degrade (skip server LLM, keep the bundle for on-device structuring)
         # when past quota OR when the client explicitly prefers the local model.
         degraded = (not within) or req.prefer_local
-        card = db.CardRow(
-            source_url=url,
-            platform=_platform_for(url),
-            state=CardState.QUEUED.value,
-            blocks=[],
-            owner_id=owner_id,
-        )
-        session.add(card)
-        await session.flush()  # assign card.id
+
+        if existing is not None and existing.state == CardState.FAILED.value:
+            card = existing
+            card.state = CardState.QUEUED.value
+            card.failure_reason = None
+            card.blocks = []
+            card.enrichment = None
+            card.verdicts = None
+            card.raw_bundle = None
+            card.extraction = None
+        else:
+            card = db.CardRow(
+                source_url=url,
+                platform=_platform_for(url),
+                state=CardState.QUEUED.value,
+                blocks=[],
+                owner_id=owner_id,
+            )
+            session.add(card)
+            await session.flush()  # assign card.id
+
         job = db.JobRow(card_id=card.id, state=JobState.QUEUED.value, degraded=degraded)
         session.add(job)
         await session.commit()

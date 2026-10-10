@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/api_client.dart';
 import '../../../../data/services/local_ai/local_ai_service.dart';
+import '../../../../domain/models/enums.dart';
 import '../../../../domain/models/pipeline_event.dart';
 
 enum ShareStatus {
@@ -89,8 +90,8 @@ class ShareViewModel extends ChangeNotifier {
         final result = await _repository.share(cleaned, preferLocal: preferLocal);
         _cardId = result.cardId;
         _quotaDegraded = result.quotaDegraded;
-        if (result.cached) {
-          // Deduped — card already exists; jump straight to it.
+        if (result.cached && result.state == CardState.ready) {
+          // Deduped — card already exists and is ready; jump straight to it.
           _status = ShareStatus.ready;
           _safeNotify();
           return _cardId;

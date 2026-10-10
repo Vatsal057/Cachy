@@ -198,8 +198,16 @@ def _serpapi_youtube_result(url: str, output_path: str) -> DownloadResult | None
                         author = info.get("uploader")
                     auto = info.get("automatic_captions") or {}
                     subs = info.get("subtitles") or {}
-                    en = subs.get("en") or auto.get("en") or auto.get("en-orig") or []
-                    for s in en:
+                    captions_dict = {**auto, **subs}
+                    target_tracks = []
+                    for lang_key in ("en", "en-US", "en-GB", "en-IN", "en-orig"):
+                        if lang_key in captions_dict:
+                            target_tracks = captions_dict[lang_key]
+                            break
+                    if not target_tracks and captions_dict:
+                        target_tracks = next(iter(captions_dict.values()))
+
+                    for s in target_tracks:
                         if s.get("ext") == "json3":
                             sub_resp = requests.get(s["url"], timeout=10)
                             if sub_resp.status_code == 200:
@@ -210,12 +218,29 @@ def _serpapi_youtube_result(url: str, output_path: str) -> DownloadResult | None
                                     for seg in ev.get("segs", [])
                                 ).strip()
                             break
+                        elif s.get("ext") == "vtt":
+                            sub_resp = requests.get(s["url"], timeout=10)
+                            if sub_resp.status_code == 200:
+                                lines = [
+                                    line.strip()
+                                    for line in sub_resp.text.splitlines()
+                                    if line.strip()
+                                    and not line.startswith("WEBVTT")
+                                    and "-->" not in line
+                                    and not line.isdigit()
+                                ]
+                                transcript_text = " ".join(lines).strip()
+                            break
             except Exception as e:
                 log.warning("direct youtube caption extraction failed for %s: %s", vid, e)
 
         if not transcript_text:
-            log.warning("no transcript found for %s via SerpApi or direct captions", vid)
-            return None
+            if title:
+                log.info("using title as fallback transcript for %s", vid)
+                transcript_text = f"Video Title: {title}. Channel: {author or 'Unknown'}"
+            else:
+                log.warning("no transcript or title found for %s via SerpApi or direct captions", vid)
+                return None
 
         out_p = Path(output_path)
         out_p.parent.mkdir(parents=True, exist_ok=True)
@@ -347,6 +372,7 @@ def download_content(
         if res:
             paths, caption = res
             log.info("download ok via instaloader (%d images)", len(paths))
+            return DownloadResult("images", paths, caption, "instaloader")
     # 6) SerpApi YouTube fallback — when direct media download is blocked on cloud IPs.
     #    SerpApi fetches the timestamped transcript and oEmbed fetches metadata/thumbnail.
     #    Ensures YouTube ingestion NEVER fails on Hugging Face Spaces.
