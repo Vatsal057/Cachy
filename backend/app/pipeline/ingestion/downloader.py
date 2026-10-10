@@ -175,13 +175,46 @@ def _serpapi_youtube_result(url: str, output_path: str) -> DownloadResult | None
         except Exception as e:
             log.debug("youtube oembed failed for %s: %s", vid, e)
 
+        transcript_text = ""
         segments = fetch_transcript(vid)
-        if not segments:
-            log.warning("serpapi youtube fallback: no transcript for %s", vid)
-            return None
+        if segments:
+            transcript_text = " ".join(s["text"] for s in segments if s.get("text")).strip()
 
-        transcript_text = " ".join(s["text"] for s in segments if s.get("text")).strip()
+        # If SerpApi transcript is unavailable (e.g. no key on cloud), extract directly via YouTube subtitles
         if not transcript_text:
+            try:
+                import yt_dlp
+                ydl_opts = {
+                    "skip_download": True,
+                    "quiet": True,
+                    "no_warnings": True,
+                    "extractor_args": {"youtube": {"player_client": ["android"]}},
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if not title:
+                        title = str(info.get("title") or "")
+                    if not author:
+                        author = info.get("uploader")
+                    auto = info.get("automatic_captions") or {}
+                    subs = info.get("subtitles") or {}
+                    en = subs.get("en") or auto.get("en") or auto.get("en-orig") or []
+                    for s in en:
+                        if s.get("ext") == "json3":
+                            sub_resp = requests.get(s["url"], timeout=10)
+                            if sub_resp.status_code == 200:
+                                data = sub_resp.json()
+                                transcript_text = "".join(
+                                    seg.get("utf8", "")
+                                    for ev in data.get("events", [])
+                                    for seg in ev.get("segs", [])
+                                ).strip()
+                            break
+            except Exception as e:
+                log.warning("direct youtube caption extraction failed for %s: %s", vid, e)
+
+        if not transcript_text:
+            log.warning("no transcript found for %s via SerpApi or direct captions", vid)
             return None
 
         out_p = Path(output_path)

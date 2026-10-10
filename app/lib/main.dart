@@ -59,7 +59,6 @@ Future<void> main() async {
   final repository = CardRepository(api: api, store: store);
   final appController = AppController(store, authService, idAuth);
   final localAi = GemmaLocalAiService(store: store);
-  FlutterNativeSplash.remove();
   runApp(CachyApp(
     repository: repository,
     appController: appController,
@@ -68,6 +67,9 @@ Future<void> main() async {
     highlightStore: highlightStore,
     localAi: localAi,
   ));
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    FlutterNativeSplash.remove();
+  });
 }
 
 /// Configure the native desktop window (size, minimum size, title) before the

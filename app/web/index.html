@@ -112,30 +112,20 @@
       const splash = document.getElementById("splash");
       if (splash && !splash.classList.contains("removing")) {
         splash.classList.add("removing");
-        splash.style.transition = "opacity 0.15s ease-out";
+        splash.style.transition = "opacity 0.25s ease-out";
         splash.style.opacity = "0";
-        setTimeout(() => splash.remove(), 150);
+        setTimeout(() => splash.remove(), 250);
       }
-      document.body.style.background = "transparent";
+      document.body.style.backgroundColor = "#F5F0E8";
     }
 
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeName && (node.nodeName.toLowerCase() === 'flutter-view' || node.nodeName.toLowerCase() === 'flt-glass-pane' || node.nodeName.toLowerCase() === 'canvas')) {
-            removeSplashFromWeb();
-            observer.disconnect();
-            return;
-          }
-        }
-      }
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-
-    window.addEventListener('load', function() {
-      removeSplashFromWeb();
-    });
+    // Called by FlutterNativeSplash.remove() via JS-interop when the first frame is painted
     window.addEventListener('removeSplashFromWeb', removeSplashFromWeb);
+
+    // Failsafe: if Flutter takes more than 4s or fails, clear splash so app is accessible
+    setTimeout(() => {
+      removeSplashFromWeb();
+    }, 4500);
   </script>
   <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
 </head>

@@ -631,7 +631,7 @@ def _download_yt_dlp(
     """
     out_path = Path(output_path)
     opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "best[ext=mp4]/best/bestvideo+bestaudio",
         "outtmpl": str(out_path),
         "merge_output_format": "mp4",
         "quiet": True,
@@ -644,7 +644,7 @@ def _download_yt_dlp(
         "socket_timeout": 15,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios", "mweb"]
+                "player_client": ["android"]
             }
         },
     }
