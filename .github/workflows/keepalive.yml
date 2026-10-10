@@ -1,0 +1,16 @@
+name: Keepalive Cachy Space
+
+on:
+  schedule:
+    # Ping every 4 hours to keep Hugging Face Space permanently awake
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  keepalive:
+    name: Ping Health Endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Cachy Space
+        run: |
+          curl -fsSL https://vatxzz-cachy.hf.space/health || echo "Keepalive ping failed"
