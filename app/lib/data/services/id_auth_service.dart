@@ -157,6 +157,12 @@ class IdAuthService extends ChangeNotifier {
     await _saveSession(json);
   }
 
+  /// 1-click authentication for judges to view the pre-verified demo shelf.
+  Future<void> loginJudgeDemo() async {
+    final json = await _post('/id/demo', {});
+    await _saveSession(json);
+  }
+
   /// Claim a Cachy ID onto the current Firebase account (Google/anonymous).
   /// Afterwards the same library is reachable via Google OR the ID — both
   /// resolve to the Firebase uid. [firebaseToken] is the caller's current

@@ -350,12 +350,16 @@ class _MetaPills extends StatelessWidget {
       if (type == 'checklist') steps += (b['items'] as List?)?.length ?? 0;
     }
     final hasInsight = card.insight?.hasContent ?? false;
+    final verdicts = card.verdicts;
+    final hasVerdicts = verdicts?.hasContent ?? false;
 
     final pills = <String>[
       if (actions > 0) '$actions ${actions == 1 ? 'action' : 'actions'}',
       if (steps > 0) '$steps steps',
     ];
-    if (pills.isEmpty && !hasInsight) return const SizedBox.shrink();
+    if (pills.isEmpty && !hasInsight && !hasVerdicts) {
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 7),
@@ -365,6 +369,11 @@ class _MetaPills extends StatelessWidget {
         children: [
           for (final p in pills) _Pill(label: p),
           if (hasInsight) const _Pill(label: 'Deep', highlight: true),
+          if (hasVerdicts)
+            _Pill(
+                label:
+                    '${verdicts!.claims.length} ${verdicts.claims.length == 1 ? 'claim' : 'claims'} checked',
+                highlight: true),
         ],
       ),
     );

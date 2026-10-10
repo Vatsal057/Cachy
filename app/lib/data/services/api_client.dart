@@ -18,6 +18,7 @@ import '../../domain/models/feed.dart';
 import '../../domain/models/graph.dart';
 import 'lan_discovery.dart';
 import '../../domain/models/pipeline_event.dart';
+import '../../domain/models/verdict.dart';
 
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
@@ -453,6 +454,20 @@ class ApiClient {
     final resp = await _send(
         (h) => _client.get(_uri('/search', {'q': query, 'limit': limit}), headers: h));
     return _decodeList(resp).map(Card.fromJson).toList();
+  }
+
+  /// Re-run the Verdict Timeline for a card's YouTube video (schema 1.8).
+  /// Returns the fresh timeline; the server overwrites the stored one.
+  /// Throws on 404 (no card), 422 (not a YouTube card / nothing verifiable).
+  Future<VerdictTimeline> recheckVerdicts(String cardId) async {
+    final resp = await _send(
+      (h) => _client.post(_uri('/cards/$cardId/verdicts/recheck'), headers: h),
+    );
+    final verdicts = _decodeMap(resp)['verdicts'];
+    if (verdicts is! Map<String, dynamic>) {
+      throw StateError('recheck returned no verdicts');
+    }
+    return VerdictTimeline.fromJson(verdicts);
   }
 
   /// Grounded Q&A over one card (docs/13). Send the full history each turn as

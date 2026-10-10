@@ -197,3 +197,14 @@ async def test_disabled_without_secret(client) -> None:
         "/id/register", json={"username": "x", "password": "password123"}
     )
     assert resp.status_code == 503
+
+
+async def test_demo_login(client, id_secret) -> None:
+    """Judge 1-click demo login returns a valid token with judge uid."""
+    resp = await client.post("/id/demo")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["uid"] == "judge_hackathon_2026"
+    assert data["username"] == "judge"
+    assert "token" in data
+

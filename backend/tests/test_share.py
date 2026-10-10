@@ -349,3 +349,86 @@ async def test_share_page_with_schema_1_6_list_quiz_and_poison_blocks(client, da
     assert "Active Recall Quiz" in page_resp.text
     assert "What is the key takeaway?" in page_resp.text
 
+
+async def test_share_page_renders_verdict_timeline(client, database) -> None:
+    """Verdict timeline renders on public share pages with ticks, claims, and evidence chips."""
+    _as("uid-a")
+    async with database.session() as s:
+        card = db.CardRow(
+            owner_id="uid-a",
+            source_url="https://example.com/facts",
+            state=CardState.READY.value,
+            one_liner="Science facts test card",
+            tldr="Frogs and dinos",
+            blocks=[{"type": "paragraph", "text": "Some text"}],
+            verdicts={
+                "schema_version": "1.0",
+                "status": "ready",
+                "counts": {"green": 1, "amber": 1, "red": 0, "grey": 0},
+                "verdicts": [
+                    {
+                        "segment_id": 0,
+                        "timestamp_label": "00:00 - 00:25",
+                        "claim": "Golden poison frog carries enough poison for 10 people.",
+                        "verdict": "green",
+                        "confidence": 0.9,
+                        "notes": "Corroborated by multiple scientific sources.",
+                        "evidence": [
+                            {
+                                "title": "Golden Poison Dart Frog - National Geographic",
+                                "link": "https://nationalgeographic.com/animals/golden-poison-frog",
+                                "snippet": "A single 2-inch frog has enough venom to kill 10 humans.",
+                                "source": "National Geographic",
+                                "date": "2023-01-15",
+                                "usable": True,
+                            }
+                        ],
+                    },
+                    {
+                        "segment_id": 1,
+                        "timestamp_label": "00:25 - 00:45",
+                        "claim": "T-Rex and Stegosaurus lived further apart in time than T-Rex and humans.",
+                        "verdict": "amber",
+                        "confidence": 0.7,
+                        "notes": "One primary museum source found.",
+                        "evidence": [
+                            {
+                                "title": "Dinosaur Timeline - Smithsonian",
+                                "link": "https://smithsonian.org/dinosaurs",
+                                "snippet": "Stegosaurus lived 150 million years ago.",
+                                "source": "Smithsonian",
+                                "date": "2022-08-10",
+                                "usable": True,
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+        s.add(card)
+        await s.commit()
+        await s.refresh(card)
+        card_id = card.id
+
+    token = (await client.post(f"/cards/{card_id}/share")).json()["token"]
+
+    # Test HTML view
+    resp = await client.get(f"/s/{token}")
+    assert resp.status_code == 200, resp.text
+    html_text = resp.text
+    assert "FACT CHECK TIMELINE" in html_text
+    assert "1 confirmed" in html_text
+    assert "1 one source" in html_text
+    assert "Golden poison frog carries enough poison" in html_text
+    assert "National Geographic" in html_text
+    assert "Smithsonian" in html_text
+    assert "verdict-dot green" in html_text
+    assert "verdict-dot amber" in html_text
+
+    # Test JSON share endpoint includes verdicts
+    json_resp = await client.get(f"/share/{token}")
+    assert json_resp.status_code == 200
+    assert "verdicts" in json_resp.json()
+    assert json_resp.json()["verdicts"]["counts"]["green"] == 1
+
+

@@ -27,6 +27,8 @@ from app.pipeline.ingestion.downloader import (
     DownloaderConfig,
     download_content_async,
 )
+from app.pipeline.enrichment import enrich_async
+from app.pipeline.verdicts import verify_transcript_async, verify_video_async, video_id_from_url
 from app.pipeline.insight import analyze_async
 from app.pipeline.structuring import structure_async
 from app.services import artifact_images, embeddings, events, llm_chat, notify
@@ -170,6 +172,28 @@ async def _write_insight(session, card_id: str, insight) -> None:
         update(db.CardRow)
         .where(db.CardRow.id == card_id)
         .values(insight=insight.model_dump())
+    )
+    await session.commit()
+
+
+async def _write_enrichment(session, card_id: str, enrichment: dict) -> None:
+    """Persist the web-enrichment layer (SerpApi sources). Best-effort like
+    insight: a failure here never blocks the card."""
+    await session.execute(
+        update(db.CardRow)
+        .where(db.CardRow.id == card_id)
+        .values(enrichment=enrichment)
+    )
+    await session.commit()
+
+
+async def _write_verdicts(session, card_id: str, verdicts: dict) -> None:
+    """Persist the Verdict Timeline layer. Best-effort like enrichment: a
+    failure here never blocks the card."""
+    await session.execute(
+        update(db.CardRow)
+        .where(db.CardRow.id == card_id)
+        .values(verdicts=verdicts)
     )
     await session.commit()
 
@@ -466,6 +490,77 @@ async def _run_job(session, job: db.JobRow) -> None:
             log.warning("%s Step 4b deep-analysis failed: %s", tag, str(e), exc_info=True)
     else:
         log.info("%s Step 4b deep-analysis: depth=shallow, skipping", tag)
+
+    # 4c) Web enrichment (SerpApi) — every card gets live sources on its topic.
+    # Best-effort + isolated like insight/embeddings: no key, a network/API
+    # failure, or an empty result set leaves enrichment=None and never blocks
+    # the card from going READY.
+    events.publish(card_id, "enriching", "processing", "Finding related sources")
+    log.info("%s Step 4c/6 enrich: SerpApi web sources", tag)
+    try:
+        enrichment = await enrich_async(
+            structured.base.one_liner, structured.base.tldr, structured.base.tags,
+        )
+        if enrichment and enrichment.get("sources"):
+            await _write_enrichment(session, card_id, enrichment)
+            log.info(
+                "%s Step 4c/6 enrich OK | sources=%d query=%r", tag,
+                len(enrichment["sources"]), enrichment.get("query"),
+            )
+        else:
+            log.info("%s Step 4c/6 enrich: no sources (key missing or no results)", tag)
+    except Exception as e:  # noqa: BLE001 — enrichment is non-critical to the card
+        await session.rollback()
+        log.warning("%s Step 4c/6 enrich failed: %s", tag, str(e), exc_info=True)
+
+    # 4d) Verdict Timeline (SerpApi) — per-window claim verification.
+    # Runs on YouTube videos via SerpApi transcript, OR on Reels/other videos
+    # via Whisper extraction.transcript. Best-effort + isolated like enrichment.
+    video_id = video_id_from_url(url)
+    transcript_text = getattr(extraction, "transcript", "") or ""
+    if video_id:
+        events.publish(card_id, "verifying", "processing", "Verifying claims")
+        log.info("%s Step 4d/6 verdicts: Verdict Timeline for video %s", tag, video_id)
+        try:
+            verdicts = await verify_video_async(video_id)
+            if (not verdicts or not verdicts.get("claims")) and transcript_text:
+                log.info("%s Step 4d/6 verdicts: no YouTube captions, trying Whisper transcript", tag)
+                verdicts = await verify_transcript_async(transcript_text, video_id=video_id)
+            if verdicts and verdicts.get("claims"):
+                await _write_verdicts(session, card_id, verdicts)
+                counts: dict[str, int] = {}
+                for c in verdicts["claims"]:
+                    counts[c["verdict"]] = counts.get(c["verdict"], 0) + 1
+                log.info(
+                    "%s Step 4d/6 verdicts OK | claims=%d %s", tag,
+                    len(verdicts["claims"]), counts,
+                )
+            else:
+                log.info("%s Step 4d/6 verdicts: no timeline (no transcript/claims/key)", tag)
+        except Exception as e:  # noqa: BLE001 — verdicts are non-critical to the card
+            await session.rollback()
+            log.warning("%s Step 4d/6 verdicts failed: %s", tag, str(e), exc_info=True)
+    elif transcript_text:
+        events.publish(card_id, "verifying", "processing", "Verifying claims from Reel transcript")
+        log.info("%s Step 4d/6 verdicts: Verdict Timeline for Reel transcript (%d chars)", tag, len(transcript_text))
+        try:
+            verdicts = await verify_transcript_async(transcript_text)
+            if verdicts and verdicts.get("claims"):
+                await _write_verdicts(session, card_id, verdicts)
+                counts = {}
+                for c in verdicts["claims"]:
+                    counts[c["verdict"]] = counts.get(c["verdict"], 0) + 1
+                log.info(
+                    "%s Step 4d/6 verdicts OK (Reel) | claims=%d %s", tag,
+                    len(verdicts["claims"]), counts,
+                )
+            else:
+                log.info("%s Step 4d/6 verdicts: no timeline for Reel (no claims/key)", tag)
+        except Exception as e:  # noqa: BLE001 — verdicts are non-critical to the card
+            await session.rollback()
+            log.warning("%s Step 4d/6 verdicts failed for Reel: %s", tag, str(e), exc_info=True)
+    else:
+        log.info("%s Step 4d/6 verdicts: no video_id and no transcript, skipping", tag)
 
     # 5) Catalog: aggregate any referenced artifacts + fetch their thumbnails.
     if structured.artifacts:

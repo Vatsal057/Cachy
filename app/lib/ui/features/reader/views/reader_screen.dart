@@ -34,6 +34,7 @@ import '../../concepts/views/concept_detail_screen.dart';
 import '../view_models/reader_view_model.dart';
 import 'insight_section.dart';
 import 'primary_action_bar.dart';
+import 'verdict_section.dart';
 
 class ReaderScreen extends StatelessWidget {
   const ReaderScreen({
@@ -246,6 +247,19 @@ class _ReaderView extends StatelessWidget {
 
                       // Skeleton placeholders for insight/refs/concepts (arrive at done)
                       if (card.isProcessing) const _SkeletonBottomSections(),
+
+                      // Verdict Timeline — per-window claim verdicts (schema 1.8)
+                      if (card.isReady &&
+                          card.verdicts != null &&
+                          card.verdicts!.hasContent)
+                        KeyedSubtree(
+                          child: VerdictSection(
+                            cardId: card.cardId,
+                            timeline: card.verdicts!,
+                            accent: accent,
+                            api: api,
+                          ),
+                        ),
 
                       // DO THIS NOW — action items
                       if (card.isReady && card.actionItems.isPresent)

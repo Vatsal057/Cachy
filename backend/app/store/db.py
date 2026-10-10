@@ -44,6 +44,7 @@ from app.models.card import (
     Card,
     CardState,
     ContentType,
+    Enrichment,
     ExtractionFlags,
     FailureReason,
     Insight,
@@ -52,6 +53,7 @@ from app.models.card import (
     PrimaryAction,
     SCHEMA_VERSION,
     Source,
+    VerdictTimeline,
     sanitize_blocks,
 )
 from app.models.job import JobState
@@ -122,6 +124,11 @@ class CardRow(Base):
     blocks: Mapped[list] = mapped_column(JSON, default=list)
     # Deep-analysis layer (docs/14): null for simple cards, filled by the gated pass.
     insight: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Web-enrichment layer (SerpApi sources): null when the step found nothing.
+    enrichment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Verdict Timeline layer (schema 1.8): null when the video had no
+    # transcript, no checkable claims, or the step found nothing.
+    verdicts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     thumbnail: Mapped[str | None] = mapped_column(String, nullable=True)
     keyframes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     extraction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -187,6 +194,8 @@ class CardRow(Base):
             ),
             blocks=blocks,
             insight=_model_or_none(Insight, self.insight, self.id, "insight"),
+            enrichment=_model_or_none(Enrichment, self.enrichment, self.id, "enrichment"),
+            verdicts=_model_or_none(VerdictTimeline, self.verdicts, self.id, "verdicts"),
             media=Media(
                 thumbnail=media_store.to_media_url(self.thumbnail),
                 keyframes=[
@@ -890,6 +899,8 @@ async def init_db() -> None:
                 "insight": "JSON",  # docs/14 — added in schema 1.4
                 "collection_id": "TEXT",  # schema 1.5 — collections FK
                 "raw_bundle": "TEXT",  # V2 on-device AI — degraded-job bundle
+                "enrichment": "JSON",  # schema 1.7 — SerpApi web-enrichment layer
+                "verdicts": "JSON",  # schema 1.8 — Verdict Timeline layer
             },
         )
         await _add_missing_columns(

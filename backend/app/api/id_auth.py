@@ -176,6 +176,15 @@ async def login(req: LoginRequest, request: Request) -> dict:
     return {"uid": uid, "username": username, "token": _mint(uid, username)}
 
 
+@router.post("/demo")
+async def demo_login() -> dict:
+    """1-click authentication for hackathon judges into the curated pre-verified shelf."""
+    _require_enabled()
+    uid = "judge_hackathon_2026"
+    username = "judge"
+    return {"uid": uid, "username": username, "token": _mint(uid, username)}
+
+
 @router.post("/link")
 async def link_id_to_firebase(req: LinkRequest, request: Request, owner_id: OwnerDep) -> dict:
     """Claim a Cachy ID onto the caller's Firebase account (Google/anonymous).

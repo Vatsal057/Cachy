@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     gemini_vv: str = ""
     gemini_d08: str = ""
     gemini_dvu: str = ""
-    gemini_llm_model: str = "gemini-2.5-flash"
+    gemini_llm_model: str = "gemini-3.8-flash"
 
     # bundle preprocessor (Gemini 3.x Flash Lite — 500 RPD / 250k TPM, separate
     # quota pool): dedupe + strip filler on the fat bundle before structuring.
@@ -91,6 +91,11 @@ class Settings(BaseSettings):
 
     # semantic search embeddings (free, reuses hf_api_key; docs/09)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+
+    # SerpApi web enrichment (Google engine). Free tier: 250 searches/month,
+    # one search per card. Unset -> the enrichment step is a no-op and cards
+    # work exactly as before.
+    serpapi_api_key: str = "" 
 
     # ingestion
     rapidapi_key: str = ""
@@ -197,6 +202,10 @@ class Settings(BaseSettings):
     @property
     def local_whisper_enabled(self) -> bool:
         return self.whisper_backend == "local"
+
+    @property
+    def serpapi_enabled(self) -> bool:
+        return bool(self.serpapi_api_key.strip())
 
     @property
     def ig_bot_enabled(self) -> bool:

@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../data/repositories/card_repository.dart';
 import '../../../../data/services/auth_service.dart';
+import '../../../../data/services/id_auth_service.dart';
 import '../../../core/brand.dart';
 import '../../../core/widgets/responsive_center.dart';
 import 'id_auth_screen.dart';
@@ -95,6 +96,25 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _busy
                         ? null
                         : () => _run(() async {
+                              final idAuth = context.read<IdAuthService>();
+                              await idAuth.loginJudgeDemo();
+                            }),
+                    icon: const PhosphorIcon(PhosphorIconsRegular.sealCheck,
+                        size: 20),
+                    label: const Text('Explore Demo Shelf (Hackathon Judges)'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                      minimumSize: const Size.fromHeight(56),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() async {
                               final api = context.read<CardRepository>().api;
                               await auth.signInWithGoogle(
                                 mergeGuestData: api.mergeGuestLibrary,
@@ -103,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     icon: const PhosphorIcon(PhosphorIconsRegular.googleLogo,
                         size: 20),
                     label: const Text('Continue with Google'),
-                    style: FilledButton.styleFrom(
+                    style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(56),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),

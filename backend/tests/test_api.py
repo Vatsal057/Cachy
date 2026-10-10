@@ -11,7 +11,7 @@ from app.main import app
 async def test_health(client):
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json()["schema_version"] == "1.6"
+    assert r.json()["schema_version"] == "1.8"
 
 
 async def test_create_returns_id_and_queued(client):

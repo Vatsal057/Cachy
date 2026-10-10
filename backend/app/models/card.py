@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 
-SCHEMA_VERSION = "1.6"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections; 1.6: insight quiz (topic_map dropped)
+SCHEMA_VERSION = "1.8"  # 1.1: artifacts list (docs/12); 1.2: base.tags (docs/09); 1.3: action_items (docs/13); 1.4: insight layer (docs/14); 1.5: collections; 1.6: insight quiz (topic_map dropped); 1.7: web enrichment layer (SerpApi sources); 1.8: verdict timeline (per-window claim verdicts)
 
 
 # --------------------------------------------------------------------------- #
@@ -205,7 +205,6 @@ VOCAB: set[str] = {
     "step_list",
     "key_value",
     "checklist",
-    "callout",
     "link",
     "map",
     "table",
@@ -329,6 +328,69 @@ class Insight(BaseModel):
         )
 
 
+class EnrichmentSource(BaseModel):
+    """One live web source on the card's topic (SerpApi Google engine)."""
+    title: str
+    link: str
+    snippet: str = ""
+    source: str = ""
+
+
+class Enrichment(BaseModel):
+    """The web-enrichment layer: the query the card's topic became, plus the
+    top live sources. None on the card when the step had no key or found
+    nothing — genuinely optional, like insight."""
+    query: str = ""
+    sources: list[EnrichmentSource] = Field(default_factory=list)
+
+    def has_content(self) -> bool:
+        return bool(self.sources)
+
+
+# --------------------------------------------------------------------------- #
+# Verdict Timeline layer (schema 1.8) — per-window factual-claim verification.
+# The verdict agent checks each 30-second transcript window's claims against
+# live, date-bounded SerpApi evidence. Verdicts are deterministic (LLM proposes
+# stances, code disposes): green = 2+ distinct corroborating domains,
+# red = dated contradiction, amber = single corroboration, grey = insufficient
+# evidence. The timeline persists on the card: the note remembers what the web
+# confirmed ("checks and remembers").
+# --------------------------------------------------------------------------- #
+
+class VerdictEvidence(BaseModel):
+    """One dated web source behind a verdict, with its stance toward the claim."""
+    title: str
+    link: str
+    snippet: str = ""
+    source: str = ""
+    date: str = ""
+    stance: str = "supports"  # supports | contradicts
+
+
+class ClaimVerdict(BaseModel):
+    """One checked claim: where in the video, what was claimed, the verdict,
+    and the dated evidence behind it."""
+    window_index: int
+    window_start: float = 0.0
+    window_end: float = 0.0
+    claim: str
+    verdict: str = "grey"  # green | amber | red | grey
+    note: str = ""
+    evidence: list[VerdictEvidence] = Field(default_factory=list)
+
+
+class VerdictTimeline(BaseModel):
+    """The whole timeline for one video. None on the card when the video had
+    no transcript, no checkable claims, or no SerpApi key — genuinely optional."""
+    video_id: str = ""
+    checked_at: str = ""
+    published_date: str = ""
+    claims: list[ClaimVerdict] = Field(default_factory=list)
+
+    def has_content(self) -> bool:
+        return bool(self.claims)
+
+
 class Media(BaseModel):
     thumbnail: Optional[str] = None
     keyframes: list[str] = Field(default_factory=list)
@@ -360,6 +422,12 @@ class Card(BaseModel):
     blocks: list[Block] = Field(default_factory=list)
     # Deep analysis (docs/14). None for simple cards; only the gated 2nd pass fills it.
     insight: Optional[Insight] = None
+    # Web enrichment (SerpApi). None when the step had no key or found nothing;
+    # filled for every card whose topic returned live sources.
+    enrichment: Optional[Enrichment] = None
+    # Verdict Timeline (SerpApi, schema 1.8). None when the video had no
+    # transcript, no checkable claims, or no key; filled per YouTube card.
+    verdicts: Optional[VerdictTimeline] = None
     media: Media = Field(default_factory=Media)
     meta: Meta = Field(default_factory=Meta)
     # Collection this card belongs to (auto-assigned by pipeline, user-overridable).

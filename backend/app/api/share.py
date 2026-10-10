@@ -121,18 +121,29 @@ def _media_filenames(row: db.CardRow) -> list[str]:
 
 def _public_thumbnail(row: db.CardRow, token: str, base: str) -> str | None:
     """Absolute thumbnail URL for the share page / OG tags. Owner-gated
-    /media/ paths are rewritten to the token-gated share route."""
+    /media/ paths are rewritten to the token-gated share route.
+    If the thumbnail points to local/missing media but the card is a YouTube
+    video, fall back to YouTube's public thumbnail CDN so it always renders."""
+    from app.pipeline.verdicts import video_id_from_url
+
+    vid = video_id_from_url(row.source_url or "") if row.source_url else None
+    yt_thumb = f"https://img.youtube.com/vi/{vid}/hqdefault.jpg" if vid else None
+
     ref = media_store.to_media_url(row.thumbnail)
     if not ref:
-        return None
+        return yt_thumb
     if ref.startswith("/media/"):
         parts = ref.split("/")
         if len(parts) == 4 and parts[3]:
+            # If we have a direct YouTube thumb, prefer it to avoid missing local scratch files
+            if yt_thumb:
+                return yt_thumb
             return f"{base}/s/{token}/media/{parts[3]}"
-        return None
+        return yt_thumb
     if ref.startswith("http://") or ref.startswith("https://"):
         return ref
-    return None
+    return yt_thumb
+
 
 
 def _estimate_read_minutes(row: db.CardRow) -> int:
@@ -167,6 +178,8 @@ def _public_payload(
         "blocks": row.blocks or [],
         "action_items": row.action_items or {},
         "insight": row.insight or {},
+        "enrichment": row.enrichment or {},
+        "verdicts": row.verdicts or {},
         "artifacts": artifacts,
         "concepts": concepts,
         "read_minutes": _estimate_read_minutes(row),
@@ -785,6 +798,129 @@ def _render_concepts_html(concepts: list[dict]) -> str:
     """
 
 
+def _render_verdicts_html(data: dict | None) -> str:
+    """Render per-window factual claim verdicts with color-coded ticks and evidence chips."""
+    if not isinstance(data, dict):
+        return ""
+    claims = data.get("claims") or data.get("verdicts") or []
+    if not claims:
+        return ""
+    e = html.escape
+    counts = data.get("counts")
+    if not counts or not isinstance(counts, dict):
+        counts = {}
+        for c in claims:
+            if isinstance(c, dict):
+                v = str(c.get("verdict") or "grey").lower()
+                counts[v] = counts.get(v, 0) + 1
+
+    parts = []
+    if counts.get("green", 0) > 0:
+        parts.append(f"{counts['green']} confirmed")
+    if counts.get("amber", 0) > 0:
+        parts.append(f"{counts['amber']} one source")
+    if counts.get("red", 0) > 0:
+        parts.append(f"{counts['red']} contradicted")
+    if counts.get("grey", 0) > 0:
+        parts.append(f"{counts['grey']} unverified")
+
+    summary_text = f"{len(claims)} factual claims"
+    if parts:
+        summary_text += " · " + ", ".join(parts)
+
+    rows: list[str] = []
+    total = len(claims)
+    for idx, item in enumerate(claims):
+        if not isinstance(item, dict):
+            continue
+        v = str(item.get("verdict") or "grey").lower()
+        if v not in ("green", "amber", "red", "grey"):
+            v = "grey"
+        v_labels = {
+            "green": "Confirmed",
+            "amber": "One source",
+            "red": "Contradicted",
+            "grey": "Unverified",
+        }
+        v_label = v_labels.get(v, "Unverified")
+
+        # Window timestamp label
+        ts = item.get("timestamp_label")
+        if not ts:
+            w_start = int(item.get("window_start") or 0)
+            w_end = int(item.get("window_end") or 0)
+            def fmt(s: int) -> str:
+                return f"{s // 60}:{s % 60:02d}"
+            ts = f"{fmt(w_start)}-{fmt(w_end)}" if w_end > 0 else "0:00"
+        ts = e(str(ts))
+
+        claim_text = e(str(item.get("claim") or ""))
+        note_text = item.get("note") or item.get("notes") or ""
+        notes = e(str(note_text))
+
+        ev_chips: list[str] = []
+        for ev in (item.get("evidence") or []):
+            if not isinstance(ev, dict):
+                continue
+            raw_src = ev.get("source") or ""
+            link = str(ev.get("link") or "")
+            if not raw_src or raw_src.startswith("{"):
+                try:
+                    from urllib.parse import urlparse
+                    raw_src = urlparse(link).netloc.replace("www.", "")
+                except Exception:
+                    raw_src = "Source"
+            src = e(str(raw_src or "Source"))
+            safe_link = e(link, quote=True)
+            dt = e(str(ev.get("date") or ""))
+            dt_span = f" <span class='chip-date'>· {dt}</span>" if dt else ""
+            if safe_link and safe_link.startswith(("http://", "https://")):
+                ev_chips.append(
+                    f"<a class='evidence-chip' href='{safe_link}' target='_blank' rel='noopener'>"
+                    f"  <span>{src}</span>{dt_span}"
+                    f"  <svg width='10' height='10' viewBox='0 0 256 256' fill='currentColor'>"
+                    f"    <path d='M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z'/>"
+                    f"  </svg>"
+                    f"</a>"
+                )
+            else:
+                ev_chips.append(
+                    f"<span class='evidence-chip'><span>{src}</span>{dt_span}</span>"
+                )
+        ev_html = f"<div class='evidence-wrap'>{''.join(ev_chips)}</div>" if ev_chips else ""
+        notes_html = f"<div class='verdict-notes'>{notes}</div>" if notes else ""
+        line_html = "<div class='verdict-line'></div>" if idx < total - 1 else ""
+
+        rows.append(
+            f"<div class='verdict-item'>"
+            f"  <div class='verdict-rail'>"
+            f"    <div class='verdict-dot {v}'></div>"
+            f"    {line_html}"
+            f"  </div>"
+            f"  <div class='verdict-content'>"
+            f"    <div class='verdict-badge {v}'>{ts} · {v_label}</div>"
+            f"    <div class='verdict-claim'>{claim_text}</div>"
+            f"    {notes_html}"
+            f"    {ev_html}"
+            f"  </div>"
+            f"</div>"
+        )
+
+    return f"""
+    <div class='section-group'>
+      <div class='section-eyebrow'>
+        <span class='eyebrow-bar'></span>
+        <span class='eyebrow-text'>FACT CHECK TIMELINE</span>
+        <span class='eyebrow-count'>{total}</span>
+      </div>
+      <div class='verdict-summary'>{e(summary_text)}</div>
+      <div class='verdict-list'>
+        {''.join(rows)}
+      </div>
+    </div>
+    """
+
+
 def _render_share_page(p: dict) -> str:
     """Full HTML share page rendered with Cachy editorial aesthetics."""
     e = html.escape
@@ -802,7 +938,7 @@ def _render_share_page(p: dict) -> str:
     )
     thumb_html = (
         f"<div class='hero-media'>"
-        f"  <img class='hero-img' src='{e(thumb, quote=True)}' alt='{title}'>"
+        f"  <img class='hero-img' src='{e(thumb, quote=True)}' alt='{title}' onerror=\"this.closest('.hero-media').style.display='none'\">"
         f"  <div class='hero-fade'></div>"
         f"</div>"
         if thumb else ""
@@ -818,6 +954,12 @@ def _render_share_page(p: dict) -> str:
     except Exception as exc:
         log.warning("error rendering blocks for share: %s", exc)
         blocks_html = ""
+
+    try:
+        verdicts_html = _render_verdicts_html(p.get("verdicts"))
+    except Exception as exc:
+        log.warning("error rendering verdicts for share: %s", exc)
+        verdicts_html = ""
 
     try:
         actions_html = _render_action_items_html(p.get("action_items"))
@@ -1427,6 +1569,124 @@ def _render_share_page(p: dict) -> str:
     padding: 1px 6px;
     font-family: 'IBM Plex Mono', monospace;
   }}
+  /* Verdict Timeline */
+  .verdict-summary {{
+    font-size: 13px;
+    color: var(--muted);
+    margin: 2px 0 16px;
+  }}
+  .verdict-list {{
+    display: flex;
+    flex-direction: column;
+  }}
+  .verdict-item {{
+    display: flex;
+    gap: 12px;
+  }}
+  .verdict-rail {{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 14px;
+    flex-shrink: 0;
+  }}
+  .verdict-dot {{
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }}
+  .verdict-dot.green {{ background: #2E9E5B; box-shadow: 0 0 8px rgba(46, 158, 91, 0.4); }}
+  .verdict-dot.amber {{ background: #D9930D; box-shadow: 0 0 8px rgba(217, 147, 13, 0.4); }}
+  .verdict-dot.red {{ background: #E5484D; box-shadow: 0 0 8px rgba(229, 72, 77, 0.4); }}
+  .verdict-dot.grey {{ background: var(--muted); }}
+  .verdict-line {{
+    width: 2px;
+    flex: 1;
+    background: var(--line);
+    margin: 4px 0;
+  }}
+  .verdict-content {{
+    flex: 1;
+    padding-bottom: 20px;
+  }}
+  .verdict-item:last-child .verdict-content {{
+    padding-bottom: 4px;
+  }}
+  .verdict-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+  }}
+  .verdict-badge.green {{
+    background: rgba(46, 158, 91, 0.15);
+    color: #2E9E5B;
+    border: 1px solid rgba(46, 158, 91, 0.35);
+  }}
+  .verdict-badge.amber {{
+    background: rgba(217, 147, 13, 0.15);
+    color: #D9930D;
+    border: 1px solid rgba(217, 147, 13, 0.35);
+  }}
+  .verdict-badge.red {{
+    background: rgba(229, 72, 77, 0.15);
+    color: #E5484D;
+    border: 1px solid rgba(229, 72, 77, 0.35);
+  }}
+  .verdict-badge.grey {{
+    background: var(--raised);
+    color: var(--muted);
+    border: 1px solid var(--line);
+  }}
+  .verdict-claim {{
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }}
+  .verdict-notes {{
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }}
+  .evidence-wrap {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }}
+  .evidence-chip {{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--raised);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 12px;
+    color: var(--ink);
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }}
+  .evidence-chip:hover {{
+    border-color: var(--accent);
+    background: var(--accent-tint);
+  }}
+  .evidence-chip .chip-date {{
+    color: var(--muted);
+    font-size: 11px;
+  }}
+  .evidence-chip svg {{
+    color: var(--muted);
+  }}
   /* Source Line & Footer */
   .source-line {{
     margin-top: 24px;
@@ -1530,6 +1790,8 @@ def _render_share_page(p: dict) -> str:
   {f"<div class='section-group'><div class='section-eyebrow'><span class='eyebrow-bar'></span><span class='eyebrow-text'>CORE TAKEAWAY</span></div><div class='section-card tldr-card'>{tldr}</div></div>" if tldr else ""}
 
   {blocks_html}
+
+  {verdicts_html}
 
   {actions_html}
 

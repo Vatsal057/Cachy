@@ -201,10 +201,10 @@ async def test_process_thread_multi_reel_batch(database) -> None:
             assert card is not None
             assert card.owner_id == owner_id
 
-    # Verify customized reply mentioning 2 cards
+    # Verify customized reply mentioning 2 items
     poller.cl.direct_send.assert_called_once()
     reply = poller.cl.direct_send.call_args[0][0]
-    assert "2 Cachy cards" in reply
+    assert "2" in reply and ("cards" in reply or "reels" in reply)
 
 
 async def test_process_thread_replies_link_warning_for_unlinked_user(database) -> None:

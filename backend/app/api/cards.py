@@ -263,6 +263,67 @@ async def get_card(card_id: str, owner_id: OwnerDep) -> Card:
         return row.to_card()
 
 
+class VerdictRecheckResponse(BaseModel):
+    card_id: str
+    verdicts: dict | None = None
+    claims: int = 0
+
+
+@router.post("/{card_id}/verdicts/recheck", response_model=VerdictRecheckResponse)
+async def recheck_verdicts(card_id: str, owner_id: OwnerDep) -> VerdictRecheckResponse:
+    """Re-run the Verdict Timeline for a card's YouTube video and overwrite the
+    stored timeline. Powers the demo's live re-check beat: fresh verdicts with
+    a new checked_at timestamp. Best-effort — a failed re-check keeps the old
+    timeline and reports why."""
+    from sqlalchemy import update as sa_update
+    import json
+
+    from app.pipeline.verdicts import verify_transcript_async, verify_video_async, video_id_from_url
+
+    async with db.session() as session:
+        row = await db.get_card_row(session, card_id, owner_id=owner_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="card not found")
+        video_id = video_id_from_url(row.source_url or "")
+        if video_id:
+            verdicts = await verify_video_async(video_id)
+        else:
+            transcript = ""
+            if row.raw_bundle:
+                try:
+                    raw_data = json.loads(row.raw_bundle)
+                    transcript = raw_data.get("transcript") or ""
+                except Exception:
+                    pass
+            if not transcript and row.blocks:
+                transcript = " ".join(
+                    str(b.get("text") or "") for b in row.blocks if isinstance(b, dict) and b.get("text")
+                )
+            if not transcript and row.tldr:
+                transcript = f"{row.one_liner or ''}\n{row.tldr or ''}"
+            if not transcript:
+                raise HTTPException(status_code=422, detail="card has no video ID or transcript to verify")
+            verdicts = await verify_transcript_async(transcript)
+
+        if not verdicts or not verdicts.get("claims"):
+            raise HTTPException(
+                status_code=422,
+                detail="could not verify: no transcript, no checkable claims, or no evidence",
+            )
+        await session.execute(
+            sa_update(db.CardRow)
+            .where(db.CardRow.id == card_id)
+            .values(verdicts=verdicts)
+        )
+        await session.commit()
+        invalidate_graph_cache()
+        return VerdictRecheckResponse(
+            card_id=card_id,
+            verdicts=verdicts,
+            claims=len(verdicts["claims"]),
+        )
+
+
 @router.get("", response_model=list[Card])
 async def list_cards(
     owner_id: OwnerDep,

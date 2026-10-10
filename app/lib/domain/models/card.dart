@@ -5,6 +5,7 @@ library;
 
 import 'block.dart';
 import 'enums.dart';
+import 'verdict.dart';
 
 class Source {
   const Source({
@@ -275,6 +276,7 @@ class Card {
     this.actionItems = const ActionItems(),
     this.blocks = const [],
     this.insight,
+    this.verdicts,
     this.media = const Media(),
     this.meta = const Meta(),
     this.rawBlocks = const [],
@@ -291,6 +293,7 @@ class Card {
   final ActionItems actionItems;
   final List<Block> blocks;
   final Insight? insight; // deep-analysis layer (docs/14); null for simple cards
+  final VerdictTimeline? verdicts; // verdict timeline (schema 1.8); null when no transcript/claims
   final Media media;
   final Meta meta;
   final String? collectionId;
@@ -330,6 +333,9 @@ class Card {
       insight: json['insight'] is Map<String, dynamic>
           ? Insight.fromJson(json['insight'] as Map<String, dynamic>)
           : null,
+      verdicts: json['verdicts'] is Map<String, dynamic>
+          ? VerdictTimeline.fromJson(json['verdicts'] as Map<String, dynamic>)
+          : null,
       media: Media.fromJson((json['media'] as Map<String, dynamic>?) ?? const {}),
       meta: Meta.fromJson((json['meta'] as Map<String, dynamic>?) ?? const {}),
       rawBlocks: rawBlocks,
@@ -342,6 +348,7 @@ class Card {
     ActionItems? actionItems,
     List<Block>? blocks,
     List<Map<String, dynamic>>? rawBlocks,
+    VerdictTimeline? verdicts,
   }) =>
       Card(
         schemaVersion: schemaVersion,
@@ -354,6 +361,7 @@ class Card {
         actionItems: actionItems ?? this.actionItems,
         blocks: blocks ?? this.blocks,
         insight: insight,
+        verdicts: verdicts ?? this.verdicts,
         media: media,
         meta: meta,
         rawBlocks: rawBlocks ?? this.rawBlocks,
