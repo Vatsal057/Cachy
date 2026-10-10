@@ -161,6 +161,41 @@ class _CaptureSheetState extends State<_CaptureSheet> {
               icon: const PhosphorIcon(PhosphorIconsRegular.sparkle, size: 20),
               label: const Text('Capture'),
             ),
+            const SizedBox(height: 20),
+            Text(
+              'Sample shorts to test (1-tap):',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _SampleLinkChip(
+                  label: 'Science Facts',
+                  url: 'https://www.youtube.com/shorts/5PO-ZlmaORs',
+                  onTap: () => _capture('https://www.youtube.com/shorts/5PO-ZlmaORs'),
+                ),
+                _SampleLinkChip(
+                  label: 'TB Explainer',
+                  url: 'https://www.youtube.com/shorts/WDqAruQ979U',
+                  onTap: () => _capture('https://www.youtube.com/shorts/WDqAruQ979U'),
+                ),
+                _SampleLinkChip(
+                  label: 'Blood Pressure Foods',
+                  url: 'https://www.youtube.com/shorts/2kOxgHH7Gdg',
+                  onTap: () => _capture('https://www.youtube.com/shorts/2kOxgHH7Gdg'),
+                ),
+                _SampleLinkChip(
+                  label: 'Finance Rules',
+                  url: 'https://www.youtube.com/shorts/zOE1ywel-CI',
+                  onTap: () => _capture('https://www.youtube.com/shorts/zOE1ywel-CI'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -243,6 +278,53 @@ class _ClipboardChip extends StatelessWidget {
                 ),
               ),
               PhosphorIcon(PhosphorIconsRegular.arrowRight, size: 18, color: scheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SampleLinkChip extends StatelessWidget {
+  const _SampleLinkChip({
+    required this.label,
+    required this.url,
+    required this.onTap,
+  });
+
+  final String label;
+  final String url;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(PhosphorIconsRegular.playCircle, size: 14, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                ),
+              ),
             ],
           ),
         ),

@@ -555,13 +555,14 @@ def _extract_article(
         download.title, download.text, download.author, ocr_text, source_line
     )
     thumbnail = download.image_url or (frames[0] if frames else None)
+    had_transcript = bool(download.text and "youtube" in (download.resolver or ""))
     return ExtractionResult(
         aggregated_text=aggregated,
         transcript=download.text,  # gives base-synth / paragraph-fallback real text
         ocr_text=ocr_text,
         thumbnail=thumbnail,
         keyframes=frames,
-        had_transcript=False,
+        had_transcript=had_transcript,
         had_ocr=bool(ocr_text.strip()),
         had_visual=had_visual,
     )

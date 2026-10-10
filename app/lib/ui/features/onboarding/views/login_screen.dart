@@ -7,8 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../data/repositories/card_repository.dart';
-import '../../../../data/services/auth_service.dart';
 import '../../../../data/services/id_auth_service.dart';
 import '../../../core/brand.dart';
 import '../../../core/widgets/responsive_center.dart';
@@ -55,7 +53,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final auth = context.read<AuthService>();
     return Scaffold(
       backgroundColor: scheme.surface,
       body: Container(
@@ -99,9 +96,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               final idAuth = context.read<IdAuthService>();
                               await idAuth.loginJudgeDemo();
                             }),
-                    icon: const PhosphorIcon(PhosphorIconsRegular.sealCheck,
+                    icon: const PhosphorIcon(PhosphorIconsRegular.sparkle,
                         size: 20),
-                    label: const Text('Explore Demo Shelf (Hackathon Judges)'),
+                    label: const Text('Explore Hackathon Demo Shelf'),
                     style: FilledButton.styleFrom(
                       backgroundColor: scheme.primary,
                       foregroundColor: scheme.onPrimary,
@@ -110,32 +107,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   OutlinedButton.icon(
                     onPressed: _busy
                         ? null
-                        : () => _run(() async {
-                              final api = context.read<CardRepository>().api;
-                              await auth.signInWithGoogle(
-                                mergeGuestData: api.mergeGuestLibrary,
-                              );
-                            }),
-                    icon: const PhosphorIcon(PhosphorIconsRegular.googleLogo,
+                        : () => _openIdAuth(IdAuthMode.login),
+                    icon: const PhosphorIcon(PhosphorIconsRegular.user,
                         size: 20),
-                    label: const Text('Continue with Google'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(56),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => _openIdAuth(IdAuthMode.register),
-                    icon: const PhosphorIcon(PhosphorIconsRegular.at, size: 20),
-                    label: const Text('Create a Cachy ID'),
+                    label: const Text('Sign in with Cachy ID'),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(56),
                       shape: RoundedRectangleBorder(
@@ -144,41 +123,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 14),
                   Center(
-                    child: TextButton(
+                    child: TextButton.icon(
                       onPressed:
-                          _busy ? null : () => _openIdAuth(IdAuthMode.login),
-                      child: Text(
-                        'Sign in with a Cachy ID',
-                        style: theme.textTheme.bodySmall?.copyWith(
+                          _busy ? null : () => _openIdAuth(IdAuthMode.register),
+                      icon: const PhosphorIcon(PhosphorIconsRegular.at, size: 16),
+                      label: Text(
+                        'Create a new Cachy ID',
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
-                          decoration: TextDecoration.underline,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-                  ),
-                  Center(
-                    child: TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _run(() async {
-                                await auth.signInAnonymously();
-                              }),
-                      child: Text(
-                        'Or use without login…',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Center(
-                    child: Text(
-                      'Without an account, your library lives only on this device.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ),
                   const SizedBox(height: 24),

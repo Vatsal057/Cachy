@@ -25,6 +25,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Literal, Optional, Union
 
 from . import article, resolvers  # resolvers unchanged; article is the text path
@@ -145,6 +146,71 @@ def _yt_dlp_result(url: str, output_path: str, cookies_path: str | None) -> Down
     return None
 
 
+def _serpapi_youtube_result(url: str, output_path: str) -> DownloadResult | None:
+    """Fallback when direct video download is blocked (e.g. cloud datacenter IPs).
+    Uses SerpApi to fetch the transcript and YouTube oEmbed to fetch title/thumbnail.
+    """
+    try:
+        from app.pipeline.verdicts import fetch_transcript, video_id_from_url
+        import requests
+
+        vid = video_id_from_url(url)
+        if not vid:
+            return None
+
+        title = ""
+        author = None
+        thumb_url = f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
+        try:
+            oe_resp = requests.get(
+                f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={vid}&format=json",
+                timeout=5,
+            )
+            if oe_resp.status_code == 200:
+                oe = oe_resp.json()
+                title = str(oe.get("title") or "").strip()
+                author = oe.get("author_name")
+                if oe.get("thumbnail_url"):
+                    thumb_url = oe["thumbnail_url"]
+        except Exception as e:
+            log.debug("youtube oembed failed for %s: %s", vid, e)
+
+        segments = fetch_transcript(vid)
+        if not segments:
+            log.warning("serpapi youtube fallback: no transcript for %s", vid)
+            return None
+
+        transcript_text = " ".join(s["text"] for s in segments if s.get("text")).strip()
+        if not transcript_text:
+            return None
+
+        out_p = Path(output_path)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        thumb_file = out_p.parent / "thumbnail.jpg"
+        try:
+            t_resp = requests.get(thumb_url, timeout=10)
+            if t_resp.status_code == 200:
+                with open(thumb_file, "wb") as f:
+                    f.write(t_resp.content)
+        except Exception:
+            pass
+
+        log.info("serpapi youtube fallback OK for %s (%d chars)", vid, len(transcript_text))
+        return DownloadResult(
+            media_type="article",
+            data="",
+            caption=title or "YouTube Video",
+            resolver="serpapi-youtube",
+            text=transcript_text,
+            title=title or "YouTube Video",
+            author=author,
+            image_url=str(thumb_file) if thumb_file.exists() else thumb_url,
+        )
+    except Exception as e:
+        log.warning("serpapi youtube fallback failed for %s: %s", url, e)
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration (sync core)
 # --------------------------------------------------------------------------- #
@@ -248,7 +314,15 @@ def download_content(
         if res:
             paths, caption = res
             log.info("download ok via instaloader (%d images)", len(paths))
-            return DownloadResult("images", paths, caption, "instaloader")
+    # 6) SerpApi YouTube fallback — when direct media download is blocked on cloud IPs.
+    #    SerpApi fetches the timestamped transcript and oEmbed fetches metadata/thumbnail.
+    #    Ensures YouTube ingestion NEVER fails on Hugging Face Spaces.
+    from app.pipeline.verdicts import video_id_from_url
+    if video_id_from_url(url):
+        log.info("trying serpapi youtube fallback for %s", url)
+        res = _serpapi_youtube_result(url, output_path)
+        if res:
+            return res
 
     raise DownloadError(f"all resolvers failed for {url}")
 

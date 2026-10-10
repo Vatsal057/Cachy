@@ -891,6 +891,31 @@ def _render_verdicts_html(data: dict | None) -> str:
         notes_html = f"<div class='verdict-notes'>{notes}</div>" if notes else ""
         line_html = "<div class='verdict-line'></div>" if idx < total - 1 else ""
 
+        # Agent Audit Trace
+        trace = item.get("trace") or {}
+        trace_html = ""
+        query_val = item.get("query") or trace.get("search_query")
+        if query_val or trace:
+            raw_engines = trace.get("engines") or ["Google Search", "Google News"]
+            eng_map = {"google": "Google Search", "google_news": "Google News"}
+            engines_str = ", ".join(eng_map.get(e_name, e_name) for e_name in raw_engines)
+            rule_str = trace.get("decision_rule") or ""
+            scanned = trace.get("sources_scanned", len(item.get("evidence") or []))
+            corrobs = trace.get("corroborations", 0)
+            contras = trace.get("contradictions", 0)
+            rule_row = f"<div class='trace-row'><span class='trace-k'>Rule</span><span class='trace-v'>{e(rule_str)}</span></div>" if rule_str else ""
+            trace_html = (
+                f"<details class='agent-trace'>"
+                f"  <summary>Search & Decision Trace</summary>"
+                f"  <div class='agent-trace-body'>"
+                f"    <div class='trace-row'><span class='trace-k'>Query</span><span class='trace-v mono'>&ldquo;{e(str(query_val or ''))}&rdquo;</span></div>"
+                f"    <div class='trace-row'><span class='trace-k'>Engines</span><span class='trace-v'>{e(engines_str)}</span></div>"
+                f"    <div class='trace-row'><span class='trace-k'>Audit</span><span class='trace-v'>{scanned} sources · {corrobs} corroborating · {contras} contradicting</span></div>"
+                f"    {rule_row}"
+                f"  </div>"
+                f"</details>"
+            )
+
         rows.append(
             f"<div class='verdict-item'>"
             f"  <div class='verdict-rail'>"
@@ -902,6 +927,7 @@ def _render_verdicts_html(data: dict | None) -> str:
             f"    <div class='verdict-claim'>{claim_text}</div>"
             f"    {notes_html}"
             f"    {ev_html}"
+            f"    {trace_html}"
             f"  </div>"
             f"</div>"
         )
@@ -1686,6 +1712,59 @@ def _render_share_page(p: dict) -> str:
   }}
   .evidence-chip svg {{
     color: var(--muted);
+  }}
+  /* Agent Search & Decision Trace */
+  .agent-trace {{
+    margin-top: 10px;
+    background: var(--raised);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    font-size: 12px;
+    overflow: hidden;
+  }}
+  .agent-trace summary {{
+    padding: 6px 10px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    transition: color 0.15s ease;
+  }}
+  .agent-trace summary:hover {{
+    color: var(--ink);
+  }}
+  .agent-trace-body {{
+    padding: 8px 10px 10px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+  }}
+  .trace-row {{
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    line-height: 1.4;
+  }}
+  .trace-k {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    min-width: 55px;
+    flex-shrink: 0;
+  }}
+  .trace-v {{
+    color: var(--ink);
+  }}
+  .trace-v.mono {{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
   }}
   /* Source Line & Footer */
   .source-line {{

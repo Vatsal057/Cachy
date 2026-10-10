@@ -500,14 +500,31 @@ def _verify_transcript(
         evidence = search_evidence(c["query"], pub_date)
         stance = classify_stance(c["claim"], evidence)
         verdict, used, note = apply_verdict(c["claim"], evidence, stance)
+        sup_count = len(stance.get("supports", []))
+        contra_count = len(stance.get("contradicts", []))
+        rule_desc = (
+            f"Contradicted by dated source: {note}" if verdict == "red"
+            else f"Corroborated by {sup_count} distinct domain(s)" if verdict == "green"
+            else f"Single source corroboration ({sup_count}) — requires 2+ independent domains" if verdict == "amber"
+            else f"Insufficient independent evidence scanned ({len(evidence)} sources)"
+        )
         out_claims.append({
             "window_index": c["window_index"],
             "window_start": c["window_start"],
             "window_end": c["window_end"],
             "claim": c["claim"],
+            "query": c["query"],
             "verdict": verdict,
             "note": note,
             "evidence": used,
+            "trace": {
+                "search_query": c["query"],
+                "engines": ["google", "google_news"],
+                "sources_scanned": len(evidence),
+                "corroborations": sup_count,
+                "contradictions": contra_count,
+                "decision_rule": rule_desc,
+            },
         })
         log.info("verdicts: [%s] %s -> %s", video_id or "transcript", c["claim"][:60], verdict)
     return {

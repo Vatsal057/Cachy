@@ -69,7 +69,7 @@
       stroke: #1C1917;
     }
     .glyph-reel-group {
-      animation: reelDrop 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: reelDrop 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
     @keyframes reelDrop {
       0% { transform: translateY(-44px); }
@@ -95,7 +95,7 @@
       margin: 0;
       font-family: "Fraunces", "Georgia", "Times New Roman", serif;
       opacity: 0;
-      animation: wordmarkReveal 0.65s ease-out 0.65s forwards;
+      animation: wordmarkReveal 0.3s ease-out 0.15s forwards;
     }
     @keyframes wordmarkReveal {
       0% { opacity: 0; transform: translateY(10px); }
@@ -108,41 +108,22 @@
     }
   </style>
   <script id="splash-screen-script">
-    let minTimeElapsed = false;
-    let flutterReady = false;
-
     function removeSplashFromWeb() {
       const splash = document.getElementById("splash");
       if (splash && !splash.classList.contains("removing")) {
         splash.classList.add("removing");
-        splash.style.transition = "opacity 0.25s ease-out";
+        splash.style.transition = "opacity 0.15s ease-out";
         splash.style.opacity = "0";
-        setTimeout(() => splash.remove(), 250);
+        setTimeout(() => splash.remove(), 150);
       }
       document.body.style.background = "transparent";
     }
 
-    function tryRemoveSplash() {
-      if (minTimeElapsed && flutterReady) {
-        removeSplashFromWeb();
-      }
-    }
-
-    setTimeout(() => {
-      minTimeElapsed = true;
-      tryRemoveSplash();
-    }, 1300);
-
-    // This script runs in <head>, so document.body does not exist yet — observing
-    // it directly threw "parameter 1 is not of type 'Node'" and killed the rest of
-    // this script, leaving splash removal to the slower load-event fallback.
-    // documentElement is always present and subtree:true still sees body's children.
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node.nodeName && (node.nodeName.toLowerCase() === 'flutter-view' || node.nodeName.toLowerCase() === 'flt-glass-pane' || node.nodeName.toLowerCase() === 'canvas')) {
-            flutterReady = true;
-            tryRemoveSplash();
+            removeSplashFromWeb();
             observer.disconnect();
             return;
           }
@@ -152,10 +133,7 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     window.addEventListener('load', function() {
-      setTimeout(() => {
-        flutterReady = true;
-        tryRemoveSplash();
-      }, 3500);
+      removeSplashFromWeb();
     });
     window.addEventListener('removeSplashFromWeb', removeSplashFromWeb);
   </script>

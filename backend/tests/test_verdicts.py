@@ -247,3 +247,102 @@ def test_verify_transcript_no_key_returns_none(monkeypatch):
     monkeypatch.setattr(get_settings(), "serpapi_api_key", "")
     assert verify_transcript("Some factual statement about health.") is None
 
+
+def test_claim_verdict_model_with_trace():
+    from app.models.card import ClaimVerdict
+    cv = ClaimVerdict(
+        window_index=0,
+        window_start=0.0,
+        window_end=30.0,
+        claim="Water boils at 100C",
+        verdict="green",
+        note="Corroborated by BBC Science",
+        query="water boiling temperature",
+        trace={
+            "search_query": "water boiling temperature",
+            "engines": ["google", "google_news"],
+            "sources_scanned": 5,
+            "corroborations": 2,
+            "contradictions": 0,
+            "decision_rule": "Corroborated by 2 distinct domain(s)",
+        },
+    )
+    assert cv.query == "water boiling temperature"
+    assert cv.trace["sources_scanned"] == 5
+    assert cv.trace["engines"] == ["google", "google_news"]
+
+
+def test_share_html_renders_agent_trace():
+    from app.api.share import _render_verdicts_html
+    verdicts_data = {
+        "video_id": "test_vid",
+        "claims": [
+            {
+                "window_index": 0,
+                "window_start": 0,
+                "window_end": 30,
+                "claim": "Bananas are radioactive.",
+                "verdict": "green",
+                "note": "Corroborated by EPA",
+                "query": "banana potassium 40 radioactivity",
+                "evidence": [{"source": "EPA", "link": "https://epa.gov/radiation"}],
+                "trace": {
+                    "search_query": "banana potassium 40 radioactivity",
+                    "engines": ["google", "google_news"],
+                    "sources_scanned": 4,
+                    "corroborations": 2,
+                    "contradictions": 0,
+                    "decision_rule": "Corroborated by 2 distinct domain(s)",
+                },
+            }
+        ],
+    }
+    html = _render_verdicts_html(verdicts_data)
+    assert "Search &amp; Decision Trace" in html or "Search & Decision Trace" in html
+    assert "banana potassium 40 radioactivity" in html
+    assert "Google Search, Google News" in html
+    assert "Corroborated by 2 distinct domain(s)" in html
+
+
+def test_downloader_serpapi_youtube_fallback(monkeypatch, tmp_path):
+    from app.pipeline.ingestion.downloader import _serpapi_youtube_result
+    from app.pipeline import verdicts
+    import requests
+
+    monkeypatch.setattr(
+        verdicts,
+        "fetch_transcript",
+        lambda vid: [{"start": 0.0, "end": 5.0, "text": "This is test transcript content."}],
+    )
+
+    class DummyOEmbedResp:
+        status_code = 200
+        def json(self):
+            return {
+                "title": "Test Title",
+                "author_name": "Test Author",
+                "thumbnail_url": "https://example.com/thumb.jpg",
+            }
+
+    class DummyThumbResp:
+        status_code = 200
+        content = b"fake-jpg-data"
+
+    def mock_get(url, *args, **kwargs):
+        if "oembed" in url:
+            return DummyOEmbedResp()
+        return DummyThumbResp()
+
+    monkeypatch.setattr(requests, "get", mock_get)
+
+    out_file = tmp_path / "video.mp4"
+    res = _serpapi_youtube_result("https://www.youtube.com/shorts/5PO-ZlmaORs", str(out_file))
+
+    assert res is not None
+    assert res.media_type == "article"
+    assert res.resolver == "serpapi-youtube"
+    assert "This is test transcript content." in res.text
+    assert res.caption == "Test Title"
+    assert res.author == "Test Author"
+
+

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator
 
@@ -377,6 +377,8 @@ class ClaimVerdict(BaseModel):
     verdict: str = "grey"  # green | amber | red | grey
     note: str = ""
     evidence: list[VerdictEvidence] = Field(default_factory=list)
+    query: str = ""
+    trace: dict[str, Any] = Field(default_factory=dict)
 
 
 class VerdictTimeline(BaseModel):

@@ -641,6 +641,12 @@ def _download_yt_dlp(
         "nocheckcertificate": True,
         # Cap download size so a huge/hostile source can't fill the disk (M5).
         "max_filesize": net_guard.MAX_DOWNLOAD_BYTES,
+        "socket_timeout": 15,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "mweb"]
+            }
+        },
     }
 
     if cookies_path:
