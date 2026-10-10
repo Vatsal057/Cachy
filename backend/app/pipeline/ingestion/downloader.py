@@ -303,7 +303,19 @@ def download_content(
     os.makedirs(job_dir, exist_ok=True)
     output_path = os.path.join(job_dir, "video.mp4")
 
-    # 1) Optional keyless resolvers & RapidAPI — free, fragile, ordered (Instagram only).
+    # 1) YouTube Videos / Shorts: SerpApi is the PRIMARY resolver.
+    #    Bypasses datacenter IP blocks, fetches timestamped transcript and metadata
+    #    in 2-3s without downloading heavy video files over throttled connections.
+    from app.pipeline.verdicts import video_id_from_url
+    if video_id_from_url(url):
+        log.info("trying serpapi youtube resolver (primary) for %s", url)
+        res = _serpapi_youtube_result(url, output_path)
+        if res:
+            log.info("ingest ok via serpapi youtube")
+            return res
+        log.info("serpapi youtube resolver did not return, falling back to downloaders")
+
+    # 2) Optional keyless resolvers & RapidAPI — free, fragile, ordered (Instagram only).
     if "instagram.com" in url:
         for name, fn in _keyless_resolvers():
             log.info("trying keyless resolver: %s", name)
@@ -333,11 +345,10 @@ def download_content(
                 log.info("download ok via rapidapi")
                 return DownloadResult(m_type, path_or_list, caption, "rapidapi")
 
-    # 3) cobalt.tools — free public API, works for YouTube Shorts + Instagram.
-    #    Placed before yt-dlp because yt-dlp fails on HF (SSL restrictions).
+    # 3) cobalt.tools — fallback public API for video downloads.
     cobalt = getattr(resolvers, "_download_cobalt", None)
     if callable(cobalt):
-        log.info("trying cobalt")
+        log.info("trying cobalt fallback")
         res = _safe_call("cobalt", lambda: cobalt(url, output_path))
         if res:
             if len(res) == 3:
@@ -348,10 +359,10 @@ def download_content(
             log.info("download ok via cobalt")
             return DownloadResult(m_type, path_or_list, caption, "cobalt")
 
-    # 4) yt-dlp — local fallback for videos/reels.
+    # 4) yt-dlp — fallback video downloader.
     yt = getattr(resolvers, "_download_yt_dlp", None)
     if callable(yt):
-        log.info("trying yt-dlp")
+        log.info("trying yt-dlp fallback")
         res = _safe_call(
             "yt-dlp", lambda: yt(url, output_path, config.cookies_path)
         )
@@ -360,27 +371,15 @@ def download_content(
             log.info("download ok via yt-dlp")
             return DownloadResult("video", path, caption, "yt-dlp")
 
-    # 5) Instaloader — local fallback for Instagram carousels/images.
-    #    NOTE: resolvers._download_instaloader writes to a shared "temp_images"
-    #    dir and is NOT concurrency-safe. Fine for single-worker dev; flagged for
-    #    a later fix before running parallel workers (docs/02).
+    # 5) Instaloader — fallback for Instagram carousels/images.
     insta = getattr(resolvers, "_download_instaloader", None)
     if "instagram.com" in url and callable(insta):
-        log.info("trying instaloader")
+        log.info("trying instaloader fallback")
         res = _safe_call("instaloader", lambda: insta(url))
         if res:
             paths, caption = res
             log.info("download ok via instaloader (%d images)", len(paths))
             return DownloadResult("images", paths, caption, "instaloader")
-    # 6) SerpApi YouTube fallback — when direct media download is blocked on cloud IPs.
-    #    SerpApi fetches the timestamped transcript and oEmbed fetches metadata/thumbnail.
-    #    Ensures YouTube ingestion NEVER fails on Hugging Face Spaces.
-    from app.pipeline.verdicts import video_id_from_url
-    if video_id_from_url(url):
-        log.info("trying serpapi youtube fallback for %s", url)
-        res = _serpapi_youtube_result(url, output_path)
-        if res:
-            return res
 
     raise DownloadError(f"all resolvers failed for {url}")
 

@@ -10,6 +10,9 @@ import logging
 log = logging.getLogger("services.llm_gemini")
 
 
+_DEAD_KEYS: set[str] = set()
+
+
 def complete(
     api_key: str, model: str, prompt: str, *, system_instruction: str | None = None
 ) -> str | None:
@@ -20,6 +23,8 @@ def complete(
     keeps a stable prefix across calls, which lets Gemini 2.5's implicit context
     caching reuse (and discount) the instruction tokens automatically — no cache
     lifecycle to manage."""
+    if not api_key or api_key in _DEAD_KEYS:
+        return None
     try:
         from google import genai as google_genai
         from google.genai import types
@@ -35,7 +40,12 @@ def complete(
         )
         return (resp.text or "").strip() or None
     except Exception as e:  # noqa: BLE001
-        log.warning("gemini call (%s) failed: %s", model, e)
+        err_msg = str(e)
+        if any(tok in err_msg for tok in ("401", "UNAUTHENTICATED", "ACCOUNT_STATE_INVALID", "API_KEY_INVALID")):
+            _DEAD_KEYS.add(api_key)
+            log.warning("gemini key marked inactive due to auth error: %s", e)
+        else:
+            log.warning("gemini call (%s) failed: %s", model, e)
         return None
 
 
